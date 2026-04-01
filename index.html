@@ -285,14 +285,6 @@ table.div-ht tfoot td{padding:10px 14px;font-size:13px;font-weight:700;backgroun
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21.21 15.89A10 10 0 1 1 8 2.83"/><path d="M22 12A10 10 0 0 0 12 2v10z"/></svg>
       Diversification
     </button>
-    <div class="refresh-wrap">
-      <div class="refresh-dot"></div>
-      <span class="refresh-time" id="ref-time">—</span>
-      <button class="btn-refresh" onclick="fetchAll()">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 4v6h-6"/><path d="M1 20v-6h6"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
-        Refresh
-      </button>
-    </div>
   </div>
 </header>
 
@@ -324,7 +316,7 @@ table.div-ht tfoot td{padding:10px 14px;font-size:13px;font-weight:700;backgroun
         <div class="cbox"><div class="cbox-l">Positive 30D</div><div class="cbox-v" style="color:var(--green)" id="c-30dp">—</div></div>
         <div class="cbox"><div class="cbox-l">This Year +</div><div class="cbox-v" style="color:var(--green)" id="c-ytdp">—</div></div>
         <div class="cbox"><div class="cbox-l">Stocks / ETFs</div><div class="cbox-v" style="color:var(--blue)" id="c-split">—</div></div>
-        <div class="cbox"><div class="cbox-l">Last Updated</div><div class="cbox-v" style="color:var(--text2);font-size:15px" id="c-upd">—</div></div>
+        <div class="cbox"><div class="cbox-l">Last Updated</div><div class="cbox-v" style="color:var(--text2);font-size:15px" id="c-upd">—</div><button class="btn-refresh" onclick="fetchAll()" style="margin-top:6px;display:flex;align-items:center;gap:4px;font-size:12px;color:var(--text3);background:none;border:none;cursor:pointer;padding:0;font-family:inherit"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 4v6h-6"/><path d="M1 20v-6h6"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>Refresh</button></div>
       </div>
     </div>
   </div>
@@ -690,8 +682,8 @@ async function fetchAll() {
     parsePnL(pnlG);
     parseCrypto(cryptoG);
     document.getElementById('err').classList.remove('show');
-    document.getElementById('ref-time').textContent =
-      'Updated ' + new Date().toLocaleTimeString('en-CA',{hour:'2-digit',minute:'2-digit'});
+    document.getElementById('c-upd').textContent =
+      new Date().toLocaleTimeString('en-CA',{hour:'2-digit',minute:'2-digit',second:'2-digit'});
   } catch(e) {
     console.error('Fetch error:', e);
     document.getElementById('err').classList.add('show');
@@ -871,21 +863,22 @@ function parseCrypto(g) {
 //  RENDER SUMMARY (fund counts)
 // ═══════════════════════════════════════════════
 function renderSummary() {
-  const main  = ALL.filter(d => !d.isWatch);
-  const watch = ALL.filter(d => d.isWatch);
-  const vis = activeTab === 'main' ? main : watch; // use current tab for counts
+  // Mirror exactly what the table shows: tab first, then filter
+  let data = activeFilter === 'bullish'
+    ? [...ALL]
+    : activeTab === 'main'
+      ? ALL.filter(d => !d.isWatch)
+      : ALL.filter(d => d.isWatch);
 
-  const with1d  = ALL.filter(d => d.s1d !== null);
-  const with30d = ALL.filter(d => d.s30d !== null);
-  const withYtd = ALL.filter(d => d.ytd !== null);
+  data = applyFilter(data);
 
-  const etcs = ALL.filter(d => d.type.toLowerCase()==='etf').length;
-  const stks = ALL.filter(d => d.type.toLowerCase()==='stock').length;
+  const etcs = data.filter(d => d.type.toLowerCase() === 'etf').length;
+  const stks = data.filter(d => d.type.toLowerCase() === 'stock').length;
 
-  setText('c-total', ALL.length);
-  setText('c-1dp',   with1d.filter(d=>d.s1d>0).length);
-  setText('c-30dp',  with30d.filter(d=>d.s30d>0).length);
-  setText('c-ytdp',  withYtd.filter(d=>d.ytd>0).length);
+  setText('c-total', data.length);
+  setText('c-1dp',   data.filter(d => d.s1d  !== null && d.s1d  > 0).length);
+  setText('c-30dp',  data.filter(d => d.s30d !== null && d.s30d > 0).length);
+  setText('c-ytdp',  data.filter(d => d.ytd  !== null && d.ytd  > 0).length);
   setText('c-split', `${stks} / ${etcs}`);
 }
 
@@ -979,9 +972,12 @@ function renderTable() {
   // Sort
   data = sortData(data);
 
-  // Update count
+  // Update table count label
   const lbl = activeTab==='main' ? 'SIP funds' : 'watchlist items';
   setText('tp-count', `${data.length} ${lbl}`);
+
+  // Keep summary counts in sync with current tab + filter
+  renderSummary();
 
   // Build header
   const thead = document.getElementById('tbl-head');
