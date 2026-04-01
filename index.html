@@ -5,6 +5,8 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Portfolio Dashboard</title>
 <link href="https://fonts.googleapis.com/css2?family=Inter:ital,opsz,wght@0,14..32,300;0,14..32,400;0,14..32,500;0,14..32,600;0,14..32,700;0,14..32,800;1,14..32,400&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2.2.0/dist/chartjs-plugin-datalabels.min.js"></script>
 <style>
 /* ── RESET ── */
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
@@ -16,7 +18,7 @@
   --red:#f04f6e;--red-dim:rgba(240,79,110,.12);
   --yellow:#f5a623;--blue:#3d9fff;--purple:#9b6dff;--teal:#00c9c9;
 }
-html{font-size:14px}
+html{font-size:15px}
 body{background:var(--bg);color:var(--text);font-family:'Inter',sans-serif;min-height:100vh;line-height:1.5}
 button{font-family:inherit;cursor:pointer;border:none;outline:none}
 input{font-family:inherit;outline:none}
@@ -37,8 +39,8 @@ input{font-family:inherit;outline:none}
 /* ── HEADER ── */
 header{background:var(--surface);border-bottom:1px solid var(--border);padding:14px 24px;display:flex;align-items:flex-start;justify-content:space-between;gap:16px;position:sticky;top:0;z-index:100}
 .h-left{display:flex;flex-direction:column;gap:2px}
-.h-title{font-size:21px;font-weight:800;color:var(--text);letter-spacing:-.5px}
-.h-sub{font-size:12px;color:var(--text3)}
+.h-title{font-size:24px;font-weight:800;color:var(--text);letter-spacing:-.5px;white-space:nowrap}
+.h-sub{font-size:13px;color:var(--text3);white-space:nowrap}
 .h-right{display:flex;align-items:flex-start;gap:12px;flex-shrink:0}
 .h-btn{display:flex;align-items:center;gap:7px;padding:8px 16px;background:var(--surface2);border:1px solid var(--border);color:var(--text2);font-size:13px;font-weight:500;border-radius:7px;transition:all .15s}
 .h-btn:hover,.h-btn.active{border-color:var(--blue);color:var(--blue);background:rgba(61,159,255,.08)}
@@ -68,22 +70,22 @@ header{background:var(--surface);border-bottom:1px solid var(--border);padding:1
 /* ── SUMMARY PANEL ── */
 .summary-panel{background:var(--surface);border:1px solid var(--border);border-radius:10px;margin-bottom:14px;overflow:hidden}
 .sum-head{padding:12px 18px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between}
-.sum-head-title{font-size:12px;font-weight:700;color:var(--text);text-transform:uppercase;letter-spacing:.5px}
+.sum-head-title{font-size:13px;font-weight:700;color:var(--text);text-transform:uppercase;letter-spacing:.5px}
 .btn-collapse{background:none;color:var(--text3);font-size:20px;line-height:1;width:24px;height:24px;display:flex;align-items:center;justify-content:center;border-radius:4px;transition:all .15s}
 .btn-collapse:hover{color:var(--text);background:var(--surface2)}
 #sum-body{padding:12px 16px}
 .sum-stats{display:grid;grid-template-columns:repeat(7,1fr);gap:1px;background:var(--border2);border-radius:8px;border:1px solid var(--border2);overflow:hidden}
 .sum-counts{display:grid;grid-template-columns:repeat(6,1fr);gap:1px;background:var(--border2);border-radius:8px;border:1px solid var(--border2);overflow:hidden;margin-top:8px}
 .sbox{background:var(--surface2);padding:12px 14px}
-.sbox-l{font-size:10px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px}
-.sbox-v{font-size:19px;font-weight:700;color:var(--text);letter-spacing:-.5px}
+.sbox-l{font-size:11px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px}
+.sbox-v{font-size:22px;font-weight:700;color:var(--text);letter-spacing:-.5px}
 .sbox-v.green{color:var(--green)}
 .sbox-v.red{color:var(--red)}
 .sbox-v.yellow{color:var(--yellow)}
 .sbox-v.blue{color:var(--blue)}
 .cbox{background:var(--surface2);padding:10px 14px;display:flex;flex-direction:column;gap:3px}
-.cbox-l{font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:.4px}
-.cbox-v{font-size:22px;font-weight:700}
+.cbox-l{font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:.4px}
+.cbox-v{font-size:32px;font-weight:700}
 
 /* ── CONTROLS ── */
 .controls{margin-bottom:14px;display:flex;flex-direction:column;gap:8px}
@@ -95,7 +97,7 @@ header{background:var(--surface);border-bottom:1px solid var(--border);padding:1
 .search-input::placeholder{color:var(--text3)}
 .search-input:focus{border-color:var(--blue)}
 .btn-grp{display:flex;flex-wrap:wrap;gap:5px}
-.sbtn,.fbtn{padding:6px 12px;border-radius:6px;font-size:12px;font-weight:500;background:var(--surface);border:1px solid var(--border);color:var(--text2);transition:all .15s;white-space:nowrap;display:flex;align-items:center;gap:4px}
+.sbtn,.fbtn{padding:6px 13px;border-radius:6px;font-size:13px;font-weight:500;background:var(--surface);border:1px solid var(--border);color:var(--text2);transition:all .15s;white-space:nowrap;display:flex;align-items:center;gap:4px}
 .sbtn:hover,.fbtn:hover{border-color:var(--text3);color:var(--text)}
 .sbtn.active{background:rgba(61,159,255,.1);border-color:var(--blue);color:var(--blue)}
 .fbtn.fa{background:rgba(61,159,255,.1);border-color:var(--blue);color:var(--blue)}
@@ -130,7 +132,7 @@ header{background:var(--surface);border-bottom:1px solid var(--border);padding:1
 /* ── TABLE ── */
 .tbl-wrap{overflow-x:auto}
 table{width:100%;border-collapse:collapse;min-width:760px}
-thead th{padding:9px 12px;text-align:left;font-size:10px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.6px;background:var(--bg2);border-bottom:1px solid var(--border);white-space:nowrap;cursor:pointer;user-select:none;transition:color .1s}
+thead th{padding:9px 12px;text-align:left;font-size:12px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.6px;background:var(--bg2);border-bottom:1px solid var(--border);white-space:nowrap;cursor:pointer;user-select:none;transition:color .1s}
 thead th:hover{color:var(--text2)}
 thead th:first-child{padding-left:18px}
 thead th:last-child{padding-right:18px}
@@ -139,11 +141,11 @@ thead th.sd::after{content:" ↓";color:var(--blue);font-size:10px}
 tbody tr{border-bottom:1px solid rgba(30,50,80,.5);transition:background .1s}
 tbody tr:hover{background:var(--surface2)}
 tbody tr:last-child{border-bottom:none}
-tbody td{padding:10px 12px;font-size:13px;white-space:nowrap}
+tbody td{padding:11px 12px;font-size:14px;white-space:nowrap}
 tbody td:first-child{padding-left:18px}
 tbody td:last-child{padding-right:18px}
-.td-fund{font-weight:600;color:var(--text)}
-.td-fund-sub{font-size:10px;color:var(--text3);margin-top:2px;font-weight:400}
+.td-fund{font-weight:600;color:var(--text);font-size:14px}
+.td-fund-sub{font-size:12px;color:var(--text3);margin-top:2px;font-weight:400}
 .td-up{color:var(--green);font-weight:600}
 .td-dn{color:var(--red);font-weight:600}
 .td-neu{color:var(--text3)}
@@ -164,32 +166,99 @@ tbody td:last-child{padding-right:18px}
 #pg-div.show{display:block}
 #pg-main.hide{display:none}
 .div-wrap{max-width:1400px;margin:0 auto;padding:18px 24px 48px}
-.div-back{display:flex;align-items:center;gap:14px;margin-bottom:18px}
+.div-back{display:flex;align-items:center;gap:14px;margin-bottom:14px}
 .btn-back{display:flex;align-items:center;gap:6px;padding:8px 16px;background:var(--surface);border:1px solid var(--border);color:var(--text2);font-size:13px;font-weight:500;border-radius:7px;transition:all .15s}
 .btn-back:hover{border-color:var(--blue);color:var(--text)}
 .div-title{font-size:22px;font-weight:800;color:var(--text);letter-spacing:-.5px}
-.div-stats{display:grid;grid-template-columns:repeat(5,1fr);gap:12px;margin-bottom:16px}
-.div-card{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:16px 18px}
-.div-card-l{font-size:10px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px}
-.div-card-v{font-size:26px;font-weight:800;letter-spacing:-1px}
-.div-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:14px}
-.div-panel{background:var(--surface);border:1px solid var(--border);border-radius:10px;overflow:hidden}
-.div-ph{padding:13px 18px;border-bottom:1px solid var(--border);font-size:13px;font-weight:700;color:var(--text)}
-.div-pb{padding:18px}
-.split-row{display:flex;justify-content:space-between;align-items:center;padding:11px 0;border-bottom:1px solid var(--border2)}
-.split-row:last-child{border-bottom:none}
-.split-l{font-size:13px;color:var(--text3)}
-.split-v{font-size:18px;font-weight:700}
-.split-r{text-align:right}
-.split-pct{font-size:13px;font-weight:600}
-.split-sub{font-size:10px;color:var(--text3)}
-.bk-table{width:100%;border-collapse:collapse}
-.bk-table th{padding:9px 12px;text-align:left;font-size:10px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.6px;border-bottom:1px solid var(--border);background:var(--bg2)}
-.bk-table td{padding:10px 12px;font-size:13px;border-bottom:1px solid var(--border2)}
-.bk-table tr:last-child td{border-bottom:none}
-.bk-table tr.total td{font-weight:700;border-top:1px solid var(--border);border-bottom:none}
-.bk-green{color:var(--green);font-weight:600;text-align:right}
-.bk-right{text-align:right}
+
+/* Div tabs */
+.div-tabs{display:flex;border-bottom:1px solid var(--border);margin-bottom:16px}
+.div-tab-btn{padding:10px 20px;font-size:14px;font-weight:500;color:var(--text2);border-bottom:2px solid transparent;margin-bottom:-1px;cursor:pointer;background:none;border-left:none;border-right:none;border-top:none;transition:all .15s;font-family:inherit}
+.div-tab-btn.active{color:var(--blue);border-bottom-color:var(--blue)}
+.div-tab-btn:hover:not(.active){color:var(--text)}
+.div-tab-panel{display:none}
+.div-tab-panel.active{display:block}
+
+/* KPI Grid */
+.div-kpi-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(220px,100%),1fr));gap:12px;margin-bottom:16px}
+.div-kpi-card{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:18px 20px}
+.div-kpi-label{font-size:11px;font-weight:600;color:var(--text2);text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px}
+.div-kpi-value{font-size:clamp(1.4rem,2vw,2rem);font-weight:700;font-variant-numeric:tabular-nums;line-height:1.1}
+.div-kpi-value.green{color:var(--green)}
+.div-kpi-value.blue{color:var(--blue)}
+.div-kpi-value.yellow{color:var(--yellow)}
+.div-kpi-sub{font-size:11px;color:var(--text2);margin-top:5px}
+
+/* Split + Donut row */
+.div-dash-row{display:grid;grid-template-columns:300px 1fr;gap:16px;margin-bottom:16px;align-items:start}
+.div-split-card{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:20px 22px}
+.div-split-card h3{font-size:13px;font-weight:600;margin-bottom:18px;color:var(--text)}
+.div-split-entry{margin-bottom:18px;padding-bottom:18px;border-bottom:1px solid var(--border2)}
+.div-split-entry:last-of-type{border-bottom:none;margin-bottom:0;padding-bottom:0}
+.div-split-type{font-size:11px;color:var(--text2);text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px}
+.div-split-amount{font-size:clamp(1.1rem,1.5vw,1.4rem);font-weight:700;font-variant-numeric:tabular-nums;margin-bottom:4px}
+.div-split-amount.blue{color:var(--blue)}
+.div-split-amount.yellow{color:var(--yellow)}
+.div-split-flex{display:flex;justify-content:space-between;align-items:center}
+.div-split-pct{font-size:13px;font-weight:600}
+.div-split-pct.blue{color:var(--blue)}
+.div-split-pct.yellow{color:var(--yellow)}
+.div-split-sublabel{font-size:11px;color:var(--text2)}
+.div-split-total-row{display:flex;justify-content:space-between;align-items:center;padding-top:14px;border-top:1px solid var(--border);margin-top:14px}
+.div-split-total-label{font-size:13px;color:var(--text2)}
+.div-split-total-val{font-size:15px;font-weight:700;font-variant-numeric:tabular-nums;color:var(--green)}
+.div-donut-card{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:20px 22px}
+.div-donut-card h3{font-size:13px;font-weight:600;margin-bottom:14px;color:var(--text)}
+.div-donut-wrap{position:relative;height:260px}
+
+/* Breakdown tables */
+.div-breakdown-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px}
+.div-bk-card{background:var(--surface);border:1px solid var(--border);border-radius:10px;overflow:hidden}
+.div-bk-header{padding:13px 18px;border-bottom:1px solid var(--border);font-size:13px;font-weight:600;color:var(--text)}
+table.div-bt{width:100%;border-collapse:collapse}
+table.div-bt thead th{padding:8px 14px;text-align:left;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text2);background:var(--bg2);border-bottom:1px solid var(--border)}
+table.div-bt thead th:not(:first-child){text-align:right}
+table.div-bt tbody td{padding:10px 14px;font-size:13px;border-bottom:1px solid var(--border2)}
+table.div-bt tbody tr:last-child td{border-bottom:none}
+table.div-bt tbody tr:hover{background:var(--surface2)}
+table.div-bt tfoot td{padding:10px 14px;font-size:13px;font-weight:700;background:var(--surface2);border-top:2px solid var(--border)}
+.div-tr{text-align:right;font-variant-numeric:tabular-nums}
+.div-tg{color:var(--green)}
+.div-tgo{color:var(--yellow)}
+.div-sdot{display:inline-block;width:8px;height:8px;border-radius:2px;margin-right:6px;flex-shrink:0;vertical-align:middle}
+
+/* Charts row */
+.div-charts-row{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px}
+.div-chart-card{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:20px 22px}
+.div-chart-card h3{font-size:13px;font-weight:600;margin-bottom:14px;color:var(--text)}
+.div-chart-wrap{position:relative;height:280px}
+
+/* Holdings table */
+.div-holdings-section{background:var(--surface);border:1px solid var(--border);border-radius:10px;overflow:hidden;margin-bottom:16px}
+.div-holdings-header{padding:16px 20px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px}
+.div-holdings-title{font-size:18px;font-weight:700;color:var(--text)}
+.div-holdings-controls{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.div-search-input{padding:7px 12px;border:1px solid var(--border);border-radius:7px;background:var(--bg);font-size:13px;color:var(--text);width:200px;outline:none;transition:border-color .15s;font-family:inherit}
+.div-search-input:focus{border-color:var(--blue)}
+.div-filter-select{padding:7px 12px;border:1px solid var(--border);border-radius:7px;background:var(--bg);font-size:13px;color:var(--text);cursor:pointer;outline:none;font-family:inherit}
+.div-tbl-wrap{overflow-x:auto}
+table.div-ht{width:100%;border-collapse:collapse}
+table.div-ht thead th{padding:9px 14px;text-align:left;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--text2);background:var(--bg2);border-bottom:1px solid var(--border);white-space:nowrap}
+table.div-ht tbody tr{border-bottom:1px solid var(--border2)}
+table.div-ht tbody tr:last-child{border-bottom:none}
+table.div-ht tbody tr:hover{background:var(--surface2)}
+table.div-ht tbody td{padding:10px 14px;font-size:13px;vertical-align:middle}
+table.div-ht tfoot td{padding:10px 14px;font-size:13px;font-weight:700;background:var(--surface2);border-top:2px solid var(--border)}
+.div-fn{font-weight:600;color:var(--text)}
+.div-tk{font-size:11px;color:var(--text2);margin-top:2px}
+.div-hbadge{display:inline-flex;align-items:center;padding:2px 8px;border-radius:999px;font-size:11px;font-weight:500;white-space:nowrap}
+.div-pb-wrap{display:flex;align-items:center;gap:8px;min-width:120px}
+.div-pb-bg{flex:1;height:6px;background:var(--surface3);border-radius:999px;overflow:hidden}
+.div-pb{height:100%;border-radius:999px}
+.div-pt{font-size:11px;color:var(--text2);font-variant-numeric:tabular-nums;min-width:38px;text-align:right}
+
+@media(max-width:900px){.div-dash-row{grid-template-columns:1fr}.div-breakdown-grid{grid-template-columns:1fr}.div-charts-row{grid-template-columns:1fr}}
+@media(max-width:800px){.div-wrap{padding:12px 12px 40px}.div-kpi-grid{grid-template-columns:1fr 1fr}}
 
 /* ── RESPONSIVE ── */
 @media(max-width:1100px){.sum-stats{grid-template-columns:repeat(4,1fr)}.sum-counts{grid-template-columns:repeat(3,1fr)}.div-stats{grid-template-columns:repeat(3,1fr)}}
@@ -352,6 +421,8 @@ tbody td:last-child{padding-right:18px}
 <!-- DIVERSIFICATION PAGE -->
 <div id="pg-div">
 <div class="div-wrap">
+
+  <!-- Back + Title -->
   <div class="div-back">
     <button class="btn-back" onclick="showMain()">
       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m15 18-6-6 6-6"/></svg>
@@ -360,53 +431,159 @@ tbody td:last-child{padding-right:18px}
     <div class="div-title">Sector Diversification</div>
   </div>
 
-  <!-- 5 stat cards -->
-  <div class="div-stats">
-    <div class="div-card"><div class="div-card-l">Total Funds</div><div class="div-card-v" style="color:var(--text)" id="d-total">—</div></div>
-    <div class="div-card"><div class="div-card-l">Stocks</div><div class="div-card-v" style="color:var(--blue)" id="d-stk">—</div></div>
-    <div class="div-card"><div class="div-card-l">ETFs</div><div class="div-card-v" style="color:var(--green)" id="d-etf">—</div></div>
-    <div class="div-card"><div class="div-card-l">Monthly Investment</div><div class="div-card-v" style="color:var(--yellow)" id="d-monthly">—</div></div>
-    <div class="div-card"><div class="div-card-l">Top Sector</div><div class="div-card-v" style="color:var(--purple);font-size:16px" id="d-top-sec">—</div></div>
+  <!-- Tabs -->
+  <div class="div-tabs">
+    <button class="div-tab-btn active" onclick="setDivTab('overview',this)">Overview</button>
+    <button class="div-tab-btn" onclick="setDivTab('holdings',this)">Holdings</button>
   </div>
 
-  <!-- Split + Country -->
-  <div class="div-grid">
-    <div class="div-panel">
-      <div class="div-ph">Monthly Investment Split</div>
-      <div class="div-pb" id="div-split">—</div>
-    </div>
-    <div class="div-panel">
-      <div class="div-ph">Market / Country Exposure</div>
-      <div class="div-pb" id="div-country">—</div>
-    </div>
-  </div>
+  <!-- OVERVIEW TAB -->
+  <div class="div-tab-panel active" id="dtab-overview">
 
-  <!-- Stocks Sector Breakdown -->
-  <div class="div-panel" style="margin-bottom:14px">
-    <div class="div-ph">Stocks — Sector Breakdown (SIP only)</div>
-    <div class="tbl-wrap">
-      <table class="bk-table"><thead><tr>
-        <th>Sector</th><th>Count</th>
-        <th class="bk-right">Monthly Investment (CAD)</th>
-        <th class="bk-right">% of Portfolio</th>
-      </tr></thead>
-      <tbody id="bk-stk"></tbody></table>
+    <!-- KPI Grid -->
+    <div class="div-kpi-grid">
+      <div class="div-kpi-card">
+        <div class="div-kpi-label">Total Funds</div>
+        <div class="div-kpi-value" id="d-kpi-total">—</div>
+        <div class="div-kpi-sub">active positions</div>
+      </div>
+      <div class="div-kpi-card">
+        <div class="div-kpi-label">Stocks</div>
+        <div class="div-kpi-value blue" id="d-kpi-stk">—</div>
+        <div class="div-kpi-sub" id="d-kpi-stk-amt">—</div>
+      </div>
+      <div class="div-kpi-card">
+        <div class="div-kpi-label">ETFs &amp; Funds</div>
+        <div class="div-kpi-value yellow" id="d-kpi-etf">—</div>
+        <div class="div-kpi-sub" id="d-kpi-etf-amt">—</div>
+      </div>
+      <div class="div-kpi-card">
+        <div class="div-kpi-label">Monthly Investment</div>
+        <div class="div-kpi-value green" id="d-kpi-monthly">—</div>
+        <div class="div-kpi-sub">CAD · per month</div>
+      </div>
+      <div class="div-kpi-card">
+        <div class="div-kpi-label">Top Sector</div>
+        <div class="div-kpi-value" style="font-size:1.1rem;color:var(--purple)" id="d-kpi-top-sec">—</div>
+        <div class="div-kpi-sub" id="d-kpi-top-sec-amt">—</div>
+      </div>
+      <div class="div-kpi-card">
+        <div class="div-kpi-label">Sectors Covered</div>
+        <div class="div-kpi-value" id="d-kpi-sectors">—</div>
+        <div class="div-kpi-sub">unique sectors</div>
+      </div>
+      <div class="div-kpi-card">
+        <div class="div-kpi-label">Industries Covered</div>
+        <div class="div-kpi-value" id="d-kpi-industries">—</div>
+        <div class="div-kpi-sub">unique industries</div>
+      </div>
+      <div class="div-kpi-card">
+        <div class="div-kpi-label">Largest Position</div>
+        <div class="div-kpi-value" style="font-size:1rem;color:var(--text)" id="d-kpi-largest">—</div>
+        <div class="div-kpi-sub" id="d-kpi-largest-amt">—</div>
+      </div>
     </div>
-  </div>
 
-  <!-- ETFs Sector Breakdown -->
-  <div class="div-panel">
-    <div class="div-ph">ETFs — Sector Breakdown (SIP only)</div>
-    <div class="tbl-wrap">
-      <table class="bk-table"><thead><tr>
-        <th>Sector</th><th>Count</th>
-        <th class="bk-right">Monthly Investment (CAD)</th>
-        <th class="bk-right">% of Portfolio</th>
-      </tr></thead>
-      <tbody id="bk-etf"></tbody></table>
+    <!-- Split Card + Donut Chart -->
+    <div class="div-dash-row">
+      <div class="div-split-card">
+        <h3>Monthly Investment Split</h3>
+        <div class="div-split-entry">
+          <div class="div-split-type">Stocks</div>
+          <div class="div-split-amount blue" id="d-split-stk-amt">—</div>
+          <div class="div-split-flex">
+            <span class="div-split-pct blue" id="d-split-stk-pct">—</span>
+            <span class="div-split-sublabel">of portfolio</span>
+          </div>
+        </div>
+        <div class="div-split-entry">
+          <div class="div-split-type">ETFs &amp; Funds</div>
+          <div class="div-split-amount yellow" id="d-split-etf-amt">—</div>
+          <div class="div-split-flex">
+            <span class="div-split-pct yellow" id="d-split-etf-pct">—</span>
+            <span class="div-split-sublabel">of portfolio</span>
+          </div>
+        </div>
+        <div class="div-split-total-row">
+          <span class="div-split-total-label">Total Monthly</span>
+          <span class="div-split-total-val" id="d-split-total">—</span>
+        </div>
+      </div>
+      <div class="div-donut-card">
+        <h3>Sector Allocation — Full Portfolio</h3>
+        <div class="div-donut-wrap"><canvas id="d-donut"></canvas></div>
+      </div>
     </div>
-  </div>
-</div>
+
+    <!-- Sector Breakdown Tables -->
+    <div class="div-breakdown-grid">
+      <div class="div-bk-card">
+        <div class="div-bk-header">Stocks — Sector Breakdown</div>
+        <table class="div-bt">
+          <thead><tr><th>Sector</th><th>Count</th><th>Monthly (CAD)</th><th>% of Portfolio</th></tr></thead>
+          <tbody id="d-stk-body"></tbody>
+          <tfoot id="d-stk-foot"></tfoot>
+        </table>
+      </div>
+      <div class="div-bk-card">
+        <div class="div-bk-header">ETFs &amp; Mutual Funds — Sector Breakdown</div>
+        <table class="div-bt">
+          <thead><tr><th>Sector</th><th>Count</th><th>Monthly (CAD)</th><th>% of Portfolio</th></tr></thead>
+          <tbody id="d-etf-body"></tbody>
+          <tfoot id="d-etf-foot"></tfoot>
+        </table>
+      </div>
+    </div>
+
+    <!-- Charts Row -->
+    <div class="div-charts-row">
+      <div class="div-chart-card">
+        <h3>Top Holdings by Monthly Amount</h3>
+        <div class="div-chart-wrap"><canvas id="d-bar-holdings"></canvas></div>
+      </div>
+      <div class="div-chart-card">
+        <h3>Sector $ Breakdown</h3>
+        <div class="div-chart-wrap"><canvas id="d-bar-sector"></canvas></div>
+      </div>
+    </div>
+
+  </div><!-- /overview tab -->
+
+  <!-- HOLDINGS TAB -->
+  <div class="div-tab-panel" id="dtab-holdings">
+    <div class="div-holdings-section">
+      <div class="div-holdings-header">
+        <div class="div-holdings-title">Holdings</div>
+        <div class="div-holdings-controls">
+          <input type="text" class="div-search-input" id="d-search" placeholder="Search fund…" oninput="renderHoldingsTable()">
+          <select class="div-filter-select" id="d-sec-filter" onchange="renderHoldingsTable()">
+            <option value="">All Sectors</option>
+          </select>
+          <select class="div-filter-select" id="d-type-filter" onchange="renderHoldingsTable()">
+            <option value="">All Types</option>
+            <option value="Stock">Stocks</option>
+            <option value="ETF">ETFs</option>
+          </select>
+        </div>
+      </div>
+      <div class="div-tbl-wrap">
+        <table class="div-ht">
+          <thead><tr>
+            <th>Fund</th>
+            <th>Type</th>
+            <th>Sector</th>
+            <th>Industry</th>
+            <th style="text-align:right">Monthly (CAD$)</th>
+            <th>Allocation</th>
+          </tr></thead>
+          <tbody id="d-holdings-body"></tbody>
+          <tfoot id="d-holdings-foot"></tfoot>
+        </table>
+      </div>
+    </div>
+  </div><!-- /holdings tab -->
+
+</div><!-- /div-wrap -->
 </div><!-- /pg-div -->
 
 <script>
@@ -550,8 +727,9 @@ function parseFunds(g) {
   // A=0,B=1,C=2,D=3,E=4,F=5,G=6,H=7,...,M=12,N=13,O=14,P=15,Q=16,R=17,S=18,T=19,U=20,V=21,W=22,X=23,Y=24,Z=25,AA=26,AB=27,AC=28,AD=29,AE=30,AF=31,AG=32,AH=33,AI=34,AJ=35,AK=36
 
   ALL = rows.map((row, ri) => {
-    if (ri === 0) return null; // skip header if present
+    // Skip if col 0 looks like the literal header text (not a country)
     const country = gs(row, 0);
+    if (country === 'Country') return null; // actual header row — skip
     if (!['USA','Canada'].includes(country)) return null;
 
     const investing = gs(row, 12); // col M
@@ -999,103 +1177,278 @@ function showDiv() {
   renderDiversification();
 }
 function showMain() {
+  destroyDivCharts();
   document.getElementById('pg-div').classList.remove('show');
   document.getElementById('pg-main').classList.remove('hide');
   document.getElementById('btn-div-nav').classList.remove('active');
 }
 
 // ═══════════════════════════════════════════════
-//  DIVERSIFICATION PAGE
+//  DIVERSIFICATION — SECTOR COLOURS
 // ═══════════════════════════════════════════════
-function renderDiversification() {
-  // Use SIP items only (M=Yes) from USA/Canada
-  const sip = ALL.filter(d => !d.isWatch);
-  const etfs = sip.filter(d => d.type.toLowerCase()==='etf');
-  const stks = sip.filter(d => d.type.toLowerCase()==='stock');
-  const totalSip = sip.reduce((s,d)=>s+d.sip, 0);
-  const sipEtfAmt = etfs.reduce((s,d)=>s+d.sip,0);
-  const sipStkAmt = stks.reduce((s,d)=>s+d.sip,0);
+const SC = {
+  'Energy':'#da7101','Consumer Staples':'#437a22','Utilities':'#4f98a3',
+  'Financials':'#01696f','Alternative Assets':'#7a39bb','Technology':'#3d9fff',
+  'Multi-Sector':'#888683','Health Care':'#a12c7b','Real Estate':'#964219',
+  'Commodities':'#d19900','Materials':'#6daa45','Industrials':'#c05a00',
+  'Communication Services':'#5591c7','Other':'#555',
+};
+function scColor(sec){ return SC[sec] || '#7a7a8a'; }
 
-  // Top sector
-  const secTotals = {};
-  sip.forEach(d => { secTotals[d.sector||'Other'] = (secTotals[d.sector||'Other']||0)+d.sip; });
-  const topSec = Object.entries(secTotals).sort((a,b)=>b[1]-a[1])[0];
-
-  setText('d-total',   ALL.length);
-  setText('d-stk',     ALL.filter(d=>d.type.toLowerCase()==='stock').length);
-  setText('d-etf',     ALL.filter(d=>d.type.toLowerCase()==='etf').length);
-  setText('d-monthly', '$' + totalSip.toLocaleString('en-CA',{minimumFractionDigits:2}));
-  setText('d-top-sec', topSec ? topSec[0] : '—');
-
-  // Monthly Split
-  document.getElementById('div-split').innerHTML = `
-    <div class="split-row">
-      <span class="split-l">Stocks</span>
-      <span class="split-v" style="color:var(--blue)">$${sipStkAmt.toLocaleString('en-CA',{minimumFractionDigits:2})}</span>
-      <div class="split-r">
-        <div class="split-pct" style="color:var(--blue)">${totalSip?(sipStkAmt/totalSip*100).toFixed(1):0}%</div>
-        <div class="split-sub">of portfolio</div>
-      </div>
-    </div>
-    <div class="split-row">
-      <span class="split-l">ETFs</span>
-      <span class="split-v" style="color:var(--green)">$${sipEtfAmt.toLocaleString('en-CA',{minimumFractionDigits:2})}</span>
-      <div class="split-r">
-        <div class="split-pct" style="color:var(--green)">${totalSip?(sipEtfAmt/totalSip*100).toFixed(1):0}%</div>
-        <div class="split-sub">of portfolio</div>
-      </div>
-    </div>
-    <div class="split-row">
-      <span class="split-l" style="font-weight:600">Total Monthly</span>
-      <span class="split-v" style="color:var(--yellow)">$${totalSip.toLocaleString('en-CA',{minimumFractionDigits:2})}</span>
-      <div></div>
-    </div>
-  `;
-
-  // Country exposure
-  const countries = {};
-  ALL.forEach(d => { const c=d.country||'Other'; countries[c]=(countries[c]||0)+1; });
-  const totItems = ALL.length;
-  const cColors = {USA:'var(--blue)',Canada:'var(--red)',India:'var(--yellow)'};
-  const cFlags  = {USA:'🇺🇸 USA',Canada:'🇨🇦 Canada',India:'🇮🇳 India'};
-  document.getElementById('div-country').innerHTML = Object.entries(countries).sort((a,b)=>b[1]-a[1]).map(([c,cnt])=>`
-    <div class="split-row">
-      <span class="split-l">${cFlags[c]||c}</span>
-      <span class="split-v" style="color:${cColors[c]||'var(--text2)'};">${cnt}</span>
-      <div class="split-r">
-        <div class="split-pct" style="color:${cColors[c]||'var(--text2)'}">${(cnt/totItems*100).toFixed(1)}%</div>
-        <div class="split-sub">of holdings</div>
-      </div>
-    </div>
-  `).join('');
-
-  // Sector breakdowns
-  renderSectorBk('bk-stk', sip, 'stock');
-  renderSectorBk('bk-etf', sip, 'etf');
+// Chart instances
+let divDonut=null, divBarH=null, divBarS=null;
+function destroyDivCharts(){
+  if(divDonut){divDonut.destroy();divDonut=null;}
+  if(divBarH){divBarH.destroy();divBarH=null;}
+  if(divBarS){divBarS.destroy();divBarS=null;}
 }
 
-function renderSectorBk(tbodyId, items, typeFilter) {
-  const filtered = items.filter(d => d.type.toLowerCase()===typeFilter && d.sip>0);
-  const total = filtered.reduce((s,d)=>s+d.sip,0);
-  const secs = {};
-  filtered.forEach(d => {
-    const s=d.sector||'Other';
-    if (!secs[s]) secs[s]={count:0,sip:0};
-    secs[s].count++;
-    secs[s].sip+=d.sip;
+// Div tab switcher
+let activeDivTab='overview';
+function setDivTab(tab, btnEl){
+  activeDivTab=tab;
+  document.querySelectorAll('.div-tab-btn').forEach(b=>b.classList.remove('active'));
+  document.querySelectorAll('.div-tab-panel').forEach(p=>p.classList.remove('active'));
+  if(btnEl) btnEl.classList.add('active');
+  const panel=document.getElementById('dtab-'+tab);
+  if(panel) panel.classList.add('active');
+  if(tab==='holdings') renderHoldingsTable();
+}
+
+// ═══════════════════════════════════════════════
+//  DIVERSIFICATION PAGE
+// ═══════════════════════════════════════════════
+function renderDiversification(){
+  const sip  = ALL.filter(d=>!d.isWatch && d.sip>0);  // Col M = "Yes"
+  const stks = sip.filter(d=>d.type.toLowerCase()==='stock');
+  const etfs = sip.filter(d=>d.type.toLowerCase()!=='stock');
+  const total = sip.reduce((s,d)=>s+d.sip,0);
+  const stkAmt = stks.reduce((s,d)=>s+d.sip,0);
+  const etfAmt = etfs.reduce((s,d)=>s+d.sip,0);
+
+  // Sector & industry sets
+  const secMap = {};
+  sip.forEach(d=>{
+    const sec = d.sector||'Other';
+    if(!secMap[sec]) secMap[sec]={count:0,total:0};
+    secMap[sec].count++;
+    secMap[sec].total += d.sip;
   });
-  const rows = Object.entries(secs).sort((a,b)=>b[1].sip-a[1].sip);
-  document.getElementById(tbodyId).innerHTML = [
-    ...rows.map(([sec,data])=>`<tr>
-      <td>${sec}</td>
-      <td class="td-dim">${data.count}</td>
-      <td class="bk-green">$${data.sip.toLocaleString('en-CA',{minimumFractionDigits:2})}</td>
-      <td class="bk-green">${total?(data.sip/total*100).toFixed(1):0}%</td>
-    </tr>`),
-    `<tr class="total"><td>TOTAL</td><td class="td-dim">${filtered.length}</td>
-     <td class="bk-green">$${total.toLocaleString('en-CA',{minimumFractionDigits:2})}</td>
-     <td class="bk-green">100%</td></tr>`
-  ].join('');
+  const uniqueSectors    = Object.keys(secMap).length;
+  const uniqueIndustries = new Set(sip.map(d=>d.industry||'Other')).size;
+  const topSecEntry      = Object.entries(secMap).sort((a,b)=>b[1].total-a[1].total)[0];
+  const largest          = [...sip].sort((a,b)=>b.sip-a.sip)[0];
+
+  const fmt = n => '$'+n.toLocaleString('en-CA',{minimumFractionDigits:2,maximumFractionDigits:2});
+  const pct  = (a,b) => b>0 ? (a/b*100).toFixed(1)+'%' : '0%';
+
+  // KPI cards
+  setText('d-kpi-total',        sip.length);
+  setText('d-kpi-stk',          stks.filter(d=>d.sip>0).length);
+  setText('d-kpi-stk-amt',      fmt(stkAmt)+' / month');
+  setText('d-kpi-etf',          etfs.filter(d=>d.sip>0).length);
+  setText('d-kpi-etf-amt',      fmt(etfAmt)+' / month');
+  setText('d-kpi-monthly',      fmt(total));
+  setText('d-kpi-top-sec',      topSecEntry?topSecEntry[0]:'—');
+  setText('d-kpi-top-sec-amt',  topSecEntry?fmt(topSecEntry[1].total)+' / month':'');
+  setText('d-kpi-sectors',      uniqueSectors);
+  setText('d-kpi-industries',   uniqueIndustries);
+  setText('d-kpi-largest',      largest?largest.shortName:'—');
+  setText('d-kpi-largest-amt',  largest?fmt(largest.sip)+' / month':'');
+
+  // Split card
+  setText('d-split-stk-amt',  fmt(stkAmt));
+  setText('d-split-etf-amt',  fmt(etfAmt));
+  setText('d-split-total',    fmt(total));
+  setText('d-split-stk-pct',  pct(stkAmt,total));
+  setText('d-split-etf-pct',  pct(etfAmt,total));
+
+  // Sector breakdown tables
+  renderDivBkTable('d-stk-body','d-stk-foot', stks, total);
+  renderDivBkTable('d-etf-body','d-etf-foot', etfs, total);
+
+  // Populate sector filter in holdings tab
+  const sf = document.getElementById('d-sec-filter');
+  const allSecs = [...new Set(ALL.map(d=>d.sector||'Other'))].sort();
+  sf.innerHTML = '<option value="">All Sectors</option>' +
+    allSecs.map(s=>`<option value="${s}">${s}</option>`).join('');
+
+  // Charts (destroy & recreate)
+  destroyDivCharts();
+  renderDivCharts(sip, secMap, total);
+
+  // Reset to overview tab when opening
+  setDivTab('overview', document.querySelector('.div-tab-btn'));
+}
+
+function renderDivBkTable(bodyId, footId, items, grandTotal){
+  const secData = {};
+  items.forEach(d=>{
+    const sec=d.sector||'Other';
+    if(!secData[sec]){secData[sec]={count:0,total:0};}
+    secData[sec].count++;
+    secData[sec].total+=d.sip;
+  });
+  const rows=Object.entries(secData).sort((a,b)=>b[1].total-a[1].total);
+  const typeTotal=items.reduce((s,d)=>s+d.sip,0);
+  const fmt=n=>'$'+n.toLocaleString('en-CA',{minimumFractionDigits:2,maximumFractionDigits:2});
+
+  document.getElementById(bodyId).innerHTML = rows.length ? rows.map(([sec,v])=>{
+    const color=scColor(sec);
+    return `<tr>
+      <td><span class="div-sdot" style="background:${color}"></span>${sec}</td>
+      <td class="div-tr">${v.count}</td>
+      <td class="div-tr div-tg">${fmt(v.total)}</td>
+      <td class="div-tr div-tgo">${grandTotal>0?(v.total/grandTotal*100).toFixed(1):0}%</td>
+    </tr>`;
+  }).join('') : `<tr><td colspan="4" style="text-align:center;color:var(--text2);padding:20px">No data</td></tr>`;
+
+  const tc=rows.reduce((s,[,v])=>s+v.count,0);
+  document.getElementById(footId).innerHTML = rows.length ? `<tr>
+    <td><strong>TOTAL</strong></td>
+    <td class="div-tr"><strong>${tc}</strong></td>
+    <td class="div-tr" style="color:var(--green)"><strong>${fmt(typeTotal)}</strong></td>
+    <td class="div-tr" style="color:var(--yellow)"><strong>${grandTotal>0?(typeTotal/grandTotal*100).toFixed(1):0}%</strong></td>
+  </tr>` : '';
+}
+
+function renderDivCharts(sip, secMap, total){
+  if(typeof Chart==='undefined') return;
+  Chart.register(ChartDataLabels);
+
+  const grid='rgba(255,255,255,0.06)', tick='#8aaccc', text='#e2ecf7', surface='#111d2c';
+  const secEntries=Object.entries(secMap).filter(([,v])=>v.total>0).sort((a,b)=>b[1].total-a[1].total);
+  const fmt=n=>'$'+n.toLocaleString('en-CA',{minimumFractionDigits:0,maximumFractionDigits:0});
+
+  // Donut chart — Sector Allocation
+  divDonut = new Chart(document.getElementById('d-donut'),{
+    type:'doughnut',
+    data:{
+      labels:secEntries.map(x=>x[0]),
+      datasets:[{
+        data:secEntries.map(x=>x[1].total),
+        backgroundColor:secEntries.map(x=>scColor(x[0])),
+        borderWidth:2, borderColor:surface
+      }]
+    },
+    options:{
+      responsive:true, maintainAspectRatio:false, cutout:'60%',
+      plugins:{
+        legend:{position:'right',labels:{color:text,font:{family:'Inter,sans-serif',size:11},boxWidth:12,padding:8}},
+        datalabels:{
+          display:ctx=>{
+            const t=ctx.dataset.data.reduce((a,b)=>a+b,0);
+            return(ctx.dataset.data[ctx.dataIndex]/t*100)>4;
+          },
+          formatter:(v,ctx)=>{
+            const t=ctx.dataset.data.reduce((a,b)=>a+b,0);
+            return(v/t*100).toFixed(1)+'%';
+          },
+          color:'#fff', font:{size:11,weight:'600'}
+        },
+        tooltip:{callbacks:{label:ctx=>{
+          const t=ctx.dataset.data.reduce((a,b)=>a+b,0);
+          return` ${ctx.label}: ${fmt(ctx.raw)} (${(ctx.raw/t*100).toFixed(1)}%)`;
+        }}}
+      }
+    }
+  });
+
+  // Horizontal bar — Top Holdings by monthly amount
+  const sorted=[...sip].sort((a,b)=>b.sip-a.sip).slice(0,12);
+  divBarH = new Chart(document.getElementById('d-bar-holdings'),{
+    type:'bar',
+    data:{
+      labels:sorted.map(h=>h.shortName||h.name),
+      datasets:[{
+        data:sorted.map(h=>h.sip),
+        backgroundColor:sorted.map(h=>scColor(h.sector)),
+        borderRadius:4, borderSkipped:false
+      }]
+    },
+    options:{
+      indexAxis:'y', responsive:true, maintainAspectRatio:false,
+      plugins:{
+        legend:{display:false},
+        datalabels:{display:false},
+        tooltip:{callbacks:{label:ctx=>` $${ctx.raw}`}}
+      },
+      scales:{
+        x:{grid:{color:grid},ticks:{color:tick,font:{size:11},callback:v=>'$'+(v>=1000?(v/1000).toFixed(0)+'k':v)}},
+        y:{grid:{display:false},ticks:{color:text,font:{size:11,weight:'600'}}}
+      }
+    }
+  });
+
+  // Vertical bar — Sector $ Breakdown
+  divBarS = new Chart(document.getElementById('d-bar-sector'),{
+    type:'bar',
+    data:{
+      labels:secEntries.map(x=>x[0]),
+      datasets:[{
+        data:secEntries.map(x=>x[1].total),
+        backgroundColor:secEntries.map(x=>scColor(x[0])),
+        borderRadius:5, borderSkipped:false
+      }]
+    },
+    options:{
+      responsive:true, maintainAspectRatio:false,
+      plugins:{
+        legend:{display:false},
+        datalabels:{display:false},
+        tooltip:{callbacks:{label:ctx=>` ${fmt(ctx.raw)}`}}
+      },
+      scales:{
+        x:{grid:{display:false},ticks:{color:text,font:{size:10,weight:'500'},maxRotation:35}},
+        y:{grid:{color:grid},ticks:{color:tick,font:{size:11},callback:v=>'$'+(v>=1000?(v/1000).toFixed(0)+'k':v)}}
+      }
+    }
+  });
+}
+
+// ═══════════════════════════════════════════════
+//  HOLDINGS TABLE (Diversification tab)
+// ═══════════════════════════════════════════════
+function renderHoldingsTable(){
+  const q      = (document.getElementById('d-search')||{}).value||'';
+  const secF   = (document.getElementById('d-sec-filter')||{}).value||'';
+  const typeF  = (document.getElementById('d-type-filter')||{}).value||'';
+  const sip    = ALL.filter(d=>!d.isWatch && d.sip>0);
+  const total  = sip.reduce((s,d)=>s+d.sip,0);
+  const fmt    = n=>'$'+n.toLocaleString('en-CA',{minimumFractionDigits:2,maximumFractionDigits:2});
+
+  let items=[...ALL];
+  if(q) items=items.filter(d=>d.name.toLowerCase().includes(q.toLowerCase())||(d.ticker_v||'').toLowerCase().includes(q.toLowerCase()));
+  if(secF) items=items.filter(d=>(d.sector||'Other')===secF);
+  if(typeF) items=items.filter(d=>d.type.toLowerCase()===typeF.toLowerCase());
+
+  const tbody=document.getElementById('d-holdings-body');
+  const tfoot=document.getElementById('d-holdings-foot');
+  if(!tbody) return;
+
+  const filtTotal=items.reduce((s,d)=>s+d.sip,0);
+
+  tbody.innerHTML=items.map(d=>{
+    const color=scColor(d.sector||'Other');
+    const pct=total>0?(d.sip/total*100):0;
+    return `<tr>
+      <td><div class="div-fn">${d.shortName}</div><div class="div-tk">${d.ticker_v||d.ticker} · ${d.isWatch?'Watchlist':'SIP'}</div></td>
+      <td><span class="div-hbadge" style="background:${color}22;color:${color}">${d.type||'—'}</span></td>
+      <td><span class="div-hbadge" style="background:${color}18;color:${color}">${d.sector||'Other'}</span></td>
+      <td style="color:var(--text2);font-size:12px">${d.industry||'—'}</td>
+      <td style="text-align:right;font-weight:600;color:var(--text)">${d.sip>0?fmt(d.sip):'—'}</td>
+      <td><div class="div-pb-wrap">
+        <div class="div-pb-bg"><div class="div-pb" style="width:${Math.min(pct,100)}%;background:${color}"></div></div>
+        <span class="div-pt">${pct>0?pct.toFixed(1)+'%':'—'}</span>
+      </div></td>
+    </tr>`;
+  }).join('') || `<tr><td colspan="6" style="text-align:center;color:var(--text2);padding:24px">No holdings match the filter.</td></tr>`;
+
+  tfoot.innerHTML=`<tr>
+    <td colspan="4">Total / Month (filtered)</td>
+    <td style="text-align:right;font-variant-numeric:tabular-nums">${fmt(filtTotal)}</td>
+    <td></td>
+  </tr>`;
 }
 
 // ═══════════════════════════════════════════════
