@@ -1817,6 +1817,7 @@ if(localStorage.getItem(_avDateKey) !== _today){
   localStorage.setItem(_avIdxKey, '0');
 }
 let avKeyIdx = parseInt(localStorage.getItem(_avIdxKey)||'0');
+let avKnownExhausted = false; // set true once all AV keys confirmed exhausted — avOverview short-circuits instantly
 
 function getAVKey(){ return AV_KEYS[avKeyIdx % AV_KEYS.length]; }
 function rotateAVKey(){
@@ -1832,7 +1833,7 @@ let currentMkt = 'US';
 
 // ── Alpha Vantage helpers ───────────────────────────────────────────────────
 async function avWeekly(sym,_attempt=0){
-  if(_attempt>=AV_KEYS.length) throw new Error('All '+AV_KEYS.length+' Alpha Vantage keys exhausted for today. Please try again tomorrow.');
+  if(_attempt>=AV_KEYS.length){ avKnownExhausted=true; throw new Error('All '+AV_KEYS.length+' Alpha Vantage keys exhausted for today. Please try again tomorrow.'); }
   const url=`${AVBASE}?function=TIME_SERIES_WEEKLY&symbol=${sym}&apikey=${getAVKey()}`;
   const r=await fetch(url); if(!r.ok) throw new Error('HTTP '+r.status);
   const j=await r.json();
@@ -1846,7 +1847,7 @@ async function avWeekly(sym,_attempt=0){
 }
 
 async function avDaily(sym,_attempt=0){
-  if(_attempt>=AV_KEYS.length) throw new Error('All '+AV_KEYS.length+' Alpha Vantage keys exhausted for today. Please try again tomorrow.');
+  if(_attempt>=AV_KEYS.length){ avKnownExhausted=true; throw new Error('All '+AV_KEYS.length+' Alpha Vantage keys exhausted for today. Please try again tomorrow.'); }
   const url=`${AVBASE}?function=TIME_SERIES_DAILY&symbol=${sym}&outputsize=compact&apikey=${getAVKey()}`;
   const r=await fetch(url); if(!r.ok) throw new Error('HTTP '+r.status);
   const j=await r.json();
@@ -1860,7 +1861,8 @@ async function avDaily(sym,_attempt=0){
 
 async function avOverview(sym,_attempt=0){
   try{
-    if(_attempt>=AV_KEYS.length) return null;
+    if(avKnownExhausted) return null; // short-circuit instantly — no network calls
+    if(_attempt>=AV_KEYS.length){ avKnownExhausted=true; return null; }
     const bare = sym.replace('.TRT','');
     const url=`${AVBASE}?function=OVERVIEW&symbol=${bare}&apikey=${getAVKey()}`;
     const r=await fetch(url); if(!r.ok) return null;
@@ -1873,7 +1875,8 @@ async function avOverview(sym,_attempt=0){
 
 async function avQuote(sym,_attempt=0){
   try{
-    if(_attempt>=AV_KEYS.length) return null;
+    if(avKnownExhausted) return null;
+    if(_attempt>=AV_KEYS.length){ avKnownExhausted=true; return null; }
     const url=`${AVBASE}?function=GLOBAL_QUOTE&symbol=${sym}&apikey=${getAVKey()}`;
     const r=await fetch(url); if(!r.ok) return null;
     const j=await r.json();
@@ -2485,7 +2488,7 @@ function saveApiKeyWl(type){
   saved.push(key);
   localStorage.setItem(storageKey, JSON.stringify(saved));
   if(type==='td'){ tdKeyIdx = arr.length-1; localStorage.setItem('tdKeyIdx', tdKeyIdx); }
-  else { avKeyIdx = arr.length-1; localStorage.setItem(_avIdxKey, avKeyIdx); }
+  else { avKeyIdx = arr.length-1; localStorage.setItem(_avIdxKey, avKeyIdx); avKnownExhausted = false; }
   document.getElementById(inputId).value = '';
   document.getElementById('wl-apikey-box').style.display = 'none';
   // Reset ⚠ Limit badges and reload ratings
@@ -2513,7 +2516,7 @@ function saveApiKey(type){
   localStorage.setItem(storageKey, JSON.stringify(saved));
   // Reset index so the new key gets tried next
   if(type==='td'){ tdKeyIdx = arr.length-1; localStorage.setItem('tdKeyIdx', tdKeyIdx); }
-  else { avKeyIdx = arr.length-1; localStorage.setItem(_avIdxKey, avKeyIdx); }
+  else { avKeyIdx = arr.length-1; localStorage.setItem(_avIdxKey, avKeyIdx); avKnownExhausted = false; }
   document.getElementById(inputId).value = '';
   updateApiKeyCounts();
   // Auto-retry the last ticker
