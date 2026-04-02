@@ -900,7 +900,7 @@ const ALL_COLS = [
   { id:'type',   label:'ETF / Stock',       sortKey:'type',   defaultOn:false },
   { id:'cmp',    label:'CMP',               sortKey:'cmp',    defaultOn:false },
   { id:'ma200',  label:'Below 200 Day MA',  sortKey:'ma200',  defaultOn:false },
-  { id:'tech',   label:'Technical Indicator',sortKey:'tech',  defaultOn:false },
+  { id:'tech',   label:'Technical Indicator',sortKey:'tech',  defaultOn:true  },
   { id:'inv',    label:'Total Invested',    sortKey:'inv',    defaultOn:false },
   { id:'curval', label:'Current Value',     sortKey:'curval', defaultOn:false },
   { id:'e5',     label:'5 EMA',             sortKey:'e5',     defaultOn:false },
@@ -1303,13 +1303,13 @@ function renderCell(d, id) {
     case 'cmp':  return `<td class="td-dim">${d.cmp||'—'}</td>`;
     case 'ma200':{
       const v=d.ma200||'—';
-      const cls=v.toLowerCase()==='yes'?'td-up':v.toLowerCase()==='no'?'td-dn':'td-dim';
+      const cls=v.toLowerCase()==='no'?'td-up':v.toLowerCase()==='yes'?'td-dn':'td-dim';
       return `<td><span class="${cls}">${v}</span></td>`;
     }
     case 'tech': {
       const tv=d.tech||'—';
       const tcls=tv.toLowerCase().includes('very near ath')?'td-up':'td-dn';
-      return `<td><span class="${tcls}" style="max-width:160px;overflow:hidden;text-overflow:ellipsis;display:inline-block" title="${tv}">${tv.substring(0,30)}${tv.length>30?'…':''}</span></td>`;
+      return `<td><span class="${tcls}">${tv}</span></td>`;
     }
     case 'inv':  return `<td>${d.inv!==null?`<span class="td-dim">$${(d.inv).toLocaleString('en-CA',{minimumFractionDigits:2})}</span>`:'<span class="td-muted">—</span>'}</td>`;
     case 'curval':return `<td>${d.curval!==null?`<span class="td-dim">$${(d.curval).toLocaleString('en-CA',{minimumFractionDigits:2})}</span>`:'<span class="td-muted">—</span>'}</td>`;
