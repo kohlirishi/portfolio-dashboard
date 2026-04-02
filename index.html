@@ -751,6 +751,28 @@ table.div-ht tfoot td{padding:10px 14px;font-size:13px;font-weight:700;backgroun
         <svg style="position:absolute;left:11px;top:50%;transform:translateY(-50%);width:14px;height:14px;color:var(--text3);pointer-events:none" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
         <input id="wl-search" type="text" placeholder="Search stocks in watchlist…" oninput="filterWatchlist(this.value)" style="width:100%;padding:8px 12px 8px 34px;background:var(--surface);border:1px solid var(--border);border-radius:7px;color:var(--text);font-size:13px;font-family:inherit;outline:none">
       </div>
+      <!-- API Key Manager — shown inline when watchlist ratings hit limit -->
+      <div id="wl-apikey-box" style="display:none;margin-bottom:14px;background:var(--surface2);border:1px solid var(--border);border-radius:10px;overflow:hidden">
+        <!-- Header row always visible -->
+        <div style="display:flex;align-items:center;gap:8px;padding:11px 16px;cursor:pointer" onclick="toggleWlApiBox()">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--yellow)" stroke-width="2"><path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4"/></svg>
+          <span style="font-size:13px;font-weight:700;color:var(--text);flex:1">API Limit Reached — Add a Key to Load Ratings</span>
+          <span id="wl-apikey-chevron" style="font-size:13px;color:var(--text3);transition:transform .2s">▲</span>
+        </div>
+        <!-- Collapsible body -->
+        <div id="wl-apikey-body" style="padding:0 16px 14px">
+          <p style="font-size:12px;color:var(--text2);margin-bottom:12px;line-height:1.6">All stored keys hit their daily limit. Add a free key from <strong style="color:var(--blue)">twelvedata.com</strong> (US) or <strong style="color:var(--blue)">alphavantage.co</strong> (Canada) — it gets saved and retried immediately.</p>
+          <div style="display:flex;gap:8px;margin-bottom:8px">
+            <input id="wl-td-input" type="text" placeholder="Twelve Data key (US stocks)…" style="flex:1;padding:7px 11px;background:var(--surface);border:1px solid var(--border);border-radius:7px;color:var(--text);font-size:13px;font-family:inherit;outline:none">
+            <button onclick="saveApiKeyWl('td')" style="padding:7px 14px;background:var(--blue);color:#fff;border:none;border-radius:7px;font-size:12px;font-weight:600;cursor:pointer;white-space:nowrap;font-family:inherit">Save & Retry</button>
+          </div>
+          <div style="display:flex;gap:8px">
+            <input id="wl-av-input" type="text" placeholder="Alpha Vantage key (Canadian stocks)…" style="flex:1;padding:7px 11px;background:var(--surface);border:1px solid var(--border);border-radius:7px;color:var(--text);font-size:13px;font-family:inherit;outline:none">
+            <button onclick="saveApiKeyWl('av')" style="padding:7px 14px;background:var(--blue);color:#fff;border:none;border-radius:7px;font-size:12px;font-weight:600;cursor:pointer;white-space:nowrap;font-family:inherit">Save & Retry</button>
+          </div>
+          <div id="wl-key-count" style="font-size:11px;color:var(--text3);margin-top:8px"></div>
+        </div>
+      </div>
       <!-- Rating filter pills -->
       <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px" id="wl-filter-row">
         <button class="wl-fpill active" data-rating="all"   onclick="setWlFilter('all',this)">All</button>
@@ -779,7 +801,7 @@ table.div-ht tfoot td{padding:10px 14px;font-size:13px;font-weight:700;backgroun
     <span id="sa-errtxt"></span>
   </div>
 
-  <!-- API Key Manager — shown when all keys are exhausted -->
+  <!-- API Key Manager placeholder — moved to watchlist section; kept here for full-analysis mode -->
   <div id="sa-apikey-box" style="display:none;margin-bottom:16px;background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:18px 20px">
     <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px">
       <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--yellow)" stroke-width="2"><path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4"/></svg>
@@ -1810,7 +1832,7 @@ let currentMkt = 'US';
 
 // ── Alpha Vantage helpers ───────────────────────────────────────────────────
 async function avWeekly(sym,_attempt=0){
-  if(_attempt>=AV_KEYS.length) throw new Error('All Alpha Vantage keys exhausted for today. Please try again tomorrow.');
+  if(_attempt>=AV_KEYS.length) throw new Error('All '+AV_KEYS.length+' Alpha Vantage keys exhausted for today. Please try again tomorrow.');
   const url=`${AVBASE}?function=TIME_SERIES_WEEKLY&symbol=${sym}&apikey=${getAVKey()}`;
   const r=await fetch(url); if(!r.ok) throw new Error('HTTP '+r.status);
   const j=await r.json();
@@ -1824,7 +1846,7 @@ async function avWeekly(sym,_attempt=0){
 }
 
 async function avDaily(sym,_attempt=0){
-  if(_attempt>=AV_KEYS.length) throw new Error('All Alpha Vantage keys exhausted for today. Please try again tomorrow.');
+  if(_attempt>=AV_KEYS.length) throw new Error('All '+AV_KEYS.length+' Alpha Vantage keys exhausted for today. Please try again tomorrow.');
   const url=`${AVBASE}?function=TIME_SERIES_DAILY&symbol=${sym}&outputsize=compact&apikey=${getAVKey()}`;
   const r=await fetch(url); if(!r.ok) throw new Error('HTTP '+r.status);
   const j=await r.json();
@@ -1898,7 +1920,7 @@ function fmtBig(n){
 
 // ── Twelve Data ──────────────────────────────────────────────────────────────
 async function tdSeries(sym,interval,outputsize,_attempt=0){
-  if(_attempt>=TD_KEYS.length) throw new Error('All Twelve Data keys exhausted for today. Please try again tomorrow.');
+  if(_attempt>=TD_KEYS.length) throw new Error('All '+TD_KEYS.length+' Twelve Data keys exhausted for today. Please try again tomorrow.');
   const url=`${TDBASE}/time_series?symbol=${sym}&interval=${interval}&outputsize=${outputsize}&apikey=${getTDKey()}&format=JSON&order=ASC`;
   const r=await fetch(url); if(!r.ok) throw new Error('HTTP '+r.status);
   const j=await r.json();
@@ -2382,7 +2404,7 @@ async function wlFetch(sym, mkt){
     const res = scoreStock(dailyRaw, weeklyRaw);
     score=res.sc; cnt=res.cnt; total=res.total; _res=res;
   } else {
-    const [dR, wR, q, ov] = await Promise.all([tdSeries(sym,'1day',500), tdSeries(sym,'1week',300), tdQuote(sym), avOverview(sym)]);
+    const [dR, wR, q, ov] = await Promise.all([tdSeries(sym,'1day',500), tdSeries(sym,'1week',300), tdQuote(sym), avOverview(sym).catch(()=>null)]);
     if(!dR||dR.length<50) throw new Error('Not enough data for '+sym);
     quote=q; overview=ov;
     const res = scoreStock(dR, wR);
@@ -2443,6 +2465,39 @@ function updateApiKeyCounts(){
   document.getElementById('sa-av-key-count').textContent = AV_KEYS.length + ' Alpha Vantage key' + (AV_KEYS.length!==1?'s':'') + ' in pool (' + (JSON.parse(localStorage.getItem('userAVKeys')||'[]').length) + ' added by you)';
 }
 
+function toggleWlApiBox(){
+  const body = document.getElementById('wl-apikey-body');
+  const chevron = document.getElementById('wl-apikey-chevron');
+  const collapsed = body.style.display === 'none';
+  body.style.display = collapsed ? '' : 'none';
+  chevron.style.transform = collapsed ? '' : 'rotate(180deg)';
+}
+
+function saveApiKeyWl(type){
+  const inputId = type==='td' ? 'wl-td-input' : 'wl-av-input';
+  const key = document.getElementById(inputId).value.trim();
+  if(!key){ alert('Please enter a key first.'); return; }
+  const storageKey = type==='td' ? 'userTDKeys' : 'userAVKeys';
+  const arr = type==='td' ? TD_KEYS : AV_KEYS;
+  if(arr.includes(key)){ alert('This key is already in the pool.'); return; }
+  arr.push(key);
+  const saved = JSON.parse(localStorage.getItem(storageKey)||'[]');
+  saved.push(key);
+  localStorage.setItem(storageKey, JSON.stringify(saved));
+  if(type==='td'){ tdKeyIdx = arr.length-1; localStorage.setItem('tdKeyIdx', tdKeyIdx); }
+  else { avKeyIdx = arr.length-1; localStorage.setItem(_avIdxKey, avKeyIdx); }
+  document.getElementById(inputId).value = '';
+  document.getElementById('wl-apikey-box').style.display = 'none';
+  // Reset ⚠ Limit badges and reload ratings
+  document.querySelectorAll('#wlBody tr[data-sym]').forEach(r=>{
+    const el = document.getElementById('wlr-'+r.getAttribute('data-sym'));
+    if(el && (el.textContent==='⚠ Limit' || el.textContent==='—')){
+      el.className='wl-rating p'; el.textContent='—';
+    }
+  });
+  loadAllRatings();
+}
+
 function saveApiKey(type){
   const inputId = type==='td' ? 'sa-td-input' : 'sa-av-input';
   const key = document.getElementById(inputId).value.trim();
@@ -2467,14 +2522,27 @@ function saveApiKey(type){
 
 function retryLastAnalysis(){
   document.getElementById('sa-apikey-box').style.display = 'none';
-  const sym = document.getElementById('ticker').value.trim().toUpperCase();
-  if(sym) run();
+  const watchlistVisible = document.getElementById('watchlistSection').style.display !== 'none';
+  if(watchlistVisible){
+    // Reset all "⚠ Limit" and "—" ratings so they get fetched again
+    document.querySelectorAll('#wlBody tr[data-sym]').forEach(r=>{
+      const el = document.getElementById('wlr-'+r.getAttribute('data-sym'));
+      if(el && (el.textContent==='⚠ Limit' || el.textContent==='—')){
+        el.className='wl-rating p'; el.textContent='—';
+      }
+    });
+    loadAllRatings();
+  } else {
+    const sym = document.getElementById('ticker').value.trim().toUpperCase();
+    if(sym) run();
+  }
 }
 
 function showAnalyserHome(){
   document.getElementById('watchlistSection').style.display = '';
   document.getElementById('btn-back-watchlist').style.display = 'none';
   document.getElementById('sa-apikey-box').style.display = 'none';
+  document.getElementById('wl-apikey-box').style.display = 'none';
   document.getElementById('ticker').value = '';
   saShow('empty');
   window.scrollTo(0,0);
@@ -2599,12 +2667,30 @@ function applyWlFilters(q) {
 }
 
 async function loadAllRatings(){
+  let tdExhausted = false;
+  let avExhausted = false;
+
   const rows = document.querySelectorAll('#wlBody tr[data-sym]');
   for(const row of rows){
     const sym = row.getAttribute('data-sym');
     const mkt = row.getAttribute('data-mkt');
     const ratingEl = document.getElementById('wlr-'+sym);
     if(!ratingEl || ratingEl.textContent !== '—') continue;
+
+    const isTSX = (mkt === 'TSX');
+
+    // Only pre-skip if the EXACT required provider for this stock is exhausted
+    if(isTSX && avExhausted){
+      ratingEl.className='wl-rating p';
+      ratingEl.textContent='⚠ Limit';
+      continue;
+    }
+    if(!isTSX && tdExhausted){
+      ratingEl.className='wl-rating p';
+      ratingEl.textContent='⚠ Limit';
+      continue;
+    }
+
     try{
       ratingEl.className='wl-rating p';
       ratingEl.textContent='…';
@@ -2619,19 +2705,30 @@ async function loadAllRatings(){
       applyWlFilters();
     } catch(e){
       const msg = e.message||'';
-      const isExhausted = msg.toLowerCase().includes('exhausted');
+      // Only count as exhausted if it matches this stock's own provider
+      const isAVEx = msg.toLowerCase().includes('alpha vantage') && msg.toLowerCase().includes('exhausted');
+      const isTDEx = msg.toLowerCase().includes('twelve data') && msg.toLowerCase().includes('exhausted');
+      // Mark as Limit only when the stock's required provider is exhausted
+      const isThisStockLimit = (isTSX && isAVEx) || (!isTSX && isTDEx);
+
       ratingEl.className='wl-rating p';
-      ratingEl.textContent = isExhausted ? '⚠ Limit' : 'N/A';
-      if(isExhausted){
-        // Mark remaining pending stocks so they retry after key is added
-        document.querySelectorAll('#wlBody tr[data-sym]').forEach(r=>{
-          const el = document.getElementById('wlr-'+r.getAttribute('data-sym'));
-          if(el && el.textContent==='…'){ el.className='wl-rating p'; el.textContent='—'; }
-        });
-        // Show the API key panel inline (watchlist stays visible)
-        document.getElementById('sa-apikey-box').style.display = 'block';
-        updateApiKeyCounts();
-        break; // stop loading more until user adds a key
+      ratingEl.textContent = isThisStockLimit ? '⚠ Limit' : 'N/A';
+
+      if(isAVEx) avExhausted = true;
+      if(isTDEx) tdExhausted = true;
+
+      if(isAVEx || isTDEx){
+        const wlBox = document.getElementById('wl-apikey-box');
+        wlBox.style.display = 'block';
+        wlBox.querySelector('.wl-apikey-minimized') && (wlBox.querySelector('.wl-apikey-minimized').style.display='none');
+        wlBox.querySelector('.wl-apikey-body') && (wlBox.querySelector('.wl-apikey-body').style.display='');
+        const cnt = document.getElementById('wl-key-count');
+        if(cnt){
+          const parts = [];
+          if(avExhausted) parts.push('All '+AV_KEYS.length+' Alpha Vantage keys exhausted (Canadian stocks)');
+          if(tdExhausted) parts.push('All '+TD_KEYS.length+' Twelve Data keys exhausted (US stocks)');
+          cnt.textContent = parts.join(' · ');
+        }
       }
     }
     await new Promise(r=>setTimeout(r,400));
