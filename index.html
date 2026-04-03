@@ -4064,61 +4064,7 @@ function showLongTerm() {
 // ═══════════════════════════════════════════════════════════════════════
 const RULE_VERSION = 'v3';
 
-// ─── CLOUD CONFIG — fill in + set CLOUD_ENABLED = true to activate sync ──────
-const CLOUD_CONFIG = {
-  apiKey:            "AIzaSyBh-2AtLn7X_aDLqUnsobiGvcwvoUC1WAU",
-  authDomain:        "trading-tracker-b1051.firebaseapp.com",
-  databaseURL:       "https://trading-tracker-b1051-default-rtdb.firebaseio.com",
-  projectId:         "trading-tracker-b1051",
-  storageBucket:     "trading-tracker-b1051.firebasestorage.app",
-  messagingSenderId: "184541924815",
-  appId:             "1:184541924815:web:545a53b0a88dcac54b96ba",
-  measurementId:     "G-ETH3ZD8MY9"
-};
-const CLOUD_ENABLED = true;
 
-// ─── CLOUD LAYER ──────────────────────────────────────────────────────────────
-let _db = null;
-function cloudInit() {
-  if (!CLOUD_ENABLED) { _setSyncBadge('local'); return; }
-  try {
-    if (!firebase.apps.length) firebase.initializeApp(CLOUD_CONFIG);
-    _db = firebase.database();
-    _setSyncBadge('synced');
-  } catch(e) { console.warn('Cloud init failed:', e); _setSyncBadge('error'); }
-}
-function cloudWrite(path, val) {
-  if (!CLOUD_ENABLED || !_db) return Promise.resolve();
-  return _db.ref(path).set(val)
-    .then(() => _setSyncBadge('synced'))
-    .catch(e => { console.warn('Cloud write failed:', e); _setSyncBadge('error'); });
-}
-function cloudRead(path, defaultVal) {
-  if (!CLOUD_ENABLED || !_db) return Promise.resolve(defaultVal);
-  return new Promise(resolve => {
-    const t = setTimeout(() => resolve(defaultVal), 5000);
-    _db.ref(path).once('value', snap => {
-      clearTimeout(t);
-      const v = snap.val();
-      _setSyncBadge('synced');
-      resolve(v !== null && v !== undefined ? v : defaultVal);
-    }, () => { clearTimeout(t); _setSyncBadge('error'); resolve(defaultVal); });
-  });
-}
-function cloudListen(path, cb) {
-  if (!CLOUD_ENABLED || !_db) return;
-  _db.ref(path).on('value',
-    snap => { _setSyncBadge('synced'); cb(snap.val()); },
-    e    => { console.warn('Cloud listen error:', e); _setSyncBadge('error'); });
-}
-function _setSyncBadge(state) {
-  const el = document.getElementById('syncBadge');
-  if (!el) return;
-  if (!CLOUD_ENABLED) { el.textContent = '🟡 Local Only'; el.className = 'sync-badge local'; return; }
-  if (state === 'synced') { el.textContent = '🟢 Cloud Synced'; el.className = 'sync-badge synced'; }
-  else if (state === 'error') { el.textContent = '🔴 Sync Error'; el.className = 'sync-badge error'; }
-  else { el.textContent = '🟡 Local Only'; el.className = 'sync-badge local'; }
-}
 
 // ─── MARKET CALENDAR ─────────────────────────────────────────────────────────
 const NYSE_HOLIDAYS = new Set([
@@ -5391,61 +5337,7 @@ function initShortTerm() {
 // ═══════════════════════════════════════════════════════════════════════
 const RULE_VERSION = 'v3'; // v1=original, v2=volume+regime, v3=weekly+recency+prob-upgrade
 
-// ─── CLOUD CONFIG — fill in + set CLOUD_ENABLED = true to activate sync ──────
-const CLOUD_CONFIG = {
-  apiKey:            "AIzaSyBh-2AtLn7X_aDLqUnsobiGvcwvoUC1WAU",
-  authDomain:        "trading-tracker-b1051.firebaseapp.com",
-  databaseURL:       "https://trading-tracker-b1051-default-rtdb.firebaseio.com",
-  projectId:         "trading-tracker-b1051",
-  storageBucket:     "trading-tracker-b1051.firebasestorage.app",
-  messagingSenderId: "184541924815",
-  appId:             "1:184541924815:web:545a53b0a88dcac54b96ba",
-  measurementId:     "G-ETH3ZD8MY9"
-};
-const CLOUD_ENABLED = true;
 
-// ─── CLOUD LAYER ──────────────────────────────────────────────────────────────
-let _db = null;
-function cloudInit() {
-  if (!CLOUD_ENABLED) { _setSyncBadge('local'); return; }
-  try {
-    if (!firebase.apps.length) firebase.initializeApp(CLOUD_CONFIG);
-    _db = firebase.database();
-    _setSyncBadge('synced');
-  } catch(e) { console.warn('Cloud init failed:', e); _setSyncBadge('error'); }
-}
-function cloudWrite(path, val) {
-  if (!CLOUD_ENABLED || !_db) return Promise.resolve();
-  return _db.ref(path).set(val)
-    .then(() => _setSyncBadge('synced'))
-    .catch(e => { console.warn('Cloud write failed:', e); _setSyncBadge('error'); });
-}
-function cloudRead(path, defaultVal) {
-  if (!CLOUD_ENABLED || !_db) return Promise.resolve(defaultVal);
-  return new Promise(resolve => {
-    const t = setTimeout(() => resolve(defaultVal), 5000);
-    _db.ref(path).once('value', snap => {
-      clearTimeout(t);
-      const v = snap.val();
-      _setSyncBadge('synced');
-      resolve(v !== null && v !== undefined ? v : defaultVal);
-    }, () => { clearTimeout(t); _setSyncBadge('error'); resolve(defaultVal); });
-  });
-}
-function cloudListen(path, cb) {
-  if (!CLOUD_ENABLED || !_db) return;
-  _db.ref(path).on('value',
-    snap => { _setSyncBadge('synced'); cb(snap.val()); },
-    e    => { console.warn('Cloud listen error:', e); _setSyncBadge('error'); });
-}
-function _setSyncBadge(state) {
-  const el = document.getElementById('syncBadge');
-  if (!el) return;
-  if (!CLOUD_ENABLED) { el.textContent = '🟡 Local Only'; el.className = 'sync-badge local'; return; }
-  if (state === 'synced') { el.textContent = '🟢 Cloud Synced'; el.className = 'sync-badge synced'; }
-  else if (state === 'error') { el.textContent = '🔴 Sync Error'; el.className = 'sync-badge error'; }
-  else { el.textContent = '🟡 Local Only'; el.className = 'sync-badge local'; }
-}
 
 // ─── MARKET CALENDAR (NYSE + TSX holidays 2024–2026) ─────────────────────────
 const NYSE_HOLIDAYS = new Set([
