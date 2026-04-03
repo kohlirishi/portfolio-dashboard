@@ -402,8 +402,13 @@ table.div-ht tfoot td{padding:10px 14px;font-size:13px;font-weight:700;backgroun
 .wl-mini-lbl{font-size:10px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px}
 .wl-mini-val{font-size:14px;font-weight:700;color:var(--txt);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;display:block}
 @keyframes sa-fadeIn{from{opacity:0;transform:translateY(-4px)}to{opacity:1;transform:none}}
+/* ── MARKET BADGE ── */
+.market-badge{padding:4px 12px;border-radius:12px;font-size:12px;font-weight:700;letter-spacing:.2px;white-space:nowrap}
+.market-badge.open{background:rgba(16,208,122,.12);color:var(--green);border:1px solid rgba(16,208,122,.35)}
+.market-badge.closed{background:rgba(240,79,110,.1);color:var(--red);border:1px solid rgba(240,79,110,.3)}
+.market-badge.checking{background:var(--surface2);color:var(--text3);border:1px solid var(--border)}
+.et-clock{font-size:12px;color:var(--text3);font-variant-numeric:tabular-nums;white-space:nowrap}
 </style>
-</head>
 <body>
 
 <!-- LOADING -->
@@ -419,7 +424,9 @@ table.div-ht tfoot td{padding:10px 14px;font-size:13px;font-weight:700;backgroun
     <div class="h-title">Portfolio Dashboard</div>
     <div class="h-sub">Real-time Performance Analytics · Rishi &amp; Pragya</div>
   </div>
-  <div class="h-right" style="display:flex;gap:8px">
+  <div class="h-right" style="display:flex;gap:8px;align-items:center">
+    <span id="market-badge" class="market-badge checking">○ Checking…</span>
+    <span id="et-clock" class="et-clock">--:--:--</span>
     <button class="h-btn" id="btn-div-nav" onclick="showDiv()">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21.21 15.89A10 10 0 1 1 8 2.83"/><path d="M22 12A10 10 0 0 0 12 2v10z"/></svg>
       Diversification
@@ -913,6 +920,38 @@ const ALL_COLS = [
 ];
 
 // ═══════════════════════════════════════════════
+//  MARKET CLOCK (top-right badge + time)
+// ═══════════════════════════════════════════════
+function updateMarketClock() {
+  // Eastern Time using Intl (handles DST automatically)
+  const etStr = new Date().toLocaleString('en-US', { timeZone: 'America/New_York',
+    hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false });
+  const clockEl = document.getElementById('et-clock');
+  if (clockEl) clockEl.textContent = etStr + ' ET';
+
+  const badge = document.getElementById('market-badge');
+  if (!badge) return;
+
+  const now = new Date();
+  const etDate = new Date(now.toLocaleString('en-US', { timeZone: 'America/New_York' }));
+  const day = etDate.getDay(); // 0=Sun,6=Sat
+  const h = etDate.getHours(), m = etDate.getMinutes();
+  const mins = h * 60 + m;
+  const isWeekday = day >= 1 && day <= 5;
+  const inSession = mins >= 570 && mins < 960; // 9:30 AM – 4:00 PM ET
+
+  if (isWeekday && inSession) {
+    badge.textContent = '● Market Open';
+    badge.className = 'market-badge open';
+  } else {
+    badge.textContent = '○ Market Closed';
+    badge.className = 'market-badge closed';
+  }
+}
+updateMarketClock();
+setInterval(updateMarketClock, 1000);
+
+// ═══════════════════════════════════════════════
 //  CLOCK
 // ═══════════════════════════════════════════════
 setInterval(() => {
@@ -1307,9 +1346,17 @@ function renderCell(d, id) {
       return `<td><span class="${cls}">${v}</span></td>`;
     }
     case 'tech': {
-      const tv=d.tech||'—';
-      const tcls=tv.toLowerCase().includes('very near ath')?'td-up':'td-dn';
-      return `<td><span class="${tcls}">${tv}</span></td>`;
+      const tv = d.tech || '—';
+      const score = techSortScore(d.tech);
+      let tcls;
+      if (score >= 100)      tcls = 'td-up';           // breakout / at ATH — green
+      else if (score >= 80)  tcls = 'td-up';           // very near ATH — green
+      else if (score >= 60)  tcls = 'td-neu';          // approaching / above MAs — neutral/yellow
+      else if (score >= 40)  tcls = 'td-dim';          // sideways / neutral — muted
+      else                   tcls = 'td-dn';           // below MAs / far from ATH — red
+      // apply yellow for mid-tier via inline style override
+      const style = (score >= 60 && score < 80) ? ' style="color:var(--yellow)"' : '';
+      return `<td><span class="${tcls}"${style}>${tv}</span></td>`;
     }
     case 'inv':  return `<td>${d.inv!==null?`<span class="td-dim">$${(d.inv).toLocaleString('en-CA',{minimumFractionDigits:2})}</span>`:'<span class="td-muted">—</span>'}</td>`;
     case 'curval':return `<td>${d.curval!==null?`<span class="td-dim">$${(d.curval).toLocaleString('en-CA',{minimumFractionDigits:2})}</span>`:'<span class="td-muted">—</span>'}</td>`;
@@ -1382,6 +1429,79 @@ function applyFilter(data) {
 }
 
 // ═══════════════════════════════════════════════
+//  TECHNICAL INDICATOR SORT SCORE
+//  High score = best (closest to / at ATH, breakout)
+//  Low score  = worst (far from ATH, below key MAs)
+// ═══════════════════════════════════════════════
+function techSortScore(tech) {
+  if (!tech) return -999;
+  const t = String(tech).toLowerCase().trim();
+
+  // ── Tier 1: Breakout / at ATH (score 100+)
+  if (t.includes('breakout') || t.includes('break out'))            return 110;
+  if (t.includes('at ath') || t === 'ath')                          return 105;
+  if (t.includes('new ath') || t.includes('all-time high'))         return 103;
+
+  // ── Tier 2: Very Near ATH — extract % if present, score 80-99
+  // Matches "very near ath -0.5%", "near ath -1%", "very near ath"
+  if (t.includes('very near ath') || t.includes('near ath')) {
+    const pctMatch = t.match(/-?\d+(\.\d+)?/);
+    if (pctMatch) {
+      const pct = parseFloat(pctMatch[0]); // e.g. -0.5, -1.2
+      // pct is negative (below ATH). Closer to 0 = higher score.
+      // Map: 0% → 99, -5% → 94, -10% → 89, etc.
+      return 99 + pct; // pct is negative, so score decreases naturally
+    }
+    return 88; // "very near ath" with no explicit %
+  }
+
+  // ── Tier 3: Near ATH (without "very") — 70-79
+  if (t.includes('near ath')) {
+    const pctMatch = t.match(/-?\d+(\.\d+)?/);
+    if (pctMatch) {
+      const pct = parseFloat(pctMatch[0]);
+      return 79 + pct;
+    }
+    return 72;
+  }
+
+  // ── Tier 4: Approaching ATH / consolidating near highs — 60-69
+  if (t.includes('approaching ath') || t.includes('near high'))     return 65;
+  if (t.includes('consolidat'))                                      return 62;
+  if (t.includes('above 50') || t.includes('above 200'))            return 60;
+
+  // ── Tier 5: Neutral / mid-range — 40-59
+  if (t.includes('recovering') || t.includes('recovery'))           return 52;
+  if (t.includes('bounce') || t.includes('rebounding'))             return 50;
+  if (t.includes('sideways') || t.includes('ranging'))              return 45;
+  if (t.includes('neutral'))                                         return 42;
+
+  // ── Tier 6: Below key MAs but not worst — 20-39
+  if (t.includes('below 200') && !t.includes('far'))                return 35;
+  if (t.includes('below 50') && !t.includes('far'))                 return 30;
+  if (t.includes('below'))                                           return 25;
+  if (t.includes('weakening') || t.includes('declining'))           return 22;
+
+  // ── Tier 7: Far from ATH / worst — 0-19
+  if (t.includes('far from ath') && t.includes('below 50'))         return 5;
+  if (t.includes('far from ath') && t.includes('below 200'))        return 3;
+  if (t.includes('far from ath'))                                    return 10;
+  if (t.includes('downtrend') || t.includes('bearish'))             return 8;
+
+  // ── Fallback: try to extract any % distance from ATH
+  const pctMatch = t.match(/-?\d+(\.\d+)?%/);
+  if (pctMatch) {
+    const pct = parseFloat(pctMatch[0]);
+    if (pct >= -2)   return 85 + pct;   // very close
+    if (pct >= -10)  return 70 + pct;   // near
+    if (pct >= -25)  return 50 + pct;   // moderate
+    return 20 + pct;                    // far
+  }
+
+  return 0; // unknown
+}
+
+// ═══════════════════════════════════════════════
 //  SORT
 // ═══════════════════════════════════════════════
 function sortData(data) {
@@ -1403,6 +1523,7 @@ function sortData(data) {
       case 'inv':    va=a.inv??0; vb=b.inv??0; break;
       case 'curval': va=a.curval??0; vb=b.curval??0; break;
       case 'sip':    va=a.sip;   vb=b.sip;   break;
+      case 'tech':   va=techSortScore(a.tech); vb=techSortScore(b.tech); break;
       case 'cmp':    va=parseFloat((a.cmp||'0').replace(/[$,]/g,''))||0; vb=parseFloat((b.cmp||'0').replace(/[$,]/g,''))||0; break;
       default: return 0;
     }
