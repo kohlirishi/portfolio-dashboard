@@ -467,6 +467,9 @@ table.div-ht tfoot td{padding:10px 14px;font-size:13px;font-weight:700;backgroun
 #pg-short th:last-child { padding-right: 24px; min-width: 100px; }
 #pg-short .section-header { display: flex; align-items: center; justify-content: space-between; padding: 12px 16px; border-bottom: 1px solid #30363d; font-weight: 600; font-size: 14px; color: #f0f6fc; flex-wrap: wrap; gap: 8px; }
 #pg-short .section-header .right { display: flex; gap: 8px; align-items: center; }
+#pg-short .sec-min-btn { background: #21262d; border: 1px solid #30363d; color: #8b949e; border-radius: 6px; width: 26px; height: 26px; font-size: 16px; line-height: 1; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: background 0.15s, color 0.15s; flex-shrink: 0; font-weight: 700; }
+#pg-short .sec-min-btn:hover { background: #30363d; color: #f0f6fc; }
+#pg-short .sec-body.minimized { display: none; }
 #pg-short /* SCHEDULE */
   .schedule-meta { padding: 10px 16px; border-bottom: 1px solid #21262d; display: flex; gap: 16px; flex-wrap: wrap; font-size: 12px; color: #8b949e; }
 #pg-short .schedule-meta span strong { color: #c9d1d9; }
@@ -3521,9 +3524,13 @@ async function loadAllRatings(){
   <!-- PENDING ENTRIES (entry timing: wait for next-session confirmation) -->
   <div class="section">
     <div class="section-header">
-      ⏳ Pending Entries — Next-Session Confirmation <span class="badge" id="pendingBadge">0</span>
-      <small style="color:#8b949e;font-weight:400;font-size:12px">Signals waiting for next close above reclaim price to confirm entry</small>
+      <span>⏳ Pending Entries — Next-Session Confirmation <span class="badge" id="pendingBadge">0</span></span>
+      <div class="right">
+        <small style="color:#8b949e;font-weight:400;font-size:12px">Signals waiting for next close above reclaim price to confirm entry</small>
+        <button class="sec-min-btn" onclick="toggleSection('pending-body','pending-min-btn')" id="pending-min-btn" title="Minimize">−</button>
+      </div>
     </div>
+    <div id="pending-body" class="sec-body">
     <div class="table-wrap">
       <table>
         <thead><tr>
@@ -3535,6 +3542,7 @@ async function loadAllRatings(){
           <tr><td colspan="7" class="empty">No pending entries</td></tr>
         </tbody>
       </table>
+    </div>
     </div>
   </div>
 
@@ -3552,8 +3560,10 @@ async function loadAllRatings(){
           <span class="autosort-label">Auto-sort</span>
           <span class="autosort-next" id="liveAutoSortNext"></span>
         </div>
+        <button class="sec-min-btn" onclick="toggleSection('live-body','live-min-btn')" id="live-min-btn" title="Minimize">−</button>
       </div>
     </div>
+    <div id="live-body" class="sec-body">
     <div class="table-wrap">
       <table>
         <thead><tr>
@@ -3570,6 +3580,7 @@ async function loadAllRatings(){
         </tbody>
       </table>
     </div>
+    </div>
   </div>
 
   <!-- CLOSED POSITIONS -->
@@ -3585,8 +3596,10 @@ async function loadAllRatings(){
           <span class="autosort-label">Auto-sort</span>
           <span class="autosort-next" id="closedAutoSortNext"></span>
         </div>
+        <button class="sec-min-btn" onclick="toggleSection('closed-body','closed-min-btn')" id="closed-min-btn" title="Minimize">−</button>
       </div>
     </div>
+    <div id="closed-body" class="sec-body">
     <div id="closedProbBreakdown"></div>
     <div class="table-wrap">
       <table>
@@ -3605,11 +3618,16 @@ async function loadAllRatings(){
         </tbody>
       </table>
     </div>
+    </div>
   </div>
 
   <!-- SCREENER RUN LOG -->
   <div class="section">
-    <div class="section-header">Screener Run Log</div>
+    <div class="section-header">
+      <span>Screener Run Log</span>
+      <button class="sec-min-btn" onclick="toggleSection('runlog-body','runlog-min-btn')" id="runlog-min-btn" title="Minimize">−</button>
+    </div>
+    <div id="runlog-body" class="sec-body">
     <div class="table-wrap">
       <table>
         <thead><tr>
@@ -3623,14 +3641,19 @@ async function loadAllRatings(){
         </tbody>
       </table>
     </div>
+    </div>
   </div>
 
   <!-- LEARNING NOTES -->
   <div class="section">
     <div class="section-header">
-      📝 Learning Notes
-      <small style="color:#8b949e;font-weight:400;font-size:12px">Tag → outcome → fix code → mark Done</small>
+      <span>📝 Learning Notes</span>
+      <div class="right">
+        <small style="color:#8b949e;font-weight:400;font-size:12px">Tag → outcome → fix code → mark Done</small>
+        <button class="sec-min-btn" onclick="toggleSection('notes-body','notes-min-btn')" id="notes-min-btn" title="Minimize">−</button>
+      </div>
     </div>
+    <div id="notes-body" class="sec-body">
     <div class="notes-desc">Tag each note with ticker + signal type + outcome. Patterns over time reveal screener improvements.</div>
     <div id="notesSummary" class="notes-summary"></div>
     <div id="notesList"></div>
@@ -3660,6 +3683,7 @@ async function loadAllRatings(){
         <textarea id="noteInput" placeholder="Describe why stop hit / what pattern to fix…" style="flex:1;background:#0d1117;border:1px solid #30363d;border-radius:6px;color:#c9d1d9;padding:8px 10px;font-size:13px;font-family:inherit;resize:vertical;min-height:56px;"></textarea>
         <button class="btn btn-green" onclick="addNote()" style="align-self:flex-start">+ Add</button>
       </div>
+    </div>
     </div>
   </div>
 
@@ -4960,6 +4984,31 @@ setInterval(() => {
   updateAutoSortLabel('closed');
 }, 60000);
 
+// ─── SECTION MINIMIZE ────────────────────────────────────────────────────────
+function toggleSection(bodyId, btnId) {
+  const body = document.getElementById(bodyId);
+  const btn  = document.getElementById(btnId);
+  if (!body || !btn) return;
+  const isMin = body.classList.toggle('minimized');
+  btn.textContent = isMin ? '+' : '−';
+  btn.title = isMin ? 'Expand' : 'Minimize';
+  // persist state
+  try { localStorage.setItem('st_sec_' + bodyId, isMin ? '1' : '0'); } catch {}
+}
+
+function restoreSectionStates() {
+  ['pending-body','live-body','closed-body','runlog-body','notes-body'].forEach(id => {
+    try {
+      if (localStorage.getItem('st_sec_' + id) === '1') {
+        const body = document.getElementById(id);
+        const btn  = document.getElementById(id.replace('-body','-min-btn'));
+        if (body) body.classList.add('minimized');
+        if (btn)  { btn.textContent = '+'; btn.title = 'Expand'; }
+      }
+    } catch {}
+  });
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 function renderAll() {
   renderCapitalBar();
@@ -5305,6 +5354,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   checkRuleVersion();
   renderAll();
   renderNotes();
+  restoreSectionStates();
   fetchCadUsd();
   tick();
   setInterval(tick, 60 * 1000);
@@ -5320,6 +5370,7 @@ function initShortTerm() {
     checkRuleVersion();
     renderAll();
     renderNotes();
+    restoreSectionStates();
     fetchCadUsd();
     tick();
     if(!window._stTickInterval) {
