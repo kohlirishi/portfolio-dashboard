@@ -459,7 +459,8 @@ table.div-ht tfoot td{padding:10px 14px;font-size:13px;font-weight:700;backgroun
 #pg-short .card.gold  .card-val { color: #e3b341; }
 #pg-short .card.open  .card-val { color: #f0f6fc; }
 #pg-short /* SECTION */
-  .section { background: #161b22; border: 1px solid #30363d; border-radius: 8px; margin-bottom: 16px; overflow: hidden; }
+  .section { background: #161b22; border: 1px solid #30363d; border-radius: 8px; margin-bottom: 16px; overflow: visible; }
+#pg-short .table-wrap { overflow-x: auto; border-radius: 0 0 8px 8px; }
 #pg-short .section-header { display: flex; align-items: center; justify-content: space-between; padding: 12px 16px; border-bottom: 1px solid #30363d; font-weight: 600; font-size: 14px; color: #f0f6fc; flex-wrap: wrap; gap: 8px; }
 #pg-short .section-header .right { display: flex; gap: 8px; align-items: center; }
 #pg-short /* SCHEDULE */
@@ -475,7 +476,7 @@ table.div-ht tfoot td{padding:10px 14px;font-size:13px;font-weight:700;backgroun
 #pg-short .ns-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
 #pg-short /* TABLES */
   .table-wrap { overflow-x: auto; }
-#pg-short table { width: 100%; border-collapse: collapse; }
+#pg-short table { width: 100%; border-collapse: collapse; min-width: 1100px; }
 #pg-short th { padding: 10px 14px; text-align: left; font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; color: #8b949e; border-bottom: 1px solid #30363d; white-space: nowrap; }
 #pg-short td { padding: 10px 14px; border-bottom: 1px solid #21262d; font-size: 13px; vertical-align: middle; }
 #pg-short td:last-child { padding-left: 14px; padding-right: 20px; min-width: 90px; }
