@@ -478,7 +478,8 @@ table.div-ht tfoot td{padding:10px 14px;font-size:13px;font-weight:700;backgroun
 #pg-short table { width: 100%; border-collapse: collapse; }
 #pg-short th { padding: 10px 14px; text-align: left; font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; color: #8b949e; border-bottom: 1px solid #30363d; white-space: nowrap; }
 #pg-short td { padding: 10px 14px; border-bottom: 1px solid #21262d; font-size: 13px; vertical-align: middle; }
-#pg-short td:last-child { padding-right: 16px; min-width: 80px; }
+#pg-short td:last-child { padding-left: 14px; padding-right: 20px; min-width: 90px; }
+#pg-short th:last-child { padding-right: 20px; min-width: 90px; }
 #pg-short tr:last-child td { border-bottom: none; }
 #pg-short tr:hover td { background: #1c2128; }
 #pg-short .empty { text-align: center; color: #484f58; padding: 24px; }
@@ -514,7 +515,7 @@ table.div-ht tfoot td{padding:10px 14px;font-size:13px;font-weight:700;backgroun
 #pg-short .btn-red:hover:not(:disabled) { background: #8a2020; }
 #pg-short .btn-ghost { background: transparent; color: #8b949e; border: 1px solid #30363d; }
 #pg-short .btn-ghost:hover:not(:disabled) { background: #21262d; color: #c9d1d9; }
-#pg-short .btn-close { background: #21262d; color: #8b949e; border: 1px solid #30363d; padding: 5px 14px; font-size: 11px; border-radius: 4px; cursor: pointer; white-space: nowrap; }
+#pg-short .btn-close { background: #21262d; color: #8b949e; border: 1px solid #30363d; padding: 5px 14px; font-size: 11px; border-radius: 4px; cursor: pointer; white-space: nowrap; display: inline-block; }
 #pg-short .btn-close:hover { background: #2a1a1a; color: #f85149; }
 #pg-short /* NOTES */
   .notes-desc { padding: 10px 16px; font-size: 12px; color: #8b949e; border-bottom: 1px solid #21262d; }
@@ -899,6 +900,22 @@ table.div-ht tfoot td{padding:10px 14px;font-size:13px;font-weight:700;backgroun
 #pg-short *, #pg-screener *, #pg-longterm * {
   box-sizing: border-box;
 }
+/* ── GLOBAL SYNC BADGE — must be unscoped so position:fixed always applies ── */
+#syncBadge {
+  position: fixed !important;
+  bottom: 16px !important;
+  right: 16px !important;
+  z-index: 9999 !important;
+  padding: 6px 14px;
+  border-radius: 20px;
+  font-size: 12px;
+  font-weight: 600;
+  pointer-events: none;
+  cursor: default;
+}
+#syncBadge.synced { background: #1a3a1a; color: #3fb950; border: 1px solid #238636; }
+#syncBadge.local  { background: #2a2a1a; color: #e3b341; border: 1px solid #9e6a03; }
+#syncBadge.error  { background: #2a1a1a; color: #f85149; border: 1px solid #6e1a1a; }
 </style>
 <body>
 
@@ -7208,6 +7225,5 @@ async function initLongTerm() {
 }
 
 </script>
-<div id="syncBadge" class="sync-badge local">🟡 Local Only</div>
 </body>
 </html>
