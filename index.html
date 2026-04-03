@@ -1432,12 +1432,20 @@ function renderCell(d, id) {
     }
     case 'tech': {
       const tv = d.tech || '—';
-      const score = techSortScore(d.tech);
+      const t = tv.toLowerCase();
+      // Colour based on label content, not score tiers
       let tcls, style = '';
-      if (score >= 8000)       tcls = 'td-up';   // YES / Very Near / at ATH — green
-      else if (score >= 6000)  { tcls = 'td-neu'; style = ' style="color:var(--yellow)"'; } // approaching — yellow
-      else if (score >= 4000)  tcls = 'td-dim';  // neutral / sideways — muted
-      else                     tcls = 'td-dn';   // below MAs / far from ATH — red
+      if (t.includes('breakout') || t === 'ath' || t === 'at ath' || t === 'new ath') {
+        tcls = 'td-up'; // bright green
+      } else if (t.startsWith('yes') || t.includes('very near ath') || t.includes('near ath')) {
+        tcls = 'td-up'; // green — close to ATH
+      } else if (t.includes('approaching ath') || t.includes('consolidat') || t.includes('above')) {
+        tcls = 'td-neu'; style = ' style="color:var(--yellow)"'; // yellow
+      } else if (t.includes('sideways') || t.includes('neutral') || t.includes('recovering') || t.includes('bounce')) {
+        tcls = 'td-dim'; // muted
+      } else {
+        tcls = 'td-dn'; // red — below MAs / far from ATH
+      }
       return `<td><span class="${tcls}"${style}>${tv}</span></td>`;
     }
     case 'inv':  return `<td>${d.inv!==null?`<span class="td-dim">$${(d.inv).toLocaleString('en-CA',{minimumFractionDigits:2})}</span>`:'<span class="td-muted">—</span>'}</td>`;
@@ -1512,95 +1520,46 @@ function applyFilter(data) {
 
 // ═══════════════════════════════════════════════
 //  TECHNICAL INDICATOR SORT SCORE
-//  High score = best (closest to / at ATH, breakout)
-//  Low score  = worst (far from ATH, below key MAs)
-//
-//  KEY DESIGN: within each tier, the % distance from ATH
-//  is extracted and used for fine-grained ordering so that
-//  e.g. FAR FROM ATH (-7%) ranks above FAR FROM ATH (-47%).
+//  Primary sort: % distance from ATH (extracted from string)
+//  Closer to 0% = top, more negative = bottom.
+//  Tier bonuses handle edge cases (Breakout, YES, no %)
 // ═══════════════════════════════════════════════
 function techSortScore(tech) {
-  if (!tech) return -9999;
+  if (!tech) return -999999;
   const t = String(tech).toLowerCase().trim();
 
-  // Extract the LAST (or only) percentage figure from the string
-  // e.g. "VERY NEAR ATH (-1.07%)" → -1.07
-  //      "BELOW 50W MA & FAR FROM ATH (-47.13%)" → -47.13
-  //      "YES (-0.85%)" → -0.85
+  // Extract the LAST percentage figure — this is always the ATH distance
+  // e.g. "VERY NEAR ATH (-1.07%)"              → -1.07
+  //      "YES (-0.85%)"                         → -0.85
+  //      "BELOW 50W MA & FAR FROM ATH (-12.37%)"→ -12.37
+  //      "FAR FROM ATH (-5.01%)"               → -5.01
   const allPcts = [...t.matchAll(/-?\d+(\.\d+)?%/g)].map(m => parseFloat(m[0]));
-  const pct = allPcts.length ? allPcts[allPcts.length - 1] : null; // last % = ATH distance
+  const pct = allPcts.length ? allPcts[allPcts.length - 1] : null;
 
-  // ── Tier 1: Breakout / at ATH — base 10000
-  if (t.includes('breakout') || t.includes('break out'))  return 10000;
-  if (t === 'ath' || t === 'at ath')                       return 9900;
-  if (t.includes('new ath'))                               return 9800;
+  // ── Special top tiers (no % or above ATH) ──
+  if (t.includes('breakout') || t.includes('break out')) return 10000;
+  if (t === 'ath' || t === 'at ath' || t === 'new ath')  return 9999;
 
-  // ── Tier 2: "YES (X%)" — stock is at/confirmed ATH reclaim
-  //    Treat "YES" as essentially AT ATH; sort by % within it
-  //    YES (-0.85%) is better than YES (-2%) etc.
-  if (t.startsWith('yes')) {
-    // Base 9000, subtract distance so closer to 0% → higher
-    return 9000 + (pct !== null ? pct : 0); // pct is negative, so -0.85 → 8999.15
-  }
+  // ── Everything else: sort purely by % distance ──
+  // Use pct directly as score (e.g. -0.85 > -1.07 > -4.18 > -5.01 > -12.37 > -47.13)
+  // Add a small constant so values never overlap with the special tiers above
+  if (pct !== null) return pct; // -0.85 sorts above -1.07 which sorts above -47.13 ✓
 
-  // ── Tier 3: Very Near ATH — base 8000
-  //    "VERY NEAR ATH (-1.07%)" → 8000 + (-1.07) = 7998.93
-  if (t.includes('very near ath')) {
-    return 8000 + (pct !== null ? pct : -5);
-  }
-
-  // ── Tier 4: Near ATH (without "very") — base 7000
-  if (t.includes('near ath')) {
-    return 7000 + (pct !== null ? pct : -10);
-  }
-
-  // ── Tier 5: Approaching ATH / consolidating near highs — 6000s
-  if (t.includes('approaching ath') || t.includes('near high'))  return 6500;
-  if (t.includes('consolidat'))                                   return 6200;
-  if (t.includes('above 50') || t.includes('above 200'))         return 6000;
-
-  // ── Tier 6: Neutral / mid-range — 5000s
-  if (t.includes('recovering') || t.includes('recovery'))  return 5200;
-  if (t.includes('bounce') || t.includes('rebounding'))    return 5000;
-  if (t.includes('sideways') || t.includes('ranging'))     return 4500;
-  if (t.includes('neutral'))                               return 4200;
-
-  // ── Tier 7: Below MAs only (NOT far from ATH) — 3000s
-  //    Sort within this tier by % too
-  if ((t.includes('below 50') || t.includes('below 200') || t.includes('below')) &&
-      !t.includes('far from ath')) {
-    const base = t.includes('below 200') ? 3200 : t.includes('below 50') ? 3000 : 3100;
-    return base + (pct !== null ? pct : -20);
-  }
-
-  // ── Tier 8: Below MAs AND Far from ATH — 2000s
-  //    "BELOW 50W MA & FAR FROM ATH (-47.13%)" → 2000 + (-47.13) = 1952.87
-  //    "BELOW 50W MA & FAR FROM ATH (-7.16%)"  → 2000 + (-7.16)  = 1992.84
-  if (t.includes('far from ath') && t.includes('below')) {
-    return 2000 + (pct !== null ? pct : -30);
-  }
-
-  // ── Tier 9: Far from ATH (no "below" mention) — 1000s
-  //    "FAR FROM ATH (-15.77%)" → 1000 + (-15.77) = 984.23
-  //    "FAR FROM ATH (-7.71%)"  → 1000 + (-7.71)  = 992.29
-  if (t.includes('far from ath')) {
-    return 1000 + (pct !== null ? pct : -25);
-  }
-
-  // ── Tier 10: Downtrend / bearish — 500s
-  if (t.includes('downtrend') || t.includes('bearish')) {
-    return 500 + (pct !== null ? pct : -20);
-  }
-
-  // ── Fallback: use % alone if present
-  if (pct !== null) {
-    if (pct >= -2)   return 8000 + pct;
-    if (pct >= -10)  return 7000 + pct;
-    if (pct >= -25)  return 5000 + pct;
-    return 2000 + pct;
-  }
-
-  return 0;
+  // ── No % found — fall back to keyword tiers ──
+  if (t.startsWith('yes'))              return -0.01; // YES without % → just below ATH
+  if (t.includes('very near ath'))      return -3;
+  if (t.includes('near ath'))           return -8;
+  if (t.includes('approaching ath'))    return -12;
+  if (t.includes('consolidat'))         return -15;
+  if (t.includes('above 50') || t.includes('above 200')) return -18;
+  if (t.includes('recovering'))         return -25;
+  if (t.includes('bounce'))             return -30;
+  if (t.includes('sideways'))           return -40;
+  if (t.includes('neutral'))            return -45;
+  if (t.includes('below'))             return -55;
+  if (t.includes('far from ath'))       return -60;
+  if (t.includes('bearish') || t.includes('downtrend')) return -70;
+  return -80;
 }
 
 // ═══════════════════════════════════════════════
