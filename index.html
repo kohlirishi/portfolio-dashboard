@@ -6452,6 +6452,37 @@ async function fetchFundamentals(ticker) {
   return null; // all 4 attempts failed
 }
 
+// ─── ALPHA VANTAGE FUNDAMENTALS (primary source — uses existing AV key pool) ──
+async function fetchAVFundamentals(ticker, _attempt = 0) {
+  try {
+    if (typeof AV_KEYS === 'undefined' || !AV_KEYS.length) return null;
+    if (_attempt >= AV_KEYS.length) return null;
+    // AV expects TSX as "RY.TRT" not "RY.TO"; strip .TO and append nothing for US
+    const sym = ticker.endsWith('.TO') ? ticker.replace('.TO', '.TRT') : ticker;
+    const key = AV_KEYS[(avKeyIdx + _attempt) % AV_KEYS.length];
+    const url = `https://www.alphavantage.co/query?function=OVERVIEW&symbol=${sym}&apikey=${key}`;
+    const r = await fetch(url, { signal: AbortSignal.timeout(14000) });
+    if (!r.ok) return null;
+    const j = await r.json();
+    if (j['Note'] || j['Information']) return fetchAVFundamentals(ticker, _attempt + 1); // rate-limited, try next key
+    if (!j.Symbol) return null; // empty / unknown ticker
+    const n = v => (v && v !== 'None' && v !== '-' && v !== 'N/A') ? parseFloat(v) : null;
+    const marketCap  = n(j.MarketCapitalization);
+    const pe         = n(j.PERatio);
+    const roeRaw     = n(j.ReturnOnEquityTTM);
+    const roe        = roeRaw != null ? roeRaw * 100 : null; // AV returns decimal e.g. 0.23
+    const epsGrowth  = n(j.QuarterlyEarningsGrowthYOY) != null ? n(j.QuarterlyEarningsGrowthYOY) * 100 : null;
+    const grossProfit = n(j.GrossProfitTTM);
+    const revenue    = n(j.RevenueTTM);
+    const grossMargin = (grossProfit != null && revenue && revenue !== 0) ? (grossProfit / revenue) * 100 : null;
+    const opCF  = n(j.OperatingCashflowTTM);
+    const capex = n(j.CapitalExpendituresTTM);
+    const fcf   = (opCF != null && capex != null) ? opCF - Math.abs(capex) : opCF;
+    console.log(`AV ${sym}: MCap=${marketCap?(marketCap/1e9).toFixed(0)+'B':'N/A'} PE=${pe??'N/A'} ROE=${roe?.toFixed(1)??'N/A'}% FCF=${fcf?(fcf/1e9).toFixed(1)+'B':'N/A'} GrMgn=${grossMargin?.toFixed(1)??'N/A'}%`);
+    return { marketCap, pe, roe, epsGrowth, grossMargin, fcf };
+  } catch { return null; }
+}
+
 // ─── FMP CONFIG — Financial Modeling Prep ────────────────────────────────────
 // Free API key at financialmodelingprep.com — email only, no credit card.
 // 250 requests/day free. We only call FMP for tickers that pass ALL technical
@@ -6752,8 +6783,9 @@ async function runLongTermScreen() {
         const techPass = analyzeStock(ticker, ohlcv, null, filters, fiveYearPerf);
         if (!techPass) return; // failed technical or 5Y check — skip FMP entirely
 
-        // ── Phase 2: fetch fundamentals — FMP first, Yahoo Finance as fallback ──
-        let fundRaw = await fetchFMPFundamentals(ticker);
+        // ── Phase 2: fetch fundamentals — AV first, FMP fallback, Yahoo last ───
+        let fundRaw = await fetchAVFundamentals(ticker);
+        if (!fundRaw) fundRaw = await fetchFMPFundamentals(ticker);
         if (!fundRaw) fundRaw = await fetchFundamentals(ticker);
         const fundamentals = fundRaw ? {
           pe:          fundRaw.pe,
