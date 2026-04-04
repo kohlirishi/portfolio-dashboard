@@ -5699,8 +5699,8 @@ function screenATH(ohlcv, benchOHLCV) {
   if (volRatio < 0.8) return null;
   // Hard filter 2: EMA distance <= 25% (Change 3)
   if (pctAboveEMA > EMA_EXTENSION_MAX) return null;
-  // Hard filter 3: reclaim <= 300 bars ago (Change 4 — NOT 120)
-  if (barsSince > 300) return null;
+  // Hard filter 3: reclaim <= 120 bars ago (spec requirement)
+  if (barsSince > 120) return null;
 
   // ── Remaining computed values (needed for scoring) ────────────────────────
   const { proximityOk, pctBelow52w, high52w } = check52WHighProximity(ohlcv);
@@ -5760,8 +5760,8 @@ function screenSwing(ohlcv, benchOHLCV) {
   if (volRatio < 0.8) return null;
   // Hard filter 2: EMA distance <= 25% (Change 3)
   if (pctAboveEMA > EMA_EXTENSION_MAX) return null;
-  // Hard filter 3: reclaim <= 300 bars ago (Change 4 — NOT 120)
-  if (barsSince > 300) return null;
+  // Hard filter 3: reclaim <= 120 bars ago (spec requirement)
+  if (barsSince > 120) return null;
 
   // ── Remaining computed values (needed for scoring) ────────────────────────
   const { proximityOk, pctBelow52w, high52w } = check52WHighProximity(ohlcv);
@@ -5818,7 +5818,7 @@ function computeScoreComponents(type, pctBelowATH, pctAboveEMA, barsSince, volRa
   else if (barsSince <= 40)  bd.age = +5;
   else if (barsSince <= 60)  bd.age = 0;
   else if (barsSince <= 100) bd.age = -10;
-  else                        bd.age = -20;  // 100–300 (> 300 already hard-filtered)
+  else                        bd.age = -20;  // 100–120 (> 120 already hard-filtered)
 
   // 6. Distance to ATH
   const pctBelowATH_val = pctBelowATH; // already in percent
@@ -5950,6 +5950,22 @@ function updateRegimeBanner(regime) {
   }
 }
 
+// ─── WEAK SETUP SCORE CAP ────────────────────────────────────────────────────
+// Part 3: After scoring, cap finalScore at 75 if ANY weak condition is present.
+// Weak conditions:
+//   (a) volumeMultiple < 1.0  — below-average volume
+//   (b) structure === "Loose" — loose price structure (tight===false)
+//   (c) RS_vs_Index < 2%      — poor relative strength
+function applyWeakSetupCap(prob, result) {
+  const reasons = [];
+  if (result.volRatio < 1.0)                          reasons.push('Low volume (< 1.0×)');
+  if (!result.tight)                                   reasons.push('Loose structure');
+  if (result.rsValue !== null && result.rsValue < 2)   reasons.push('Weak RS vs Index (< 2%)');
+  if (reasons.length === 0) return { prob, capped: false, reasons: [] };
+  const cappedProb = Math.min(prob, 75);
+  return { prob: cappedProb, capped: prob > 75, reasons };
+}
+
 // ─── PROCESS TICKER ──────────────────────────────────────────────────────────
 // Step 3–5: Only stocks passing hard filters reach scoring; sorted by prob desc
 async function processTicker(ticker) {
@@ -5967,7 +5983,8 @@ async function processTicker(ticker) {
       athResult.rsOk, athResult.rsValue, athResult.tight
     );
     athTickers.add(ticker);
-    return { type: 'ath', ticker, result: athResult, prob, breakdown };
+    const athCapped = applyWeakSetupCap(prob, athResult);
+    return { type: 'ath', ticker, result: athResult, prob: athCapped.prob, breakdown, scoreCapped: athCapped.capped, capReasons: athCapped.reasons };
   }
 
   if (!athTickers.has(ticker)) {
@@ -5980,7 +5997,8 @@ async function processTicker(ticker) {
         swingResult.momentum20, swingResult.weeklyTrendOk,
         swingResult.rsOk, swingResult.rsValue, swingResult.tight
       );
-      return { type: 'swing', ticker, result: swingResult, prob, breakdown };
+      const swingCapped = applyWeakSetupCap(prob, swingResult);
+      return { type: 'swing', ticker, result: swingResult, prob: swingCapped.prob, breakdown, scoreCapped: swingCapped.capped, capReasons: swingCapped.reasons };
     }
   }
   return null;
@@ -6079,6 +6097,11 @@ function buildRow(item) {
     ? `<div style="margin-top:5px;font-size:10px;color:#484f58;line-height:1.5;max-width:180px;word-break:break-word" title="Score breakdown: base ${baseScore} → ${bdStr}">${bdStr}</div>`
     : '';
 
+  // Weak-setup cap badge (Part 3 / Part 4)
+  const capTooltip = item.scoreCapped && item.capReasons && item.capReasons.length
+    ? `<div style="margin-top:5px;display:inline-flex;align-items:center;gap:4px;background:#2a1a00;border:1px solid #6e5a1a;border-radius:4px;padding:2px 7px;font-size:10px;color:#d4a017;font-weight:600" title="Score capped at 75 due to weak conditions: ${item.capReasons.join(' | ')}">⚠ Score Capped · ${item.capReasons.join(' · ')}</div>`
+    : '';
+
   const rowStyle = rowHighlightStyle(prob, r.tight, r.rsOk);
 
   return `<tr data-prob="${Math.round(prob)}"${rowStyle}>
@@ -6094,6 +6117,7 @@ function buildRow(item) {
       ${probBadge(prob)}
       <div style="margin-top:6px">${strengthBadge(prob)}</div>
       ${bdTooltip}
+      ${capTooltip}
     </td>
   </tr>`;
 }
