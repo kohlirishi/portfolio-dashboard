@@ -945,21 +945,21 @@ table.div-ht tfoot td{padding:10px 14px;font-size:13px;font-weight:700;backgroun
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21.21 15.89A10 10 0 1 1 8 2.83"/><path d="M22 12A10 10 0 0 0 12 2v10z"/></svg>
       Diversification
     </button>
-    <button class="h-btn" id="btn-sa-nav" onclick="showAnalyser()">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 7 13.5 15.5 8.5 10.5 2 17"/><polyline points="16 7 22 7 22 13"/></svg>
-      Stock Analyser
-    </button>
     <button class="h-btn" id="btn-short-nav" onclick="showShortTerm()">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
-      Short Term Trading
+      Short Term Trading Portfolio
     </button>
     <button class="h-btn" id="btn-screener-nav" onclick="showScreener()">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-      Screener
+      Short Term Trading Screener
     </button>
     <button class="h-btn" id="btn-longterm-nav" onclick="showLongTerm()">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></svg>
       Long-Term
+    </button>
+    <button class="h-btn" id="btn-sa-nav" onclick="showAnalyser()">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 7 13.5 15.5 8.5 10.5 2 17"/><polyline points="16 7 22 7 22 13"/></svg>
+      Stock Analyser
     </button>
   </div>
 </header>
@@ -5301,7 +5301,7 @@ function renderPending() {
     <td><div class="ticker-cell">${flagIcon(p.exchange)} ${p.ticker}</div><div class="ticker-name">${escHtml(COMPANY_NAMES[p.ticker]||'')}</div></td>
     <td>${typeBadge(p.type)}</td>
     <td>${pBadge(p.prob)}</td>
-    <td>${formatDate(p.signalDate)}</td>
+    <td>${formatDate(p.signalDate)}<br><small style="color:#8b949e">${p.runTime ? formatTimeEST(p.runTime) : '—'}</small></td>
     <td>$${(p.reclaimClose||0).toFixed(2)}</td>
     <td style="color:#58a6ff;font-size:12px">Next session close above $${(p.reclaimClose||0).toFixed(2)}</td>
     <td><span class="badge-pending">⏳ Pending</span> <button class="btn-close" onclick="cancelPending('${p.id}')" style="margin-left:4px">✕ Cancel</button></td>
