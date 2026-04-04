@@ -4205,6 +4205,11 @@ const VOLUME_CONFIRM_RATIO = 1.4;
 const WEEKLY_EMA_PERIOD   = 44;
 const WEEKLY_TREND_PENALTY = 15;
 
+// ─── SCREENER QUALITY CONSTANTS (aligned with Screener page) ────────────────
+const ST_VOLUME_CONFIRM_RATIO = 1.2;  // aligned with screener (was 1.4 in old logic)
+const ST_EMA_EXTENSION_MAX    = 25;   // hard filter: reject if price > 25% above EMA
+const ST_PROXIMITY_52W_MAX    = 0.25; // hard filter: reject if > 25% below 52W high
+
 // ─── INVESTMENT CONSTANTS ─────────────────────────────────────────────────────
 const ATH_PROB_THRESHOLD   = 70;
 const SWING_PROB_THRESHOLD = 50;
@@ -4310,6 +4315,108 @@ function findWeightedSwingHigh(ohlcv) {
 
 function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
 
+// ─── QUALITY HELPERS (aligned with Screener page) ────────────────────────────
+function st_calcRelativeStrength(ohlcv, benchmarkOHLCV) {
+  const n = ohlcv.length;
+  const bn = benchmarkOHLCV ? benchmarkOHLCV.length : 0;
+  if (n < 22 || bn < 22) return { rsOk: true, rsValue: null };
+  const stockRet = (ohlcv[n-1].close - ohlcv[n-21].close) / ohlcv[n-21].close * 100;
+  const benchRet = (benchmarkOHLCV[bn-1].close - benchmarkOHLCV[bn-21].close) / benchmarkOHLCV[bn-21].close * 100;
+  const rsValue  = parseFloat((stockRet - benchRet).toFixed(2));
+  return { rsOk: rsValue > 0, rsValue };
+}
+
+function st_check52WHighProximity(ohlcv) {
+  const n = ohlcv.length;
+  const bars52w = Math.min(252, n);
+  const slice = ohlcv.slice(n - bars52w);
+  const high52w = Math.max(...slice.map(d => d.high));
+  const lastClose = ohlcv[n - 1].close;
+  const pctBelow52w = (high52w - lastClose) / high52w;
+  return { proximityOk: pctBelow52w <= ST_PROXIMITY_52W_MAX, pctBelow52w, high52w };
+}
+
+function st_checkTightStructure(ohlcv) {
+  const n = ohlcv.length;
+  if (n < 20) return { tight: false, atrRatio: null };
+  const recent   = ohlcv.slice(n - 10);
+  const earlier  = ohlcv.slice(n - 20, n - 10);
+  const avgRangeRecent  = recent.reduce((s, d) => s + (d.high - d.low), 0) / 10 / ohlcv[n-1].close * 100;
+  const avgRangeEarlier = earlier.reduce((s, d) => s + (d.high - d.low), 0) / 10 / ohlcv[n-10].close * 100;
+  const atrRatio = avgRangeEarlier > 0 ? parseFloat((avgRangeRecent / avgRangeEarlier).toFixed(2)) : null;
+  const tight = atrRatio !== null && atrRatio < 0.85;
+  return { tight, atrRatio };
+}
+
+// ─── COMPONENT-BASED SCORING (identical to Screener page) ────────────────────
+function st_computeScoreComponents(type, pctBelowATH, pctAboveEMA, barsSince, volRatio, momentum20, rsValue, tight) {
+  const bd = {};
+  // 1. Volume strength
+  if      (volRatio >= 1.5) bd.vol = +10;
+  else if (volRatio >= 1.2) bd.vol = +6;
+  else if (volRatio >= 1.0) bd.vol = +2;
+  else                       bd.vol = -5;
+  // 2. Relative strength vs index
+  if      (rsValue === null)  bd.rs = 0;
+  else if (rsValue > 5)       bd.rs = +10;
+  else if (rsValue > 2)       bd.rs = +5;
+  else if (rsValue >= 0)      bd.rs = +2;
+  else                        bd.rs = -10;
+  // 3. EMA distance
+  if      (pctAboveEMA <= 8)  bd.ema = +10;
+  else if (pctAboveEMA <= 15) bd.ema = +5;
+  else if (pctAboveEMA <= 20) bd.ema = -10;
+  else                         bd.ema = -20;
+  // 4. Structure
+  if (tight) {
+    bd.str = +10;
+  } else {
+    bd.str = (type === 'ath') ? 0 : -5;
+  }
+  // 5. Reclaim recency / age decay
+  if      (barsSince <= 20)  bd.age = +10;
+  else if (barsSince <= 40)  bd.age = +5;
+  else if (barsSince <= 60)  bd.age = 0;
+  else if (barsSince <= 100) bd.age = -10;
+  else                        bd.age = -20;
+  // 6. Distance to ATH
+  if      (pctBelowATH <= 1)   bd.ath = +10;
+  else if (pctBelowATH <= 5)   bd.ath = +5;
+  else if (pctBelowATH <= 10)  bd.ath = 0;
+  else if (pctBelowATH <= 20)  bd.ath = -5;
+  else                          bd.ath = -15;
+  // 7. Momentum (20d)
+  if      (momentum20 > 5)  bd.mom = +5;
+  else if (momentum20 >= 0) bd.mom = +2;
+  else                       bd.mom = -8;
+  return bd;
+}
+
+function st_scoreATHEnhanced(pctBelowATH, pctAboveEMA, barsSince, belowBars, volRatio, momentum20, weeklyTrendOk, rsValue, tight) {
+  const base = 60;
+  const bd = st_computeScoreComponents('ath', pctBelowATH, pctAboveEMA, barsSince, volRatio, momentum20, rsValue, tight);
+  let prob = base + bd.vol + bd.rs + bd.ema + bd.str + bd.age + bd.ath + bd.mom;
+  if (rsValue !== null && rsValue < -1) prob = Math.min(prob, 50);
+  return clamp(Math.round(prob), 40, 96);
+}
+
+function st_scoreSwingEnhanced(pctToResistance, pctAboveEMA, barsSince, belowBars, pctBelowATH, volRatio, momentum20, weeklyTrendOk, rsValue, tight) {
+  const base = 55;
+  const bd = st_computeScoreComponents('swing', pctBelowATH, pctAboveEMA, barsSince, volRatio, momentum20, rsValue, tight);
+  let prob = base + bd.vol + bd.rs + bd.ema + bd.str + bd.age + bd.ath + bd.mom;
+  if (rsValue !== null && rsValue < -1) prob = Math.min(prob, 50);
+  return clamp(Math.round(prob), 35, 90);
+}
+
+// ─── WEAK SETUP SCORE CAP (identical to Screener page) ───────────────────────
+function st_applyWeakSetupCap(prob, volRatio, tight, rsValue) {
+  if (volRatio < 1.0 || !tight || (rsValue !== null && rsValue < 2)) {
+    return Math.min(prob, 75);
+  }
+  return prob;
+}
+
+// Legacy wrappers kept for safety (not called by new runScreenOnOHLCV)
 function scoreATH(pctBelowATH, pctAboveEMA, barsSince, belowBars, volRatio, momentum20, weeklyTrendOk) {
   let p = 88 - pctBelowATH * 4.5 - barsSince * 0.035 + clamp(pctAboveEMA * 0.3, -5, 6) - belowBars * 0.7;
   p += volRatio >= VOLUME_CONFIRM_RATIO ? 4 : volRatio >= 1.0 ? 2 : 0;
@@ -4387,6 +4494,7 @@ function toUSD(priceCAD) {
 }
 
 function runScreenOnOHLCV(ticker, ohlcv) {
+  // ── Step 1: EMA reclaim validation (unchanged) ────────────────────────────
   const n = ohlcv.length;
   if (n < EMA_PERIOD + 10) return null;
   const closes = ohlcv.map(d => d.close);
@@ -4400,19 +4508,45 @@ function runScreenOnOHLCV(ticker, ohlcv) {
   const { reclaimIdx, belowEpStart } = rec;
   const belowEpisodeBars = reclaimIdx - belowEpStart;
   if (belowEpisodeBars > MAX_BELOW_BARS) return null;
-  const lastClose   = closes[n - 1];
-  const reclaimClose = closes[reclaimIdx]; // for entry timing (Change 5)
-  const currentATH  = Math.max(...highs);
-  const pctBelowATH = (currentATH - lastClose) / currentATH;
-  const currentEMA  = ema[n - 1];
-  const pctAboveEMA = (lastClose - currentEMA) / currentEMA * 100;
-  const barsSince   = n - 1 - reclaimIdx;
-  const { volumeOk, volRatio } = checkVolumeConfirmation(ohlcv, reclaimIdx);
-  const weeklyTrendOk = checkWeeklyTrend(ohlcv);
-  const momentum20 = n > 20 ? (closes[n-1] - closes[n-21]) / closes[n-21] * 100 : 0;
 
+  // Common computed values
+  const lastClose    = closes[n - 1];
+  const reclaimClose = closes[reclaimIdx];
+  const currentATH   = Math.max(...highs);
+  const pctBelowATH  = (currentATH - lastClose) / currentATH;
+  const currentEMA   = ema[n - 1];
+  const pctAboveEMA  = (lastClose - currentEMA) / currentEMA * 100;
+  const barsSince    = n - 1 - reclaimIdx;
+  const { volRatio } = checkVolumeConfirmation(ohlcv, reclaimIdx);
+  const weeklyTrendOk = checkWeeklyTrend(ohlcv);
+  const momentum20   = n > 20 ? (closes[n-1] - closes[n-21]) / closes[n-21] * 100 : 0;
+
+  // ── Step 2: Hard Filters (aligned with Screener page) ────────────────────
+  // Filter 1: Volume multiple >= 0.8
+  if (volRatio < 0.8) return null;
+  // Filter 2: EMA distance <= 25%
+  if (pctAboveEMA > ST_EMA_EXTENSION_MAX) return null;
+  // Filter 3: Reclaim age <= 120 bars
+  if (barsSince > 120) return null;
+  // Filter 4: 52-week high proximity (not more than 25% below 52W high)
+  const { proximityOk } = st_check52WHighProximity(ohlcv);
+  if (!proximityOk) return null;
+
+  // ── Step 3: Quality metrics for scoring ──────────────────────────────────
+  const { tight } = st_checkTightStructure(ohlcv);
+  const exchange   = EXCHANGE_MAP[ticker] || 'US';
+  const benchKey   = exchange === 'TSX' ? 'XIU.TO' : 'SPY';
+  const benchOHLCV = stBenchmarkCache[benchKey] || null;
+  const { rsValue } = st_calcRelativeStrength(ohlcv, benchOHLCV);
+
+  // ── Step 4: Score using enhanced component-based system ──────────────────
   if (pctBelowATH <= ATH_THRESHOLD) {
-    const prob = scoreATH(pctBelowATH * 100, pctAboveEMA, barsSince, belowEpisodeBars, volRatio, momentum20, weeklyTrendOk);
+    let prob = st_scoreATHEnhanced(
+      pctBelowATH * 100, pctAboveEMA, barsSince, belowEpisodeBars,
+      volRatio, momentum20, weeklyTrendOk, rsValue, tight
+    );
+    // Step 5: Apply weak-setup score cap
+    prob = st_applyWeakSetupCap(prob, volRatio, tight, rsValue);
     return { type: 'ath', prob: Math.round(prob), lastClose, reclaimClose, reclaimDate: dates[reclaimIdx] };
   }
   if (pctBelowATH <= S2_ATH_MAX_DRAWDOWN) {
@@ -4421,7 +4555,12 @@ function runScreenOnOHLCV(ticker, ohlcv) {
     if (!swing) return null;
     const pctToSwing = (swing.swingHigh - lastClose) / swing.swingHigh;
     if (pctToSwing < SWING_NEAR_MIN || pctToSwing > SWING_NEAR_MAX) return null;
-    const prob = scoreSwing(pctToSwing * 100, pctAboveEMA, barsSince, belowEpisodeBars, pctBelowATH * 100, volRatio, momentum20, weeklyTrendOk);
+    let prob = st_scoreSwingEnhanced(
+      pctToSwing * 100, pctAboveEMA, barsSince, belowEpisodeBars,
+      pctBelowATH * 100, volRatio, momentum20, weeklyTrendOk, rsValue, tight
+    );
+    // Step 5: Apply weak-setup score cap
+    prob = st_applyWeakSetupCap(prob, volRatio, tight, rsValue);
     return { type: 'swing', prob: Math.round(prob), lastClose, reclaimClose, reclaimDate: dates[reclaimIdx] };
   }
   return null;
@@ -4577,11 +4716,12 @@ function unrealizedPnL() {
 
 // ─── REGIME CACHE ─────────────────────────────────────────────────────────────
 let regimeCache = null;
+let stBenchmarkCache = {}; // { 'SPY': ohlcvArray, 'XIU.TO': ohlcvArray } — used for RS scoring
 async function checkRegime() {
   if (regimeCache) return regimeCache;
   const r = { spyAbove: true, xiuAbove: true };
-  try { const d = await fetchOHLCV('SPY'); if (d.length >= EMA_PERIOD) { const c = d.map(x=>x.close), ema = calcEMA(c, EMA_PERIOD); r.spyAbove = c[c.length-1] > ema[ema.length-1]; } } catch {}
-  try { const d = await fetchOHLCV('XIU.TO'); if (d.length >= EMA_PERIOD) { const c = d.map(x=>x.close), ema = calcEMA(c, EMA_PERIOD); r.xiuAbove = c[c.length-1] > ema[ema.length-1]; } } catch {}
+  try { const d = await fetchOHLCV('SPY'); stBenchmarkCache['SPY'] = d; if (d.length >= EMA_PERIOD) { const c = d.map(x=>x.close), ema = calcEMA(c, EMA_PERIOD); r.spyAbove = c[c.length-1] > ema[ema.length-1]; } } catch {}
+  try { const d = await fetchOHLCV('XIU.TO'); stBenchmarkCache['XIU.TO'] = d; if (d.length >= EMA_PERIOD) { const c = d.map(x=>x.close), ema = calcEMA(c, EMA_PERIOD); r.xiuAbove = c[c.length-1] > ema[ema.length-1]; } } catch {}
   regimeCache = r;
   updateRegimeBanner(r);
   return r;
@@ -4851,7 +4991,7 @@ function checkSchedule() {
   }
 }
 
-async function runScreenerNow() { regimeCache = null; await runScreener(null); }
+async function runScreenerNow() { regimeCache = null; stBenchmarkCache = {}; await runScreener(null); }
 function stopScreenerRun() { screenerStop = true; }
 
 async function runScreener(scheduledTime) {
