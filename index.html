@@ -5469,42 +5469,9 @@ async function initShortTerm() {
 <script>
 // ═══ SCREENER JS ═══
 
-// ═══════════════════════════════════════════════════════════════════════
-// RULE VERSION — bump this when screener logic changes; triggers re-eval
-// ═══════════════════════════════════════════════════════════════════════
-const RULE_VERSION = 'v3'; // v1=original, v2=volume+regime, v3=weekly+recency+prob-upgrade
-
-
-
-// ─── MARKET CALENDAR (NYSE + TSX holidays 2024–2026) ─────────────────────────
-const NYSE_HOLIDAYS = new Set([
-  '2024-01-01','2024-01-15','2024-02-19','2024-03-29','2024-05-27',
-  '2024-06-19','2024-07-04','2024-09-02','2024-11-28','2024-12-25',
-  '2025-01-01','2025-01-20','2025-02-17','2025-04-18','2025-05-26',
-  '2025-06-19','2025-07-04','2025-09-01','2025-11-27','2025-12-25',
-  '2026-01-01','2026-01-19','2026-02-16','2026-04-03','2026-05-25',
-  '2026-06-19','2026-07-03','2026-09-07','2026-11-26','2026-12-25',
-]);
-const TSX_HOLIDAYS = new Set([
-  '2024-01-01','2024-02-19','2024-03-29','2024-05-20','2024-07-01',
-  '2024-08-05','2024-09-02','2024-10-14','2024-11-11','2024-12-25','2024-12-26',
-  '2025-01-01','2025-02-17','2025-04-18','2025-05-19','2025-07-01',
-  '2025-08-04','2025-09-01','2025-10-13','2025-11-11','2025-12-25','2025-12-26',
-  '2026-01-01','2026-02-16','2026-04-03','2026-05-18','2026-07-01',
-  '2026-08-03','2026-09-07','2026-10-12','2026-11-11','2026-12-25','2026-12-28',
-]);
-
-// ─── CONSTANTS ────────────────────────────────────────────────────────────────
-const EMA_PERIOD          = 220;
-const MA_BUFFER           = 0.003;
-const ATH_THRESHOLD       = 0.05;
-const MAX_RECLAIM_BARS    = 60;
-const MAX_BELOW_BARS      = 10;
-const SWING_HIGH_MIN_BARS = 126;
-const SWING_HIGH_MAX_BARS = 378;
-const SWING_NEAR_MIN      = 0.01;
-const SWING_NEAR_MAX      = 0.05;
-const S2_ATH_MAX_DRAWDOWN = 0.15;
+// RULE_VERSION, NYSE_HOLIDAYS, TSX_HOLIDAYS, EMA_PERIOD, MA_BUFFER, ATH_THRESHOLD,
+// MAX_RECLAIM_BARS, MAX_BELOW_BARS, SWING_HIGH_MIN/MAX_BARS, SWING_NEAR_MIN/MAX,
+// S2_ATH_MAX_DRAWDOWN — all declared in short-term block above
 const VOLUME_CONFIRM_RATIO = 1.4;  // Change 1: reclaim candle volume threshold
 const WEEKLY_EMA_PERIOD   = 44;    // Change 12: 44-week EMA ≈ 220-day
 const WEEKLY_TREND_PENALTY = 15;   // Change 12: subtract this if weekly trend fails
@@ -5517,8 +5484,7 @@ let t1Results = [], t2Results = [];
 let startTime = null, timerInterval = null;
 let screenedCount = 0, errorCount = 0, failedTickers = 0;
 let athTickers = new Set();
-// Regime cache: { spyAbove: bool, xiuAbove: bool, checked: bool }
-let regimeCache = null;
+/// regimeCache declared in short-term block above
 
 // ─── CALENDAR HELPERS ─────────────────────────────────────────────────────────
 function todayStr() {
@@ -6329,7 +6295,7 @@ function saveLtState() {
   cloudWrite('longterm', LT_STATE);
 }
 
-let cadUsdRate = null;
+// cadUsdRate declared in short-term block above
 let ltResults  = [];
 let ltRunning  = false;
 let ltStop     = false;
