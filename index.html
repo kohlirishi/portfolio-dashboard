@@ -5387,10 +5387,13 @@ function renderScheduleInfo() {
 function updateClock() {
   const et = nowET();
   const time = et.toLocaleTimeString('en-US', { hour:'2-digit', minute:'2-digit', second:'2-digit' });
-  document.getElementById('etTime').textContent = time + ' EST';
+  const timeEl = document.getElementById('etTime');
+  if (timeEl) timeEl.textContent = time + ' EST';
   const badge = document.getElementById('marketStatus');
-  if (isMarketOpen()) { badge.textContent = '● Market Open'; badge.className = 'market-badge open'; }
-  else { badge.textContent = '○ Market Closed'; badge.className = 'market-badge closed'; }
+  if (badge) {
+    if (isMarketOpen()) { badge.textContent = '● Market Open'; badge.className = 'market-badge open'; }
+    else { badge.textContent = '○ Market Closed'; badge.className = 'market-badge closed'; }
+  }
 }
 
 // ─── NOTIFICATION ────────────────────────────────────────────────────────────
@@ -5489,11 +5492,11 @@ async function initShortTerm() {
 // RULE_VERSION, NYSE_HOLIDAYS, TSX_HOLIDAYS, EMA_PERIOD, MA_BUFFER, ATH_THRESHOLD,
 // MAX_RECLAIM_BARS, MAX_BELOW_BARS, SWING_HIGH_MIN/MAX_BARS, SWING_NEAR_MIN/MAX,
 // S2_ATH_MAX_DRAWDOWN — all declared in short-term block above
-const VOLUME_CONFIRM_RATIO = 1.2;  // Enhanced: lowered to 1.2x for reclaim volume check
-const WEEKLY_EMA_PERIOD   = 44;    // 44-week EMA ≈ 220-day
-const WEEKLY_TREND_PENALTY = 15;   // subtract if weekly trend fails
-const EMA_EXTENSION_MAX   = 25;    // reject if price > 25% above EMA(220)
-const PROXIMITY_52W_MAX   = 0.25;  // reject if price > 25% below 52-week high
+// VOLUME_CONFIRM_RATIO, WEEKLY_EMA_PERIOD, WEEKLY_TREND_PENALTY declared in short-term block above
+// Screener uses 1.2x volume threshold (short-term uses 1.4x — stored separately)
+const SCR_VOLUME_CONFIRM_RATIO = 1.2;  // Screener-specific: 1.2x volume threshold
+const EMA_EXTENSION_MAX   = 25;        // reject if price > 25% above EMA(220)
+const PROXIMITY_52W_MAX   = 0.25;      // reject if price > 25% below 52-week high
 // SP500_TICKERS, TSX_TICKERS, TICKERS, EXCHANGE_MAP, COMPANY_NAMES declared above
 
 // ─── STATE ────────────────────────────────────────────────────────────────────
@@ -5596,7 +5599,7 @@ function checkVolumeConfirmation(ohlcv, reclaimIdx) {
   const avgVol = window.reduce((s, v) => s + v, 0) / window.length;
   if (!avgVol) return { volumeOk: true, volRatio: 1 };
   const volRatio = reclaimVol / avgVol;
-  return { volumeOk: volRatio >= VOLUME_CONFIRM_RATIO, volRatio };
+  return { volumeOk: volRatio >= SCR_VOLUME_CONFIRM_RATIO, volRatio };
 }
 
 // ─── NEW: RELATIVE STRENGTH vs BENCHMARK ────────────────────────────────────
@@ -5761,7 +5764,7 @@ function scoreATHEnhanced(pctBelowATH, pctAboveEMA, barsSince, belowBars, volRat
   prob -= barsSince * 0.035;                                            // Recency
   prob += clamp(pctAboveEMA * 0.3, -5, 6);                             // EMA position
   prob -= belowBars * 0.7;                                              // Below-EMA episode
-  prob += volRatio >= 1.5 ? 5 : volRatio >= VOLUME_CONFIRM_RATIO ? 3 : volRatio >= 1.0 ? 1 : 0; // Volume strength
+  prob += volRatio >= 1.5 ? 5 : volRatio >= SCR_VOLUME_CONFIRM_RATIO ? 3 : volRatio >= 1.0 ? 1 : 0; // Volume strength
   prob += clamp(momentum20 * 0.3, -4, 5);                              // Momentum
   if (!weeklyTrendOk) prob -= WEEKLY_TREND_PENALTY;                    // Weekly trend
   if (rsOk) prob += 4; else if (rsValue !== null) prob -= 3;           // Relative strength
@@ -5776,7 +5779,7 @@ function scoreSwingEnhanced(pctToResistance, pctAboveEMA, barsSince, belowBars, 
   prob += clamp(pctAboveEMA * 0.3, -5, 5);
   prob -= belowBars * 0.7;
   prob -= pctBelowATH * 1.1;
-  prob += volRatio >= 1.5 ? 5 : volRatio >= VOLUME_CONFIRM_RATIO ? 3 : volRatio >= 1.0 ? 1 : 0;
+  prob += volRatio >= 1.5 ? 5 : volRatio >= SCR_VOLUME_CONFIRM_RATIO ? 3 : volRatio >= 1.0 ? 1 : 0;
   prob += clamp(momentum20 * 0.3, -4, 5);
   if (!weeklyTrendOk) prob -= WEEKLY_TREND_PENALTY;
   if (rsOk) prob += 4; else if (rsValue !== null) prob -= 3;
@@ -5967,7 +5970,7 @@ function buildRow(item) {
   const rsColor = r.rsValue === null ? '#8b949e' : r.rsOk ? '#3fb950' : '#f85149';
   const rsText  = r.rsValue !== null ? `${r.rsValue > 0 ? '+' : ''}${r.rsValue}%` : '—';
   const rsIcon  = r.rsOk ? '✓' : r.rsValue !== null ? '✗' : '—';
-  const volMultColor = r.volRatio >= 1.5 ? '#3fb950' : r.volRatio >= VOLUME_CONFIRM_RATIO ? '#d4a017' : '#f85149';
+  const volMultColor = r.volRatio >= 1.5 ? '#3fb950' : r.volRatio >= SCR_VOLUME_CONFIRM_RATIO ? '#d4a017' : '#f85149';
   const emaDistColor = r.pctAboveEMA <= 10 ? '#3fb950' : r.pctAboveEMA <= 20 ? '#d4a017' : '#f85149';
   const structBg = r.tight ? 'background:#0d4a20;color:#3fb950;border:1px solid #238636' : 'background:#21262d;color:#8b949e;border:1px solid #30363d';
 
