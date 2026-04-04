@@ -5508,151 +5508,9 @@ const S2_ATH_MAX_DRAWDOWN = 0.15;
 const VOLUME_CONFIRM_RATIO = 1.4;  // Change 1: reclaim candle volume threshold
 const WEEKLY_EMA_PERIOD   = 44;    // Change 12: 44-week EMA ≈ 220-day
 const WEEKLY_TREND_PENALTY = 15;   // Change 12: subtract this if weekly trend fails
+// SP500_TICKERS, TSX_TICKERS, TICKERS, EXCHANGE_MAP declared in short-term block above
 
-// ─── UNIVERSE ─────────────────────────────────────────────────────────────────
-const SP500_TICKERS = ["A","AAL","AAP","AAPL","ABBV","ABT","ACN","ADBE","ADI","ADM","ADP","ADSK","AEE","AEP","AES","AFL","AIG","AIZ","AJG","AKAM","ALB","ALGN","ALL","ALLE","AMAT","AMCR","AMD","AME","AMGN","AMP","AMT","AMZN","ANET","AON","AOS","APA","APD","APH","APTV","ARE","ATO","AVB","AVGO","AVY","AWK","AXON","AXP","AZO","BA","BAC","BALL","BAX","BBWI","BBY","BDX","BEN","BF-B","BG","BIIB","BK","BKNG","BKR","BLDR","BLK","BMY","BR","BRK-B","BRO","BSX","BWA","BX","BXP","C","CAG","CAH","CARR","CAT","CB","CBOE","CBRE","CCI","CCL","CDNS","CDW","CE","CEG","CF","CFG","CHD","CHRW","CHTR","CI","CINF","CL","CLX","CMA","CMCSA","CME","CMG","CMI","CMS","CNC","CNP","COF","COO","COP","COST","CPB","CPRT","CPT","CRL","CRM","CRWD","CSCO","CSGP","CSX","CTAS","CTRA","CTSH","CTVA","CVS","CVX","CZR","D","DAL","DAY","DD","DE","DECK","DG","DGX","DHI","DHR","DIS","DLR","DLTR","DOC","DOV","DOW","DPZ","DRI","DTE","DUK","DVA","DVN","DXCM","EA","EBAY","ECL","ED","EFX","EG","EIX","EL","ELV","EMN","EMR","ENPH","EOG","EPAM","EQIX","EQR","EQT","ES","ESS","ETN","ETR","ETSY","EVRG","EW","EXC","EXPD","EXPE","EXR","F","FANG","FAST","FCX","FDS","FDX","FE","FFIV","FICO","FIS","FITB","FMC","FOX","FOXA","FRT","FSLR","FTNT","FTV","GD","GDDY","GE","GEHC","GEN","GILD","GIS","GL","GLW","GM","GNRC","GOOGL","GOOG","GPC","GPN","GS","GWW","HAL","HAS","HBAN","HCA","HD","HIG","HII","HLT","HOLX","HON","HPE","HPQ","HRL","HSIC","HST","HSY","HUBB","HUM","HWM","IBM","ICE","IDXX","IEX","IFF","ILMN","INCY","INTC","INTU","INVH","IP","IQV","IR","IRM","ISRG","IT","ITW","IVZ","J","JBHT","JCI","JKHY","JNJ","JPM","KEY","KEYS","KHC","KIM","KLAC","KMB","KMI","KMX","KO","KR","L","LDOS","LEN","LH","LHX","LIN","LKQ","LLY","LMT","LNT","LOW","LRCX","LULU","LUV","LVS","LW","LYB","LYV","MA","MAA","MAR","MAS","MCD","MCHP","MCK","MCO","MDLZ","MDT","MET","META","MGM","MHK","MKC","MKTX","MLM","MNST","MO","MOH","MOS","MPC","MPWR","MRK","MRNA","MS","MSCI","MSFT","MSI","MTB","MTD","MU","NCLH","NDAQ","NEE","NEM","NFLX","NI","NKE","NOC","NOW","NRG","NSC","NTAP","NTRS","NUE","NVDA","NVR","NWS","NWSA","NXPI","O","ODFL","OKE","OMC","ON","ORCL","ORLY","OXY","PAYC","PAYX","PCAR","PCG","PEG","PEP","PFE","PFG","PG","PGR","PH","PHM","PKG","PLD","PM","PNC","PNR","PNW","PODD","POOL","PPG","PPL","PRU","PSA","PSX","PTC","PWR","PYPL","QCOM","QRVO","RCL","REG","REGN","RF","RJF","RL","RMD","ROK","ROL","ROP","ROST","RSG","RTX","RVTY","SBAC","SBUX","SCHW","SJM","SLB","SMCI","SNA","SNPS","SO","SPG","SPGI","SRE","STE","STLD","STT","STX","STZ","SWK","SWKS","SYF","SYK","SYY","T","TAP","TDG","TDY","TECH","TEL","TER","TFC","TFX","TGT","TJX","TMO","TMUS","TPR","TRGP","TRMB","TROW","TRV","TSCO","TSLA","TSN","TT","TTWO","TXN","TXT","TYL","UAL","UDR","UHS","ULTA","UNH","UNP","UPS","URI","USB","V","VFC","VICI","VLO","VLTO","VMC","VRSK","VRSN","VRTX","VTR","VTRS","VZ","WAB","WAT","WDAY","WBD","WDC","WELL","WFC","WHR","WM","WMB","WMT","WRB","WST","WTW","WY","WYNN","XEL","XOM","XYL","YUM","ZBH","ZBRA","ZTS"];
-const TSX_TICKERS = ["RY.TO","TD.TO","BN.TO","ENB.TO","CNR.TO","CP.TO","BMO.TO","BNS.TO","SHOP.TO","SU.TO","CNQ.TO","MFC.TO","TRP.TO","CM.TO","ATD.TO","WCN.TO","BAM.TO","SLF.TO","IFC.TO","TRI.TO","L.TO","POW.TO","GWO.TO","T.TO","BCE.TO","WPM.TO","ABX.TO","AEM.TO","NTR.TO","FTS.TO","DOL.TO","CSU.TO","QSR.TO","H.TO","GFL.TO","WSP.TO","MRU.TO","RCI-B.TO","IMO.TO","FFH.TO"];
-const TICKERS = [...SP500_TICKERS, ...TSX_TICKERS];
-const EXCHANGE_MAP = {};
-SP500_TICKERS.forEach(t => EXCHANGE_MAP[t] = 'US');
-TSX_TICKERS.forEach(t => EXCHANGE_MAP[t] = 'TSX');
-
-// ─── COMPANY NAMES ────────────────────────────────────────────────────────────
-const COMPANY_NAMES = {
-  "A":"Agilent Technologies","AAL":"American Airlines","AAP":"Advance Auto Parts","AAPL":"Apple Inc.",
-  "ABBV":"AbbVie Inc.","ABT":"Abbott Laboratories","ACN":"Accenture plc","ADBE":"Adobe Inc.",
-  "ADI":"Analog Devices","ADM":"Archer-Daniels-Midland","ADP":"Automatic Data Processing","ADSK":"Autodesk Inc.",
-  "AEE":"Ameren Corp","AEP":"American Electric Power","AES":"AES Corp","AFL":"Aflac Inc.",
-  "AIG":"American International Group","AIZ":"Assurant Inc.","AJG":"Arthur J. Gallagher","AKAM":"Akamai Technologies",
-  "ALB":"Albemarle Corp","ALGN":"Align Technology","ALL":"Allstate Corp","ALLE":"Allegion plc",
-  "AMAT":"Applied Materials","AMCR":"Amcor plc","AMD":"Advanced Micro Devices","AME":"AMETEK Inc.",
-  "AMGN":"Amgen Inc.","AMP":"Ameriprise Financial","AMT":"American Tower Corp","AMZN":"Amazon.com Inc.",
-  "ANET":"Arista Networks","AON":"Aon plc","AOS":"A.O. Smith Corp","APA":"APA Corp",
-  "APD":"Air Products & Chemicals","APH":"Amphenol Corp","APTV":"Aptiv plc","ARE":"Alexandria Real Estate",
-  "ATO":"Atmos Energy","AVB":"AvalonBay Communities","AVGO":"Broadcom Inc.","AVY":"Avery Dennison",
-  "AWK":"American Water Works","AXON":"Axon Enterprise","AXP":"American Express","AZO":"AutoZone Inc.",
-  "BA":"Boeing Co.","BAC":"Bank of America","BALL":"Ball Corp","BAX":"Baxter International",
-  "BBWI":"Bath & Body Works","BBY":"Best Buy Co.","BDX":"Becton Dickinson","BEN":"Franklin Resources",
-  "BF-B":"Brown-Forman Corp","BG":"Bunge Global","BIIB":"Biogen Inc.","BK":"Bank of New York Mellon",
-  "BKNG":"Booking Holdings","BKR":"Baker Hughes","BLDR":"Builders FirstSource","BLK":"BlackRock Inc.",
-  "BMY":"Bristol-Myers Squibb","BR":"Broadridge Financial","BRK-B":"Berkshire Hathaway","BRO":"Brown & Brown",
-  "BSX":"Boston Scientific","BWA":"BorgWarner Inc.","BX":"Blackstone Inc.","BXP":"BXP Inc.",
-  "C":"Citigroup Inc.","CAG":"Conagra Brands","CAH":"Cardinal Health","CARR":"Carrier Global",
-  "CAT":"Caterpillar Inc.","CB":"Chubb Ltd.","CBOE":"Cboe Global Markets","CBRE":"CBRE Group",
-  "CCI":"Crown Castle Inc.","CCL":"Carnival Corp","CDNS":"Cadence Design Systems","CDW":"CDW Corp",
-  "CE":"Celanese Corp","CEG":"Constellation Energy","CF":"CF Industries","CFG":"Citizens Financial",
-  "CHD":"Church & Dwight","CHRW":"C.H. Robinson","CHTR":"Charter Communications","CI":"Cigna Group",
-  "CINF":"Cincinnati Financial","CL":"Colgate-Palmolive","CLX":"Clorox Co.","CMA":"Comerica Inc.",
-  "CMCSA":"Comcast Corp","CME":"CME Group","CMG":"Chipotle Mexican Grill","CMI":"Cummins Inc.",
-  "CMS":"CMS Energy","CNC":"Centene Corp","CNP":"CenterPoint Energy","COF":"Capital One Financial",
-  "COO":"Cooper Companies","COP":"ConocoPhillips","COST":"Costco Wholesale","CPB":"Campbell Soup",
-  "CPRT":"Copart Inc.","CPT":"Camden Property Trust","CRL":"Charles River Laboratories","CRM":"Salesforce Inc.",
-  "CRWD":"CrowdStrike Holdings","CSCO":"Cisco Systems","CSGP":"CoStar Group","CSX":"CSX Corp",
-  "CTAS":"Cintas Corp","CTRA":"Coterra Energy","CTSH":"Cognizant Technology","CTVA":"Corteva Inc.",
-  "CVS":"CVS Health","CVX":"Chevron Corp","CZR":"Caesars Entertainment","D":"Dominion Energy",
-  "DAL":"Delta Air Lines","DAY":"Dayforce Inc.","DD":"DuPont de Nemours","DE":"Deere & Company",
-  "DECK":"Deckers Outdoor","DG":"Dollar General","DGX":"Quest Diagnostics","DHI":"D.R. Horton",
-  "DHR":"Danaher Corp","DIS":"Walt Disney Co.","DLR":"Digital Realty Trust","DLTR":"Dollar Tree",
-  "DOC":"Healthpeak Properties","DOV":"Dover Corp","DOW":"Dow Inc.","DPZ":"Domino's Pizza",
-  "DRI":"Darden Restaurants","DTE":"DTE Energy","DUK":"Duke Energy","DVA":"DaVita Inc.",
-  "DVN":"Devon Energy","DXCM":"Dexcom Inc.","EA":"Electronic Arts","EBAY":"eBay Inc.",
-  "ECL":"Ecolab Inc.","ED":"Consolidated Edison","EFX":"Equifax Inc.","EG":"Everest Group",
-  "EIX":"Edison International","EL":"Estee Lauder Companies","ELV":"Elevance Health","EMN":"Eastman Chemical",
-  "EMR":"Emerson Electric","ENPH":"Enphase Energy","EOG":"EOG Resources","EPAM":"EPAM Systems",
-  "EQIX":"Equinix Inc.","EQR":"Equity Residential","EQT":"EQT Corp","ES":"Eversource Energy",
-  "ESS":"Essex Property Trust","ETN":"Eaton Corp","ETR":"Entergy Corp","ETSY":"Etsy Inc.",
-  "EVRG":"Evergy Inc.","EW":"Edwards Lifesciences","EXC":"Exelon Corp","EXPD":"Expeditors Intl",
-  "EXPE":"Expedia Group","EXR":"Extra Space Storage","F":"Ford Motor Co.","FANG":"Diamondback Energy",
-  "FAST":"Fastenal Co.","FCX":"Freeport-McMoRan","FDS":"FactSet Research Systems","FDX":"FedEx Corp",
-  "FE":"FirstEnergy Corp","FFIV":"F5 Inc.","FICO":"Fair Isaac Corp","FIS":"Fidelity National Info",
-  "FITB":"Fifth Third Bancorp","FMC":"FMC Corp","FOX":"Fox Corp","FOXA":"Fox Corp Class A",
-  "FRT":"Federal Realty Investment","FSLR":"First Solar Inc.","FTNT":"Fortinet Inc.","FTV":"Fortive Corp",
-  "GD":"General Dynamics","GDDY":"GoDaddy Inc.","GE":"GE Aerospace","GEHC":"GE HealthCare Technologies",
-  "GEN":"Gen Digital Inc.","GILD":"Gilead Sciences","GIS":"General Mills","GL":"Globe Life Inc.",
-  "GLW":"Corning Inc.","GM":"General Motors","GNRC":"Generac Holdings","GOOGL":"Alphabet Inc. Class A",
-  "GOOG":"Alphabet Inc. Class C","GPC":"Genuine Parts Co.","GPN":"Global Payments","GS":"Goldman Sachs",
-  "GWW":"W.W. Grainger","HAL":"Halliburton Co.","HAS":"Hasbro Inc.","HBAN":"Huntington Bancshares",
-  "HCA":"HCA Healthcare","HD":"Home Depot","HIG":"Hartford Financial","HII":"Huntington Ingalls",
-  "HLT":"Hilton Worldwide","HOLX":"Hologic Inc.","HON":"Honeywell International","HPE":"Hewlett Packard Enterprise",
-  "HPQ":"HP Inc.","HRL":"Hormel Foods","HSIC":"Henry Schein","HST":"Host Hotels & Resorts",
-  "HSY":"Hershey Co.","HUBB":"Hubbell Inc.","HUM":"Humana Inc.","HWM":"Howmet Aerospace",
-  "IBM":"IBM Corp","ICE":"Intercontinental Exchange","IDXX":"IDEXX Laboratories","IEX":"IDEX Corp",
-  "IFF":"International Flavors","ILMN":"Illumina Inc.","INCY":"Incyte Corp","INTC":"Intel Corp",
-  "INTU":"Intuit Inc.","INVH":"Invitation Homes","IP":"International Paper","IQV":"IQVIA Holdings",
-  "IR":"Ingersoll Rand","IRM":"Iron Mountain","ISRG":"Intuitive Surgical","IT":"Gartner Inc.",
-  "ITW":"Illinois Tool Works","IVZ":"Invesco Ltd.","J":"Jacobs Solutions","JBHT":"J.B. Hunt Transport",
-  "JCI":"Johnson Controls","JKHY":"Jack Henry & Associates","JNJ":"Johnson & Johnson","JPM":"JPMorgan Chase",
-  "KEY":"KeyCorp","KEYS":"Keysight Technologies","KHC":"Kraft Heinz Co.","KIM":"Kimco Realty",
-  "KLAC":"KLA Corp","KMB":"Kimberly-Clark","KMI":"Kinder Morgan","KMX":"CarMax Inc.",
-  "KO":"Coca-Cola Co.","KR":"Kroger Co.","L":"Loews Corp","LDOS":"Leidos Holdings",
-  "LEN":"Lennar Corp","LH":"Laboratory Corp","LHX":"L3Harris Technologies","LIN":"Linde plc",
-  "LKQ":"LKQ Corp","LLY":"Eli Lilly and Co.","LMT":"Lockheed Martin","LNT":"Alliant Energy",
-  "LOW":"Lowe's Companies","LRCX":"Lam Research","LULU":"Lululemon Athletica","LUV":"Southwest Airlines",
-  "LVS":"Las Vegas Sands","LW":"Lamb Weston Holdings","LYB":"LyondellBasell Industries","LYV":"Live Nation Entertainment",
-  "MA":"Mastercard Inc.","MAA":"Mid-America Apartment","MAR":"Marriott International","MAS":"Masco Corp",
-  "MCD":"McDonald's Corp","MCHP":"Microchip Technology","MCK":"McKesson Corp","MCO":"Moody's Corp",
-  "MDLZ":"Mondelez International","MDT":"Medtronic plc","MET":"MetLife Inc.","META":"Meta Platforms",
-  "MGM":"MGM Resorts","MHK":"Mohawk Industries","MKC":"McCormick & Company","MKTX":"MarketAxess Holdings",
-  "MLM":"Martin Marietta Materials","MNST":"Monster Beverage","MO":"Altria Group","MOH":"Molina Healthcare",
-  "MOS":"Mosaic Co.","MPC":"Marathon Petroleum","MPWR":"Monolithic Power Systems","MRK":"Merck & Co.",
-  "MRNA":"Moderna Inc.","MS":"Morgan Stanley","MSCI":"MSCI Inc.","MSFT":"Microsoft Corp",
-  "MSI":"Motorola Solutions","MTB":"M&T Bank Corp","MTD":"Mettler-Toledo International","MU":"Micron Technology",
-  "NCLH":"Norwegian Cruise Line","NDAQ":"Nasdaq Inc.","NEE":"NextEra Energy","NEM":"Newmont Corp",
-  "NFLX":"Netflix Inc.","NI":"NiSource Inc.","NKE":"Nike Inc.","NOC":"Northrop Grumman",
-  "NOW":"ServiceNow Inc.","NRG":"NRG Energy","NSC":"Norfolk Southern","NTAP":"NetApp Inc.",
-  "NTRS":"Northern Trust","NUE":"Nucor Corp","NVDA":"Nvidia Corp","NVR":"NVR Inc.",
-  "NWS":"News Corp","NWSA":"News Corp Class A","NXPI":"NXP Semiconductors","O":"Realty Income Corp",
-  "ODFL":"Old Dominion Freight Line","OKE":"ONEOK Inc.","OMC":"Omnicom Group","ON":"ON Semiconductor",
-  "ORCL":"Oracle Corp","ORLY":"O'Reilly Automotive","OXY":"Occidental Petroleum","PAYC":"Paycom Software",
-  "PAYX":"Paychex Inc.","PCAR":"PACCAR Inc.","PCG":"PG&E Corp","PEG":"Public Service Enterprise",
-  "PEP":"PepsiCo Inc.","PFE":"Pfizer Inc.","PFG":"Principal Financial","PG":"Procter & Gamble",
-  "PGR":"Progressive Corp","PH":"Parker-Hannifin","PHM":"PulteGroup Inc.","PKG":"Packaging Corp",
-  "PLD":"Prologis Inc.","PM":"Philip Morris International","PNC":"PNC Financial Services","PNR":"Pentair plc",
-  "PNW":"Pinnacle West Capital","PODD":"Insulet Corp","POOL":"Pool Corp","PPG":"PPG Industries",
-  "PPL":"PPL Corp","PRU":"Prudential Financial","PSA":"Public Storage","PSX":"Phillips 66",
-  "PTC":"PTC Inc.","PWR":"Quanta Services","PYPL":"PayPal Holdings","QCOM":"Qualcomm Inc.",
-  "QRVO":"Qorvo Inc.","RCL":"Royal Caribbean Cruises","REG":"Regency Centers","REGN":"Regeneron Pharmaceuticals",
-  "RF":"Regions Financial","RJF":"Raymond James Financial","RL":"Ralph Lauren Corp","RMD":"ResMed Inc.",
-  "ROK":"Rockwell Automation","ROL":"Rollins Inc.","ROP":"Roper Technologies","ROST":"Ross Stores",
-  "RSG":"Republic Services","RTX":"RTX Corp","RVTY":"Revvity Inc.","SBAC":"SBA Communications",
-  "SBUX":"Starbucks Corp","SCHW":"Charles Schwab Corp","SJM":"J.M. Smucker Co.","SLB":"SLB (Schlumberger)",
-  "SMCI":"Super Micro Computer","SNA":"Snap-on Inc.","SNPS":"Synopsys Inc.","SO":"Southern Company",
-  "SPG":"Simon Property Group","SPGI":"S&P Global Inc.","SRE":"Sempra","STE":"STERIS plc",
-  "STLD":"Steel Dynamics","STT":"State Street Corp","STX":"Seagate Technology","STZ":"Constellation Brands",
-  "SWK":"Stanley Black & Decker","SWKS":"Skyworks Solutions","SYF":"Synchrony Financial","SYK":"Stryker Corp",
-  "SYY":"Sysco Corp","T":"AT&T Inc.","TAP":"Molson Coors Beverage","TDG":"TransDigm Group",
-  "TDY":"Teledyne Technologies","TECH":"Bio-Techne Corp","TEL":"TE Connectivity","TER":"Teradyne Inc.",
-  "TFC":"Truist Financial","TFX":"Teleflex Inc.","TGT":"Target Corp","TJX":"TJX Companies",
-  "TMO":"Thermo Fisher Scientific","TMUS":"T-Mobile US","TPR":"Tapestry Inc.","TRGP":"Targa Resources",
-  "TRMB":"Trimble Inc.","TROW":"T. Rowe Price Group","TRV":"Travelers Companies","TSCO":"Tractor Supply Co.",
-  "TSLA":"Tesla Inc.","TSN":"Tyson Foods","TT":"Trane Technologies","TTWO":"Take-Two Interactive",
-  "TXN":"Texas Instruments","TXT":"Textron Inc.","TYL":"Tyler Technologies","UAL":"United Airlines Holdings",
-  "UDR":"UDR Inc.","UHS":"Universal Health Services","ULTA":"Ulta Beauty","UNH":"UnitedHealth Group",
-  "UNP":"Union Pacific Corp","UPS":"United Parcel Service","URI":"United Rentals","USB":"U.S. Bancorp",
-  "V":"Visa Inc.","VFC":"V.F. Corp","VICI":"VICI Properties","VLO":"Valero Energy",
-  "VLTO":"Veralto Corp","VMC":"Vulcan Materials","VRSK":"Verisk Analytics","VRSN":"VeriSign Inc.",
-  "VRTX":"Vertex Pharmaceuticals","VTR":"Ventas Inc.","VTRS":"Viatris Inc.","VZ":"Verizon Communications",
-  "WAB":"Wabtec Corp","WAT":"Waters Corp","WDAY":"Workday Inc.","WBD":"Warner Bros. Discovery",
-  "WDC":"Western Digital","WELL":"Welltower Inc.","WFC":"Wells Fargo & Co.","WHR":"Whirlpool Corp",
-  "WM":"Waste Management","WMB":"Williams Companies","WMT":"Walmart Inc.","WRB":"W.R. Berkley Corp",
-  "WST":"West Pharmaceutical Services","WTW":"Willis Towers Watson","WY":"Weyerhaeuser Co.",
-  "WYNN":"Wynn Resorts","XEL":"Xcel Energy","XOM":"Exxon Mobil Corp","XYL":"Xylem Inc.",
-  "YUM":"Yum! Brands","ZBH":"Zimmer Biomet Holdings","ZBRA":"Zebra Technologies","ZTS":"Zoetis Inc.",
-  "RY.TO":"Royal Bank of Canada","TD.TO":"Toronto-Dominion Bank","BN.TO":"Brookfield Corp",
-  "ENB.TO":"Enbridge Inc.","CNR.TO":"Canadian National Railway","CP.TO":"Canadian Pacific Kansas City",
-  "BMO.TO":"Bank of Montreal","BNS.TO":"Bank of Nova Scotia","SHOP.TO":"Shopify Inc.",
-  "SU.TO":"Suncor Energy","CNQ.TO":"Canadian Natural Resources","MFC.TO":"Manulife Financial",
-  "TRP.TO":"TC Energy Corp","CM.TO":"CIBC","ATD.TO":"Alimentation Couche-Tard",
-  "WCN.TO":"Waste Connections","BAM.TO":"Brookfield Asset Management","SLF.TO":"Sun Life Financial",
-  "IFC.TO":"Intact Financial","TRI.TO":"Thomson Reuters","L.TO":"Loblaw Companies",
-  "POW.TO":"Power Corp of Canada","GWO.TO":"Great-West Lifeco","T.TO":"TELUS Corp",
-  "BCE.TO":"BCE Inc.","WPM.TO":"Wheaton Precious Metals","ABX.TO":"Barrick Gold",
-  "AEM.TO":"Agnico Eagle Mines","NTR.TO":"Nutrien Ltd.","FTS.TO":"Fortis Inc.",
-  "DOL.TO":"Dollarama Inc.","CSU.TO":"Constellation Software","QSR.TO":"Restaurant Brands Intl",
-  "H.TO":"Hydro One","GFL.TO":"GFL Environmental","WSP.TO":"WSP Global",
-  "MRU.TO":"Metro Inc.","RCI-B.TO":"Rogers Communications","IMO.TO":"Imperial Oil","FFH.TO":"Fairfax Financial"
-};
-
+// COMPANY_NAMES declared in short-term block above
 // ─── STATE ────────────────────────────────────────────────────────────────────
 let running = false, stopRequested = false;
 let t1Results = [], t2Results = [];
@@ -6458,20 +6316,7 @@ function scInit() {
 // ═══ LONG TERM TRACKER JS ═══
 
 // [GS Cloud layer defined above]
-
-// ─── CONSTANTS ────────────────────────────────────────────────────────────────
-
-// ─── UNIVERSE ─────────────────────────────────────────────────────────────────
-const SP500_TICKERS = ["A","AAL","AAP","AAPL","ABBV","ABT","ACN","ADBE","ADI","ADM","ADP","ADSK","AEE","AEP","AES","AFL","AIG","AIZ","AJG","AKAM","ALB","ALGN","ALL","ALLE","AMAT","AMCR","AMD","AME","AMGN","AMP","AMT","AMZN","ANET","AON","AOS","APA","APD","APH","APTV","ARE","ATO","AVB","AVGO","AVY","AWK","AXON","AXP","AZO","BA","BAC","BALL","BAX","BBWI","BBY","BDX","BEN","BF-B","BG","BIIB","BK","BKNG","BKR","BLDR","BLK","BMY","BR","BRK-B","BRO","BSX","BWA","BX","BXP","C","CAG","CAH","CARR","CAT","CB","CBOE","CBRE","CCI","CCL","CDNS","CDW","CE","CEG","CF","CFG","CHD","CHRW","CHTR","CI","CINF","CL","CLX","CMA","CMCSA","CME","CMG","CMI","CMS","CNC","CNP","COF","COO","COP","COST","CPB","CPRT","CPT","CRL","CRM","CRWD","CSCO","CSGP","CSX","CTAS","CTRA","CTSH","CTVA","CVS","CVX","CZR","D","DAL","DAY","DD","DE","DECK","DG","DGX","DHI","DHR","DIS","DLR","DLTR","DOC","DOV","DOW","DPZ","DRI","DTE","DUK","DVA","DVN","DXCM","EA","EBAY","ECL","ED","EFX","EG","EIX","EL","ELV","EMN","EMR","ENPH","EOG","EPAM","EQIX","EQR","EQT","ES","ESS","ETN","ETR","ETSY","EVRG","EW","EXC","EXPD","EXPE","EXR","F","FANG","FAST","FCX","FDS","FDX","FE","FFIV","FICO","FIS","FITB","FMC","FOX","FOXA","FRT","FSLR","FTNT","FTV","GD","GDDY","GE","GEHC","GEN","GILD","GIS","GL","GLW","GM","GNRC","GOOGL","GOOG","GPC","GPN","GS","GWW","HAL","HAS","HBAN","HCA","HD","HIG","HII","HLT","HOLX","HON","HPE","HPQ","HRL","HSIC","HST","HSY","HUBB","HUM","HWM","IBM","ICE","IDXX","IEX","IFF","ILMN","INCY","INTC","INTU","INVH","IP","IQV","IR","IRM","ISRG","IT","ITW","IVZ","J","JBHT","JCI","JKHY","JNJ","JPM","KEY","KEYS","KHC","KIM","KLAC","KMB","KMI","KMX","KO","KR","L","LDOS","LEN","LH","LHX","LIN","LKQ","LLY","LMT","LNT","LOW","LRCX","LULU","LUV","LVS","LW","LYB","LYV","MA","MAA","MAR","MAS","MCD","MCHP","MCK","MCO","MDLZ","MDT","MET","META","MGM","MHK","MKC","MKTX","MLM","MNST","MO","MOH","MOS","MPC","MPWR","MRK","MRNA","MS","MSCI","MSFT","MSI","MTB","MTD","MU","NCLH","NDAQ","NEE","NEM","NFLX","NI","NKE","NOC","NOW","NRG","NSC","NTAP","NTRS","NUE","NVDA","NVR","NWS","NWSA","NXPI","O","ODFL","OKE","OMC","ON","ORCL","ORLY","OXY","PAYC","PAYX","PCAR","PCG","PEG","PEP","PFE","PFG","PG","PGR","PH","PHM","PKG","PLD","PM","PNC","PNR","PNW","PODD","POOL","PPG","PPL","PRU","PSA","PSX","PTC","PWR","PYPL","QCOM","QRVO","RCL","REG","REGN","RF","RJF","RL","RMD","ROK","ROL","ROP","ROST","RSG","RTX","RVTY","SBAC","SBUX","SCHW","SJM","SLB","SMCI","SNA","SNPS","SO","SPG","SPGI","SRE","STE","STLD","STT","STX","STZ","SWK","SWKS","SYF","SYK","SYY","T","TAP","TDG","TDY","TECH","TEL","TER","TFC","TFX","TGT","TJX","TMO","TMUS","TPR","TRGP","TRMB","TROW","TRV","TSCO","TSLA","TSN","TT","TTWO","TXN","TXT","TYL","UAL","UDR","UHS","ULTA","UNH","UNP","UPS","URI","USB","V","VFC","VICI","VLO","VLTO","VMC","VRSK","VRSN","VRTX","VTR","VTRS","VZ","WAB","WAT","WDAY","WBD","WDC","WELL","WFC","WHR","WM","WMB","WMT","WRB","WST","WTW","WY","WYNN","XEL","XOM","XYL","YUM","ZBH","ZBRA","ZTS"];
-const TSX_TICKERS  = ["RY.TO","TD.TO","BN.TO","ENB.TO","CNR.TO","CP.TO","BMO.TO","BNS.TO","SHOP.TO","SU.TO","CNQ.TO","MFC.TO","TRP.TO","CM.TO","ATD.TO","WCN.TO","BAM.TO","SLF.TO","IFC.TO","TRI.TO","L.TO","POW.TO","GWO.TO","T.TO","BCE.TO","WPM.TO","ABX.TO","AEM.TO","NTR.TO","FTS.TO","DOL.TO","CSU.TO","QSR.TO","H.TO","GFL.TO","WSP.TO","MRU.TO","RCI-B.TO","IMO.TO","FFH.TO"];
-const EXCHANGE_MAP = {};
-SP500_TICKERS.forEach(t => EXCHANGE_MAP[t] = 'US');
-TSX_TICKERS.forEach(t => EXCHANGE_MAP[t] = 'TSX');
-
-const COMPANY_NAMES = {
-  "A":"Agilent Technologies","AAL":"American Airlines","AAP":"Advance Auto Parts","AAPL":"Apple Inc.","ABBV":"AbbVie Inc.","ABT":"Abbott Laboratories","ACN":"Accenture plc","ADBE":"Adobe Inc.","ADI":"Analog Devices","ADM":"Archer-Daniels-Midland","ADP":"Automatic Data Processing","ADSK":"Autodesk Inc.","AMD":"Advanced Micro Devices","AMGN":"Amgen Inc.","AMZN":"Amazon.com Inc.","ANET":"Arista Networks","AVGO":"Broadcom Inc.","AXP":"American Express","AZO":"AutoZone Inc.","BA":"Boeing Co.","BAC":"Bank of America","BLK":"BlackRock Inc.","BKNG":"Booking Holdings","BMY":"Bristol-Myers Squibb","BRK-B":"Berkshire Hathaway","BSX":"Boston Scientific","BX":"Blackstone Inc.","C":"Citigroup Inc.","CAT":"Caterpillar Inc.","CB":"Chubb Ltd.","CME":"CME Group","CMG":"Chipotle Mexican Grill","COP":"ConocoPhillips","COST":"Costco Wholesale","CRM":"Salesforce Inc.","CRWD":"CrowdStrike Holdings","CSCO":"Cisco Systems","CVX":"Chevron Corp","D":"Dominion Energy","DE":"Deere & Company","DHR":"Danaher Corp","DIS":"Walt Disney Co.","EA":"Electronic Arts","ECL":"Ecolab Inc.","ELV":"Elevance Health","EMR":"Emerson Electric","EQIX":"Equinix Inc.","ETN":"Eaton Corp","F":"Ford Motor Co.","FCX":"Freeport-McMoRan","FICO":"Fair Isaac Corp","FTNT":"Fortinet Inc.","GD":"General Dynamics","GE":"GE Aerospace","GILD":"Gilead Sciences","GOOGL":"Alphabet Inc. Class A","GOOG":"Alphabet Inc. Class C","GS":"Goldman Sachs","HD":"Home Depot","HON":"Honeywell International","HUM":"Humana Inc.","IBM":"IBM Corp","ICE":"Intercontinental Exchange","IDXX":"IDEXX Laboratories","INTU":"Intuit Inc.","ISRG":"Intuitive Surgical","IT":"Gartner Inc.","ITW":"Illinois Tool Works","JNJ":"Johnson & Johnson","JPM":"JPMorgan Chase","KLAC":"KLA Corp","KO":"Coca-Cola Co.","LIN":"Linde plc","LLY":"Eli Lilly and Co.","LMT":"Lockheed Martin","LOW":"Lowe's Companies","LRCX":"Lam Research","LULU":"Lululemon Athletica","MA":"Mastercard Inc.","MAR":"Marriott International","MCD":"McDonald's Corp","MCK":"McKesson Corp","MCO":"Moody's Corp","META":"Meta Platforms","MSFT":"Microsoft Corp","MSI":"Motorola Solutions","NEE":"NextEra Energy","NFLX":"Netflix Inc.","NKE":"Nike Inc.","NOC":"Northrop Grumman","NOW":"ServiceNow Inc.","NVDA":"Nvidia Corp","O":"Realty Income Corp","ORCL":"Oracle Corp","ORLY":"O'Reilly Automotive","PAYX":"Paychex Inc.","PEP":"PepsiCo Inc.","PG":"Procter & Gamble","PGR":"Progressive Corp","PLD":"Prologis Inc.","PM":"Philip Morris International","PYPL":"PayPal Holdings","QCOM":"Qualcomm Inc.","REGN":"Regeneron Pharmaceuticals","RMD":"ResMed Inc.","ROK":"Rockwell Automation","ROP":"Roper Technologies","ROST":"Ross Stores","RTX":"RTX Corp","SBUX":"Starbucks Corp","SCHW":"Charles Schwab Corp","SLB":"SLB (Schlumberger)","SNPS":"Synopsys Inc.","SO":"Southern Company","SPG":"Simon Property Group","SPGI":"S&P Global Inc.","SYK":"Stryker Corp","T":"AT&T Inc.","TDG":"TransDigm Group","TGT":"Target Corp","TJX":"TJX Companies","TMO":"Thermo Fisher Scientific","TMUS":"T-Mobile US","TSLA":"Tesla Inc.","TXN":"Texas Instruments","UNH":"UnitedHealth Group","UNP":"Union Pacific Corp","UPS":"United Parcel Service","URI":"United Rentals","V":"Visa Inc.","VRTX":"Vertex Pharmaceuticals","VZ":"Verizon Communications","WFC":"Wells Fargo & Co.","WM":"Waste Management","WMT":"Walmart Inc.","XOM":"Exxon Mobil Corp","YUM":"Yum! Brands","ZTS":"Zoetis Inc.",
-  "RY.TO":"Royal Bank of Canada","TD.TO":"Toronto-Dominion Bank","BN.TO":"Brookfield Corp","ENB.TO":"Enbridge Inc.","CNR.TO":"Canadian National Railway","CP.TO":"Canadian Pacific Kansas City","BMO.TO":"Bank of Montreal","BNS.TO":"Bank of Nova Scotia","SHOP.TO":"Shopify Inc.","SU.TO":"Suncor Energy","CNQ.TO":"Canadian Natural Resources","MFC.TO":"Manulife Financial","TRP.TO":"TC Energy Corp","CM.TO":"CIBC","ATD.TO":"Alimentation Couche-Tard","WCN.TO":"Waste Connections","BAM.TO":"Brookfield Asset Management","SLF.TO":"Sun Life Financial","IFC.TO":"Intact Financial","TRI.TO":"Thomson Reuters","L.TO":"Loblaw Companies","POW.TO":"Power Corp of Canada","GWO.TO":"Great-West Lifeco","T.TO":"TELUS Corp","BCE.TO":"BCE Inc.","WPM.TO":"Wheaton Precious Metals","ABX.TO":"Barrick Gold","AEM.TO":"Agnico Eagle Mines","NTR.TO":"Nutrien Ltd.","FTS.TO":"Fortis Inc.","DOL.TO":"Dollarama Inc.","CSU.TO":"Constellation Software","QSR.TO":"Restaurant Brands Intl","H.TO":"Hydro One","GFL.TO":"GFL Environmental","WSP.TO":"WSP Global","MRU.TO":"Metro Inc.","RCI-B.TO":"Rogers Communications","IMO.TO":"Imperial Oil","FFH.TO":"Fairfax Financial"
-};
+// SP500_TICKERS, TSX_TICKERS, EXCHANGE_MAP, COMPANY_NAMES declared in short-term block above
 
 // ─── STATE ────────────────────────────────────────────────────────────────────
 const LT_STORAGE_KEY = 'lt_tracker_v1';
