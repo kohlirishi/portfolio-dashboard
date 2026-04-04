@@ -461,7 +461,8 @@ table.div-ht tfoot td{padding:10px 14px;font-size:13px;font-weight:700;backgroun
 #pg-short /* SECTION */
   .section { background: #161b22; border: 1px solid #30363d; border-radius: 8px; margin-bottom: 16px; overflow: hidden; }
 #pg-short .table-wrap { overflow-x: auto; overflow-y: visible; }
-#pg-short table { width: 100%; border-collapse: collapse; min-width: 1200px; }
+#pg-short .sec-body .table-wrap { overflow-x: auto; margin-right: 0; }
+#pg-short table { width: 100%; border-collapse: collapse; min-width: 1260px; }
 #pg-short td { padding: 10px 14px; border-bottom: 1px solid #21262d; font-size: 13px; vertical-align: middle; }
 #pg-short td:last-child { padding-left: 16px; padding-right: 32px; min-width: 110px; }
 #pg-short th:last-child { padding-left: 16px; padding-right: 32px; min-width: 110px; }
@@ -4821,11 +4822,18 @@ async function confirmPendingEntries() {
   const toRemove = [];
   for (const p of STATE.pendingEntries) {
     try {
+      // ── Market-hours guard: only confirm during live market session ──────
+      // Never convert a pending entry to a live trade outside market hours
+      // (weekends, holidays, pre-market, after-hours)
+      const exchange = EXCHANGE_MAP[p.ticker] || 'US';
+      const marketOpen = exchange === 'TSX' ? isTSXOpen() : isMarketOpen();
+      if (!marketOpen) continue; // skip — market is closed, check again next tick
+
       const price = await fetchLatestPrice(p.ticker);
       if (!price) continue;
-      // Confirm: price still above reclaim close
+      // Confirm: price still above reclaim close (next-session close confirmation)
       if (price > p.reclaimClose) {
-        const priceUSD = EXCHANGE_MAP[p.ticker] === 'TSX' ? toUSD(price) : price;
+        const priceUSD = exchange === 'TSX' ? toUSD(price) : price;
         const trade = createTrade(p.ticker, p.type, p.prob, priceUSD, p.runTime);
         if (trade) {
           notify(`✅ Entry confirmed: ${p.ticker} at $${priceUSD.toFixed(2)} USD (next-session close above reclaim)`);
@@ -4833,7 +4841,7 @@ async function confirmPendingEntries() {
         }
         toRemove.push(p.id);
       }
-      // If signal is more than 2 sessions old, cancel
+      // If signal is more than 2 trading sessions old (2 calendar days), cancel
       const signalAge = (Date.now() - new Date(p.signalDate).getTime()) / (24*60*60*1000);
       if (signalAge > 2) { toRemove.push(p.id); changed = true; }
     } catch {}
@@ -5344,7 +5352,7 @@ function renderLive() {
       <td class="${cls}">${chg>=0?'+':''}${chg.toFixed(2)}%</td>
       <td style="font-size:12px">${targets}</td>
       <td style="color:#f85149">$${trailStop.toFixed(2)}<br><small style="color:#8b949e">−2% trail</small></td>
-      <td><button class="btn-close" onclick="manualClose('${t.id}')">Close</button></td>
+      <td style="padding-left:16px;padding-right:28px;min-width:100px;text-align:left"><button class="btn-close" onclick="manualClose('${t.id}')">Close</button></td>
     </tr>`;
   }).join('');
 }
