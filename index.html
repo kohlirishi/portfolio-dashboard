@@ -460,8 +460,14 @@ table.div-ht tfoot td{padding:10px 14px;font-size:13px;font-weight:700;backgroun
 #pg-short .card.open  .card-val { color: #f0f6fc; }
 #pg-short /* SECTION */
   .section { background: #161b22; border: 1px solid #30363d; border-radius: 8px; margin-bottom: 16px; overflow: hidden; }
+/* Override overflow for pg-short sections so the scrollable table-wrap is never clipped */
+#pg-short .section { overflow: visible; border: none; border-radius: 0; margin-bottom: 16px; }
+#pg-short .section > .section-header { border: 1px solid #30363d; border-bottom: none; border-radius: 8px 8px 0 0; background: #161b22; }
+#pg-short .section > .sec-body { border: 1px solid #30363d; border-top: none; border-radius: 0 0 8px 8px; background: #161b22; overflow: hidden; }
+#pg-short .section > .sec-body.minimized + * { display: none; }
+#pg-short .section > *:not(.section-header):not(.sec-body) { border-left: 1px solid #30363d; border-right: 1px solid #30363d; background: #161b22; }
+#pg-short .section > *:last-child:not(.section-header) { border-bottom: 1px solid #30363d; border-radius: 0 0 8px 8px; }
 #pg-short .table-wrap { overflow-x: auto; overflow-y: visible; }
-#pg-short .sec-body .table-wrap { overflow-x: auto; margin-right: 0; }
 #pg-short table { width: 100%; border-collapse: collapse; min-width: 1260px; }
 #pg-short td { padding: 10px 14px; border-bottom: 1px solid #21262d; font-size: 13px; vertical-align: middle; }
 #pg-short td:last-child { padding-left: 16px; padding-right: 32px; min-width: 110px; }
@@ -5008,10 +5014,47 @@ function checkSchedule() {
 async function runScreenerNow() { regimeCache = null; stBenchmarkCache = {}; await runScreener(null); }
 function stopScreenerRun() { screenerStop = true; }
 
+// ─── PURGE INVALID TRADES ────────────────────────────────────────────────────
+// Closes any live/partial trade whose buyDate falls on a weekend or market holiday.
+// These were incorrectly entered (e.g. confirmPendingEntries ran on a weekend).
+// Called at the start of every screener run (manual or scheduled).
+function purgeInvalidWeekendTrades() {
+  const live = STATE.trades.filter(t => t.status === 'live' || t.status === 'partial');
+  let purged = 0;
+  for (const t of live) {
+    if (!t.buyDate) continue;
+    const d = new Date(t.buyDate + 'T12:00:00Z');
+    const dow = d.getUTCDay(); // 0=Sun, 6=Sat
+    const isWeekend  = dow === 0 || dow === 6;
+    const isHoliday  = NYSE_HOLIDAYS.has(t.buyDate) || TSX_HOLIDAYS.has(t.buyDate);
+    if (isWeekend || isHoliday) {
+      // Close at buy price (no gain/loss — the entry was invalid)
+      t.status     = 'closed_manual';
+      t.sellDate   = todayET();
+      t.sellTime   = timeET();
+      t.sellPrice  = t.buyPrice;
+      t.exitReason = 'invalid_entry';
+      t.pnl        = 0;
+      t.pnlPct     = 0;
+      t.currentPrice = t.buyPrice;
+      purged++;
+    }
+  }
+  if (purged > 0) {
+    saveState();
+    notify(`🗑 Removed ${purged} invalid trade${purged > 1 ? 's' : ''} entered on a non-trading day. Data updated in Google Sheets.`);
+    renderAll();
+  }
+  return purged;
+}
+
 async function runScreener(scheduledTime) {
   if (screenerRunning) return;
   screenerRunning = true; screenerStop = false;
   const runTime = scheduledTime || timeET().slice(0, 5);
+
+  // ── Step 0: Purge any trades that were incorrectly entered on weekends/holidays
+  purgeInvalidWeekendTrades();
 
   // Fetch CAD/USD rate first
   await fetchCadUsd();
