@@ -937,6 +937,10 @@ table.div-ht tfoot td{padding:10px 14px;font-size:13px;font-weight:700;backgroun
   <div class="h-right" style="display:flex;gap:8px;align-items:center">
     <span id="market-badge" class="market-badge checking">○ Checking…</span>
     <span id="et-clock" class="et-clock">--:--:--</span>
+    <button class="h-btn" id="btn-dashboard-nav" onclick="showMain()" style="display:none">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>
+      Dashboard
+    </button>
     <button class="h-btn" id="btn-div-nav" onclick="showDiv()">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21.21 15.89A10 10 0 1 1 8 2.83"/><path d="M22 12A10 10 0 0 0 12 2v10z"/></svg>
       Diversification
@@ -947,7 +951,7 @@ table.div-ht tfoot td{padding:10px 14px;font-size:13px;font-weight:700;backgroun
     </button>
     <button class="h-btn" id="btn-short-nav" onclick="showShortTerm()">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
-      Short Term
+      Short Term Trading
     </button>
     <button class="h-btn" id="btn-screener-nav" onclick="showScreener()">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
@@ -2169,6 +2173,7 @@ function showDiv() {
   document.getElementById('pg-analyser').style.display = 'none';
   document.getElementById('btn-div-nav').classList.add('active');
   document.getElementById('btn-sa-nav').classList.remove('active');
+  document.getElementById('btn-dashboard-nav').style.display = '';
   renderDiversification();
 }
 function showMain() {
@@ -2179,6 +2184,7 @@ function showMain() {
   document.getElementById('pg-main').classList.remove('hide');
   document.getElementById('btn-div-nav').classList.remove('active');
   document.getElementById('btn-sa-nav').classList.remove('active');
+  document.getElementById('btn-dashboard-nav').style.display = 'none';
   window.scrollTo(0,0);
 }
 
@@ -2478,6 +2484,7 @@ function showAnalyser() {
   document.getElementById('pg-analyser').style.display = 'block';
   document.getElementById('btn-div-nav').classList.remove('active');
   document.getElementById('btn-sa-nav').classList.add('active');
+  document.getElementById('btn-dashboard-nav').style.display = '';
   if (!document.querySelector('#wlBody tr[data-sym]')) {
     setTimeout(loadSheetStocks, 200);
   }
@@ -4114,6 +4121,7 @@ function showShortTerm() {
   document.getElementById('pg-analyser').style.display = 'none';
   document.getElementById('btn-div-nav').classList.remove('active');
   document.getElementById('btn-sa-nav').classList.remove('active');
+  document.getElementById('btn-dashboard-nav').style.display = '';
   _hideSubPages();
   const pg = document.getElementById('pg-short');
   pg.style.display = 'block';
@@ -4128,6 +4136,7 @@ function showScreener() {
   document.getElementById('pg-analyser').style.display = 'none';
   document.getElementById('btn-div-nav').classList.remove('active');
   document.getElementById('btn-sa-nav').classList.remove('active');
+  document.getElementById('btn-dashboard-nav').style.display = '';
   _hideSubPages();
   const pg = document.getElementById('pg-screener');
   pg.style.display = 'block';
@@ -4142,6 +4151,7 @@ function showLongTerm() {
   document.getElementById('pg-analyser').style.display = 'none';
   document.getElementById('btn-div-nav').classList.remove('active');
   document.getElementById('btn-sa-nav').classList.remove('active');
+  document.getElementById('btn-dashboard-nav').style.display = '';
   _hideSubPages();
   const pg = document.getElementById('pg-longterm');
   pg.style.display = 'block';
@@ -6742,8 +6752,9 @@ async function runLongTermScreen() {
         const techPass = analyzeStock(ticker, ohlcv, null, filters, fiveYearPerf);
         if (!techPass) return; // failed technical or 5Y check — skip FMP entirely
 
-        // ── Phase 2: fetch FMP fundamentals only for technically passing tickers ─
-        const fundRaw = await fetchFMPFundamentals(ticker);
+        // ── Phase 2: fetch fundamentals — FMP first, Yahoo Finance as fallback ──
+        let fundRaw = await fetchFMPFundamentals(ticker);
+        if (!fundRaw) fundRaw = await fetchFundamentals(ticker);
         const fundamentals = fundRaw ? {
           pe:          fundRaw.pe,
           marketCap:   fundRaw.marketCap,
