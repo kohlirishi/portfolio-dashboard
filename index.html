@@ -4021,7 +4021,7 @@ async function loadAllRatings(){
 
 // ─── GOOGLE SHEETS CLOUD LAYER ───────────────────────────────────────────────
 const GS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbwdj0kSZ4U9puem-MPuCL5BxSEAG7C6cNj2KP6k_OfgzvKLiKQGEoKToYmgy6HhuP97Fg/exec';
-const GS_SHEET_ID   = '2PACX-1vT5My0JskMjYCWacWPEih3vGdNCp_yvVmmbP4u7KPYCq_ApHWT-SG1SxZ2g35LUHnhG-wIA7Yk-Yx29';
+// Note: No Sheet ID needed -- the Apps Script uses getActiveSpreadsheet() automatically
 const GS_ENABLED    = true;
 
 // Track last write timestamp so polls can ignore stale data
@@ -4057,9 +4057,10 @@ function cloudWrite(path, val) {
 async function cloudRead(path, defaultVal) {
   if (!GS_ENABLED) return defaultVal;
   try {
+    // Do NOT pass sheetId -- let the Apps Script use getActiveSpreadsheet()
+    // which always works since the script is deployed from within the sheet
     const url = GS_SCRIPT_URL
       + '?path=' + encodeURIComponent(path)
-      + '&sheetId=' + encodeURIComponent(GS_SHEET_ID)
       + '&t=' + Date.now(); // cache-bust every request
     const res = await fetch(url, { mode: 'cors', cache: 'no-store' });
     if (!res.ok) throw new Error('HTTP ' + res.status);
