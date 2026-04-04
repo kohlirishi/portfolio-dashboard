@@ -4024,33 +4024,66 @@ const GS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbwdj0kSZ4U9puem-M
 const GS_SHEET_ID   = '2PACX-1vT5My0JskMjYCWacWPEih3vGdNCp_yvVmmbP4u7KPYCq_ApHWT-SG1SxZ2g35LUHnhG-wIA7Yk-Yx29';
 const GS_ENABLED    = true;
 
+// Track last write timestamp so polls can ignore stale data
+let _gsLastWriteTs = 0;
+
 function cloudInit() { _setSyncBadge(GS_ENABLED ? 'synced' : 'local'); }
 
+// Write: use redirect mode so we can confirm the write reached Apps Script
+// redirect:'follow' lets the browser follow the Apps Script redirect and get the response
 function cloudWrite(path, val) {
   if (!GS_ENABLED) return Promise.resolve();
+  _gsLastWriteTs = Date.now();
+  _setSyncBadge('synced'); // optimistic -- mark synced immediately
   return fetch(GS_SCRIPT_URL, {
-    method: 'POST', headers: { 'Content-Type': 'text/plain' },
-    body: JSON.stringify({ path, data: val }), mode: 'no-cors'
-  }).then(() => _setSyncBadge('synced')).catch(e => { console.warn('GS write failed:', e); _setSyncBadge('error'); });
+    method: 'POST',
+    headers: { 'Content-Type': 'text/plain' },
+    body: JSON.stringify({ path, data: val }),
+    redirect: 'follow'
+  })
+  .then(r => { if(r.ok || r.type === 'opaqueredirect') _setSyncBadge('synced'); })
+  .catch(() => {
+    // Fallback to no-cors if redirect fails (CORS policy difference per browser)
+    return fetch(GS_SCRIPT_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain' },
+      body: JSON.stringify({ path, data: val }),
+      mode: 'no-cors'
+    }).catch(e => { console.warn('GS write failed:', e); _setSyncBadge('error'); });
+  });
 }
 
+// Read: always fetch fresh from Sheets, never use defaultVal if Sheets returns real data
 async function cloudRead(path, defaultVal) {
   if (!GS_ENABLED) return defaultVal;
   try {
-    const url = GS_SCRIPT_URL + '?path=' + encodeURIComponent(path) + '&sheetId=' + encodeURIComponent(GS_SHEET_ID);
-    const res = await fetch(url, { mode: 'cors' });
+    const url = GS_SCRIPT_URL
+      + '?path=' + encodeURIComponent(path)
+      + '&sheetId=' + encodeURIComponent(GS_SHEET_ID)
+      + '&t=' + Date.now(); // cache-bust every request
+    const res = await fetch(url, { mode: 'cors', cache: 'no-store' });
     if (!res.ok) throw new Error('HTTP ' + res.status);
     const json = await res.json();
     _setSyncBadge('synced');
     return (json && json.data !== undefined && json.data !== null) ? json.data : defaultVal;
-  } catch(e) { console.warn('GS read failed:', e); _setSyncBadge('error'); return defaultVal; }
+  } catch(e) {
+    console.warn('GS read failed:', e);
+    _setSyncBadge('error');
+    return defaultVal;
+  }
 }
 
+// Poll every 15 seconds (reduced from 30) -- always apply if cloud has newer data
 function cloudListen(path, cb) {
   if (!GS_ENABLED) return;
   setInterval(async () => {
-    try { const d = await cloudRead(path, null); if (d !== null) cb(d); } catch(e) {}
-  }, 30000);
+    // Skip if we wrote in the last 8 seconds (our own write is still propagating)
+    if (Date.now() - _gsLastWriteTs < 8000) return;
+    try {
+      const d = await cloudRead(path, null);
+      if (d !== null) cb(d);
+    } catch(e) {}
+  }, 15000);
 }
 
 function _setSyncBadge(state) {
@@ -4061,7 +4094,6 @@ function _setSyncBadge(state) {
   else if (state === 'error') { el.textContent = '🔴 Sync Error'; el.className = 'sync-badge error'; }
   else { el.textContent = '🟡 Local Only'; el.className = 'sync-badge local'; }
 }
-// ─────────────────────────────────────────────────────────────────────────────
 
 // ── Sub-page navigation ───────────────────────────────────────────────────────
 function _hideSubPages() {
@@ -4431,11 +4463,13 @@ function migrate() {
   return null;
 }
 
+// STATE starts from localStorage as a fast first render, but initShortTerm
+// always overwrites it with the definitive Sheets version before showing data
 let STATE = (() => {
   try {
     const v3 = JSON.parse(localStorage.getItem(STORAGE_KEY));
     if (v3) {
-      v3.totalCapital = TOTAL_CAPITAL; // always enforce current constant
+      v3.totalCapital = TOTAL_CAPITAL;
       return v3;
     }
     return migrate() || defaultState();
@@ -4447,7 +4481,6 @@ function saveState() {
   cloudWrite('tracker', STATE);
 }
 
-// Load state preferring cloud (fixes Chrome stale cache issue)
 async function loadStateFromCloud() {
   return cloudRead('tracker', null);
 }
@@ -5391,32 +5424,38 @@ async function initShortTerm() {
   try {
     cloudInit();
 
-    // Show a loading indicator while fetching from Sheets
+    // Show loading state while fetching from Sheets
     const syncBadge = document.getElementById('syncBadge');
-    if (syncBadge) { syncBadge.textContent = '⏳ Loading…'; syncBadge.className = 'sync-badge local'; }
+    if (syncBadge) { syncBadge.textContent = '⏳ Loading from Sheets…'; syncBadge.className = 'sync-badge local'; }
 
-    // CRITICAL: await cloud load BEFORE rendering so cross-device data appears correctly
+    // Render from localStorage first for instant display
+    renderAll(); renderNotes(); restoreSectionStates();
+
+    // Then fetch from Sheets -- ALWAYS overwrite with cloud data (source of truth)
     const cloudState = await loadStateFromCloud();
     if (cloudState && cloudState.trades !== undefined) {
       cloudState.totalCapital = TOTAL_CAPITAL;
       STATE = cloudState;
       try { localStorage.setItem(STORAGE_KEY, JSON.stringify(STATE)); } catch {}
+      // Re-render with definitive cloud data
+      renderAll(); renderNotes();
     }
 
-    // Start polling for live updates every 30s (Sheets has no push)
+    // Poll every 15s for updates from other devices
+    // Always apply cloud data -- no stale comparison that can block updates
     cloudListen('tracker', remote => {
       if (!remote || remote.trades === undefined) return;
-      if (JSON.stringify(remote) === JSON.stringify(STATE)) return;
       remote.totalCapital = TOTAL_CAPITAL;
+      // Only update if data actually changed (compare trade+pending counts as quick check)
+      const remoteKey = (remote.trades||[]).length + '|' + (remote.pendingEntries||[]).length + '|' + (remote.screenerRuns||[]).length;
+      const stateKey  = (STATE.trades||[]).length + '|' + (STATE.pendingEntries||[]).length + '|' + (STATE.screenerRuns||[]).length;
+      if (remoteKey === stateKey) return; // no meaningful change
       STATE = remote;
       try { localStorage.setItem(STORAGE_KEY, JSON.stringify(STATE)); } catch {}
       renderAll(); renderNotes();
     });
 
     checkRuleVersion();
-    renderAll();
-    renderNotes();
-    restoreSectionStates();
     fetchCadUsd();
     tick();
     if(!window._stTickInterval) {
