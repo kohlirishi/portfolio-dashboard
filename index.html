@@ -834,7 +834,7 @@ table.div-ht tfoot td{padding:10px 14px;font-size:13px;font-weight:700;backgroun
 #pg-longterm .badge { background: #21262d; border: 1px solid #30363d; border-radius: 12px; padding: 2px 10px; font-size: 12px; font-weight: 600; color: #58a6ff; }
 #pg-longterm /* WATCHLIST TABLE */
   .table-wrap { background: #161b22; border: 1px solid #30363d; border-radius: 8px; overflow: hidden; overflow-x: auto; margin-bottom: 24px; }
-#pg-longterm table { width: 100%; border-collapse: collapse; min-width: 800px; }
+#pg-longterm table { width: 100%; border-collapse: collapse; }
 #pg-longterm thead th { background: #21262d; padding: 11px 14px; text-align: left; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; color: #8b949e; border-bottom: 1px solid #30363d; white-space: nowrap; }
 #pg-longterm thead th:last-child { text-align: center; }
 #pg-longterm tbody tr { border-bottom: 1px solid #21262d; transition: background 0.15s; }
@@ -6669,28 +6669,35 @@ function analyzeStock(ticker, ohlcv, fundamentals, filters, fiveYearPerf) {
   // ── Fundamental checks (your exact TradingView filters) ──────────────────
   const fd = fundamentals || {};
 
-  // Market cap filter: $100B USD for US, $100B CAD for TSX (no conversion per spec)
+  // Market cap filter: hard reject if known below threshold
   const exchType    = EXCHANGE_MAP[ticker] || 'US';
   const mcapThresh  = filters.marketCapMin * 1e9; // convert B to raw number
   const marketCapOk = fd.marketCap != null ? fd.marketCap >= mcapThresh : null;
+  if (marketCapOk === false) return null; // hard reject — known MCap explicitly below threshold
 
-  // P/E: 0 to 60 (positive only, exclude negatives)
+  // P/E: 0 to max — hard reject if known outside range
   const peOk        = fd.pe != null ? fd.pe > 0 && fd.pe <= filters.maxPE : null;
+  if (peOk === false) return null;
 
-  // 5-Year Performance > 100%
+  // 5-Year Performance > threshold — hard reject if known below
   const perf5yOk    = fiveYearPerf != null ? fiveYearPerf >= filters.min5Y : null;
+  if (perf5yOk === false) return null;
 
-  // ROE TTM > 10%
+  // ROE TTM — hard reject if known below threshold
   const roeOk       = fd.roe != null ? fd.roe >= filters.minROE : null;
+  if (roeOk === false) return null;
 
-  // EPS Diluted Growth TTM YoY > 10%
+  // EPS Growth TTM YoY — hard reject if known below threshold
   const epsGrowthOk = fd.epsGrowth != null ? fd.epsGrowth >= filters.minEPSGrowth : null;
+  if (epsGrowthOk === false) return null;
 
-  // FCF TTM > 0
+  // FCF TTM > 0 — hard reject if known negative (when filter is set to positive)
   const fcfOk       = fd.fcf != null ? fd.fcf > 0 : null;
+  if (fcfOk === false && filters.fcfRequired) return null;
 
-  // Gross Margin > 10%
+  // Gross Margin — hard reject if known below threshold
   const grossMarginOk = fd.grossMargin != null ? fd.grossMargin >= filters.minGrossMargin : null;
+  if (grossMarginOk === false) return null;
 
   const fundChecks = {
     marketCap:    marketCapOk,
@@ -6784,9 +6791,11 @@ async function runLongTermScreen() {
         if (!techPass) return; // failed technical or 5Y check — skip FMP entirely
 
         // ── Phase 2: fetch fundamentals — AV first, FMP fallback, Yahoo last ───
+        const hasUsableData = r => r && Object.values(r).some(v => v != null);
         let fundRaw = await fetchAVFundamentals(ticker);
-        if (!fundRaw) fundRaw = await fetchFMPFundamentals(ticker);
-        if (!fundRaw) fundRaw = await fetchFundamentals(ticker);
+        if (!hasUsableData(fundRaw)) fundRaw = await fetchFMPFundamentals(ticker);
+        if (!hasUsableData(fundRaw)) fundRaw = await fetchFundamentals(ticker);
+        if (!hasUsableData(fundRaw)) fundRaw = null;
         const fundamentals = fundRaw ? {
           pe:          fundRaw.pe,
           marketCap:   fundRaw.marketCap,
@@ -6875,14 +6884,17 @@ function renderLtResults() {
         <div style="font-weight:700;font-size:15px;color:${barColor}">${r.strengthPct}%</div>
         <div class="strength-bar-wrap"><div class="strength-bar-fill" style="width:${r.strengthPct}%;background:${barColor}"></div></div>
       </td>
-      <td style="font-size:12px">
+      <td style="font-size:12px;min-width:0">
+        <div style="display:flex;flex-wrap:wrap;gap:3px">
         ${tagHTML(tc.priceAboveEMA50d,   'Price > EMA50D')}
         ${tagHTML(tc.low52wAboveSMA200w, '52WLow > SMA200W')}
         ${tagHTML(tc.priceAboveSMA50w,   'Price > SMA50W')}
         ${tagHTML(tc.priceAboveSMA200w,  'Price > SMA200W')}
         ${tagHTML(tc.goldenCrossWeekly,  'Golden Cross W')}
+        </div>
       </td>
-      <td style="font-size:12px">
+      <td style="font-size:12px;min-width:0">
+        <div style="display:flex;flex-wrap:wrap;gap:3px">
         ${tagHTML(fc.marketCap,   `MCap ${fmtB(fd.marketCap)}`)}
         ${tagHTML(fc.pe,          `P/E ${fmtPE(fd.pe)}`)}
         ${tagHTML(fc.perf5y,      `5Y ${fmtPct(fd.perf5y)}`)}
@@ -6890,6 +6902,7 @@ function renderLtResults() {
         ${tagHTML(fc.epsGrowth,   `EPS Gr ${fmtPct(fd.epsGrowth)}`)}
         ${tagHTML(fc.fcf,         `FCF ${fd.fcf != null ? (fd.fcf > 0 ? '+ve' : '-ve') : 'N/A'}`)}
         ${tagHTML(fc.grossMargin, `GrMgn ${fmtPct(fd.grossMargin)}`)}
+        </div>
       </td>
       <td><span class="score-badge ${g.cls}">${g.letter}</span></td>
     </tr>`;
