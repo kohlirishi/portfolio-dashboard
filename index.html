@@ -4020,26 +4020,18 @@ async function loadAllRatings(){
 <script>
 
 // ─── GOOGLE SHEETS CLOUD LAYER ───────────────────────────────────────────────
-// Shared across Short Term Tracker, Screener, and Long Term Tracker
-// ─────────────────────────────────────────────────────────────────────────────
 const GS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbwdj0kSZ4U9puem-MPuCL5BxSEAG7C6cNj2KP6k_OfgzvKLiKQGEoKToYmgy6HhuP97Fg/exec';
 const GS_SHEET_ID   = '2PACX-1vT5My0JskMjYCWacWPEih3vGdNCp_yvVmmbP4u7KPYCq_ApHWT-SG1SxZ2g35LUHnhG-wIA7Yk-Yx29';
 const GS_ENABLED    = true;
 
-function cloudInit() {
-  _setSyncBadge(GS_ENABLED ? 'synced' : 'local');
-}
+function cloudInit() { _setSyncBadge(GS_ENABLED ? 'synced' : 'local'); }
 
 function cloudWrite(path, val) {
   if (!GS_ENABLED) return Promise.resolve();
   return fetch(GS_SCRIPT_URL, {
-    method: 'POST',
-    headers: { 'Content-Type': 'text/plain' },
-    body: JSON.stringify({ path, data: val }),
-    mode: 'no-cors'
-  })
-  .then(() => _setSyncBadge('synced'))
-  .catch(e => { console.warn('GS write failed:', e); _setSyncBadge('error'); });
+    method: 'POST', headers: { 'Content-Type': 'text/plain' },
+    body: JSON.stringify({ path, data: val }), mode: 'no-cors'
+  }).then(() => _setSyncBadge('synced')).catch(e => { console.warn('GS write failed:', e); _setSyncBadge('error'); });
 }
 
 async function cloudRead(path, defaultVal) {
@@ -4051,11 +4043,7 @@ async function cloudRead(path, defaultVal) {
     const json = await res.json();
     _setSyncBadge('synced');
     return (json && json.data !== undefined && json.data !== null) ? json.data : defaultVal;
-  } catch(e) {
-    console.warn('GS read failed:', e);
-    _setSyncBadge('error');
-    return defaultVal;
-  }
+  } catch(e) { console.warn('GS read failed:', e); _setSyncBadge('error'); return defaultVal; }
 }
 
 function cloudListen(path, cb) {
@@ -4068,10 +4056,10 @@ function cloudListen(path, cb) {
 function _setSyncBadge(state) {
   const el = document.getElementById('syncBadge');
   if (!el) return;
-  if (!GS_ENABLED) { el.textContent = '\u{1F7E1} Local Only'; el.className = 'sync-badge local'; return; }
-  if (state === 'synced') { el.textContent = '\u{1F7E2} Sheets Synced'; el.className = 'sync-badge synced'; }
-  else if (state === 'error') { el.textContent = '\u{1F534} Sync Error'; el.className = 'sync-badge error'; }
-  else { el.textContent = '\u{1F7E1} Local Only'; el.className = 'sync-badge local'; }
+  if (!GS_ENABLED) { el.textContent = '🟡 Local Only'; el.className = 'sync-badge local'; return; }
+  if (state === 'synced') { el.textContent = '🟢 Sheets Synced'; el.className = 'sync-badge synced'; }
+  else if (state === 'error') { el.textContent = '🔴 Sync Error'; el.className = 'sync-badge error'; }
+  else { el.textContent = '🟡 Local Only'; el.className = 'sync-badge local'; }
 }
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -5382,25 +5370,10 @@ function tick() {
 }
 
 // ─── INIT ─────────────────────────────────────────────────────────────────────
-document.addEventListener('DOMContentLoaded', async () => {
-  updateClock(); // Run immediately so clock and market badge never show placeholder state
-  cloudInit();
-  // Load from cloud first — overwrites localStorage if cloud has data
-  const cloudState = await loadStateFromCloud();
-  if (cloudState && cloudState.trades !== undefined) {
-    cloudState.totalCapital = TOTAL_CAPITAL;
-    STATE = cloudState;
-    try { localStorage.setItem(STORAGE_KEY, JSON.stringify(STATE)); } catch {}
-  }
-  // Real-time listener: keep STATE in sync across tabs/devices
-  cloudListen('tracker', remote => {
-    if (!remote || remote.trades === undefined) return;
-    if (JSON.stringify(remote) === JSON.stringify(STATE)) return; // skip own writes
-    remote.totalCapital = TOTAL_CAPITAL;
-    STATE = remote;
-    try { localStorage.setItem(STORAGE_KEY, JSON.stringify(STATE)); } catch {}
-    renderAll(); renderNotes();
-  });
+document.addEventListener('DOMContentLoaded', () => {
+  // Only run the clock and basic setup on page load
+  // Full cloud load happens in initShortTerm() when user opens Short Term page
+  updateClock();
   checkRuleVersion();
   renderAll();
   renderNotes();
@@ -5412,11 +5385,34 @@ document.addEventListener('DOMContentLoaded', async () => {
 
 
 let _stInited = false;
-function initShortTerm() {
+async function initShortTerm() {
   if(_stInited) return;
   _stInited = true;
   try {
     cloudInit();
+
+    // Show a loading indicator while fetching from Sheets
+    const syncBadge = document.getElementById('syncBadge');
+    if (syncBadge) { syncBadge.textContent = '⏳ Loading…'; syncBadge.className = 'sync-badge local'; }
+
+    // CRITICAL: await cloud load BEFORE rendering so cross-device data appears correctly
+    const cloudState = await loadStateFromCloud();
+    if (cloudState && cloudState.trades !== undefined) {
+      cloudState.totalCapital = TOTAL_CAPITAL;
+      STATE = cloudState;
+      try { localStorage.setItem(STORAGE_KEY, JSON.stringify(STATE)); } catch {}
+    }
+
+    // Start polling for live updates every 30s (Sheets has no push)
+    cloudListen('tracker', remote => {
+      if (!remote || remote.trades === undefined) return;
+      if (JSON.stringify(remote) === JSON.stringify(STATE)) return;
+      remote.totalCapital = TOTAL_CAPITAL;
+      STATE = remote;
+      try { localStorage.setItem(STORAGE_KEY, JSON.stringify(STATE)); } catch {}
+      renderAll(); renderNotes();
+    });
+
     checkRuleVersion();
     renderAll();
     renderNotes();
@@ -6421,7 +6417,7 @@ function scInit() {
 <script>
 // ═══ LONG TERM TRACKER JS ═══
 
-// [Google Sheets cloud layer moved to top -- see below]
+// [GS Cloud layer defined above]
 
 // ─── CONSTANTS ────────────────────────────────────────────────────────────────
 
