@@ -5664,7 +5664,9 @@ function findWeightedSwingHigh(ohlcv) {
   return { swingHigh: bestRaw, swingHighWeighted: bestWeighted, swingIdx: bestIdx, swingDate: ohlcv[bestIdx].date };
 }
 
-// ─── SCREEN ATH (enhanced with new filters) ──────────────────────────────────
+// ─── SCREEN ATH ──────────────────────────────────────────────────────────────
+// Step 1: EMA reclaim detection (unchanged)
+// Step 2: Hard filters applied in order per Change 6
 function screenATH(ohlcv, benchOHLCV) {
   const n = ohlcv.length;
   if (n < EMA_PERIOD + 10) return null;
@@ -5674,6 +5676,8 @@ function screenATH(ohlcv, benchOHLCV) {
   const ema = calcEMA(closes, EMA_PERIOD);
   const mu  = ema.map(e => e * (1 + MA_BUFFER));
   const md  = ema.map(e => e * (1 - MA_BUFFER));
+
+  // ── Step 1: EMA reclaim validation (DO NOT TOUCH) ────────────────────────
   const reclaim = findValidReclaim(closes, mu, md);
   if (!reclaim) return null;
   const { reclaimIdx, belowEpStart } = reclaim;
@@ -5683,19 +5687,27 @@ function screenATH(ohlcv, benchOHLCV) {
   const lastClose   = closes[n - 1];
   const pctBelowATH = (currentATH - lastClose) / currentATH;
   if (pctBelowATH > ATH_THRESHOLD) return null;
+
+  // ── Compute values needed by hard filters ────────────────────────────────
   const currentEMA  = ema[n - 1];
   const pctAboveEMA = (lastClose - currentEMA) / currentEMA * 100;
-  // EMA Extension Filter: reject if > 25% above EMA
-  if (!checkEMAExtension(pctAboveEMA)) return null;
-  // 52-Week High Proximity: reject if > 25% below 52w high
+  const barsSince   = n - 1 - reclaimIdx;
+  const { volRatio } = checkVolumeConfirmation(ohlcv, reclaimIdx);
+
+  // ── Step 2: Hard filters in order (Change 6) ─────────────────────────────
+  // Hard filter 1: volume multiple >= 0.8 (Change 1)
+  if (volRatio < 0.8) return null;
+  // Hard filter 2: EMA distance <= 25% (Change 3)
+  if (pctAboveEMA > EMA_EXTENSION_MAX) return null;
+  // Hard filter 3: reclaim <= 300 bars ago (Change 4 — NOT 120)
+  if (barsSince > 300) return null;
+
+  // ── Remaining computed values (needed for scoring) ────────────────────────
   const { proximityOk, pctBelow52w, high52w } = check52WHighProximity(ohlcv);
   if (!proximityOk) return null;
-  // Existing checks
-  const { volumeOk, volRatio } = checkVolumeConfirmation(ohlcv, reclaimIdx);
+  const volumeOk     = volRatio >= SCR_VOLUME_CONFIRM_RATIO;
   const weeklyTrendOk = checkWeeklyTrend(ohlcv);
-  const momentum20 = n > 20 ? (closes[n-1] - closes[n-21]) / closes[n-21] * 100 : 0;
-  const barsSince  = n - 1 - reclaimIdx;
-  // New quality filters
+  const momentum20   = n > 20 ? (closes[n-1] - closes[n-21]) / closes[n-21] * 100 : 0;
   const { rsOk, rsValue }   = calcRelativeStrength(ohlcv, benchOHLCV);
   const { tight, atrRatio } = checkTightStructure(ohlcv);
   return {
@@ -5706,7 +5718,9 @@ function screenATH(ohlcv, benchOHLCV) {
   };
 }
 
-// ─── SCREEN SWING (enhanced with new filters) ────────────────────────────────
+// ─── SCREEN SWING ────────────────────────────────────────────────────────────
+// Step 1: EMA reclaim detection (unchanged)
+// Step 2: Hard filters applied in order per Change 6
 function screenSwing(ohlcv, benchOHLCV) {
   const n = ohlcv.length;
   if (n < EMA_PERIOD + 10) return null;
@@ -5716,6 +5730,8 @@ function screenSwing(ohlcv, benchOHLCV) {
   const ema = calcEMA(closes, EMA_PERIOD);
   const mu  = ema.map(e => e * (1 + MA_BUFFER));
   const md  = ema.map(e => e * (1 - MA_BUFFER));
+
+  // ── Step 1: EMA reclaim validation (DO NOT TOUCH) ────────────────────────
   const reclaim = findValidReclaim(closes, mu, md);
   if (!reclaim) return null;
   const { reclaimIdx, belowEpStart } = reclaim;
@@ -5732,17 +5748,27 @@ function screenSwing(ohlcv, benchOHLCV) {
   if (swingHigh <= lastClose) return null;
   const pctToSwing = (swingHigh - lastClose) / swingHigh;
   if (pctToSwing < SWING_NEAR_MIN || pctToSwing > SWING_NEAR_MAX) return null;
+
+  // ── Compute values needed by hard filters ────────────────────────────────
   const currentEMA  = ema[n - 1];
   const pctAboveEMA = (lastClose - currentEMA) / currentEMA * 100;
-  // EMA Extension Filter
-  if (!checkEMAExtension(pctAboveEMA)) return null;
-  // 52-Week High Proximity
+  const barsSince   = n - 1 - reclaimIdx;
+  const { volRatio } = checkVolumeConfirmation(ohlcv, reclaimIdx);
+
+  // ── Step 2: Hard filters in order (Change 6) ─────────────────────────────
+  // Hard filter 1: volume multiple >= 0.8 (Change 1)
+  if (volRatio < 0.8) return null;
+  // Hard filter 2: EMA distance <= 25% (Change 3)
+  if (pctAboveEMA > EMA_EXTENSION_MAX) return null;
+  // Hard filter 3: reclaim <= 300 bars ago (Change 4 — NOT 120)
+  if (barsSince > 300) return null;
+
+  // ── Remaining computed values (needed for scoring) ────────────────────────
   const { proximityOk, pctBelow52w, high52w } = check52WHighProximity(ohlcv);
   if (!proximityOk) return null;
-  const { volumeOk, volRatio } = checkVolumeConfirmation(ohlcv, reclaimIdx);
+  const volumeOk     = volRatio >= SCR_VOLUME_CONFIRM_RATIO;
   const weeklyTrendOk = checkWeeklyTrend(ohlcv);
-  const momentum20 = n > 20 ? (closes[n-1] - closes[n-21]) / closes[n-21] * 100 : 0;
-  const barsSince  = n - 1 - reclaimIdx;
+  const momentum20   = n > 20 ? (closes[n-1] - closes[n-21]) / closes[n-21] * 100 : 0;
   const { rsOk, rsValue }   = calcRelativeStrength(ohlcv, benchOHLCV);
   const { tight, atrRatio } = checkTightStructure(ohlcv);
   return {
@@ -5754,37 +5780,84 @@ function screenSwing(ohlcv, benchOHLCV) {
   };
 }
 
-// ─── ENHANCED PROBABILITY SCORING ───────────────────────────────────────────
-// Now incorporates RS, tight structure, EMA distance, volume strength
+// ─── SCORING SYSTEM (Change 5 — full refactor) ───────────────────────────────
+// Returns { prob, breakdown } where breakdown is an object of component deltas
 function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
 
+function computeScoreComponents(type, pctBelowATH, pctAboveEMA, barsSince, volRatio, momentum20, rsValue, tight) {
+  const bd = {}; // breakdown deltas
+
+  // 1. Volume strength (Change 1)
+  if      (volRatio >= 1.5)  bd.vol = +10;
+  else if (volRatio >= 1.2)  bd.vol = +6;
+  else if (volRatio >= 1.0)  bd.vol = +2;
+  else                        bd.vol = -5;   // 0.8–1.0 range (< 0.8 already hard-filtered)
+
+  // 2. Relative strength vs index
+  if      (rsValue === null)  bd.rs = 0;
+  else if (rsValue > 5)       bd.rs = +10;
+  else if (rsValue > 2)       bd.rs = +5;
+  else if (rsValue >= 0)      bd.rs = +2;
+  else                        bd.rs = -10;
+
+  // 3. EMA distance (Change 3)
+  if      (pctAboveEMA <= 8)  bd.ema = +10;
+  else if (pctAboveEMA <= 15) bd.ema = +5;
+  else if (pctAboveEMA <= 20) bd.ema = -10;
+  else                         bd.ema = -20; // 20–25 (> 25 already hard-filtered)
+
+  // 4. Structure (Change 2)
+  if (tight) {
+    bd.str = +10;
+  } else {
+    bd.str = (type === 'ath') ? 0 : -5;     // loose ATH = neutral; loose Swing = -5
+  }
+
+  // 5. Reclaim recency / age decay (Change 4)
+  if      (barsSince <= 20)  bd.age = +10;
+  else if (barsSince <= 40)  bd.age = +5;
+  else if (barsSince <= 60)  bd.age = 0;
+  else if (barsSince <= 100) bd.age = -10;
+  else                        bd.age = -20;  // 100–300 (> 300 already hard-filtered)
+
+  // 6. Distance to ATH
+  const pctBelowATH_val = pctBelowATH; // already in percent
+  if      (pctBelowATH_val <= 1)   bd.ath = +10;
+  else if (pctBelowATH_val <= 5)   bd.ath = +5;
+  else if (pctBelowATH_val <= 10)  bd.ath = 0;
+  else if (pctBelowATH_val <= 20)  bd.ath = -5;
+  else                               bd.ath = -15;
+
+  // 7. Momentum (20d)
+  if      (momentum20 > 5)   bd.mom = +5;
+  else if (momentum20 >= 0)  bd.mom = +2;
+  else                        bd.mom = -8;
+
+  return bd;
+}
+
 function scoreATHEnhanced(pctBelowATH, pctAboveEMA, barsSince, belowBars, volRatio, momentum20, weeklyTrendOk, rsOk, rsValue, tight) {
-  let prob = 88;
-  prob -= pctBelowATH * 4.5;                                           // ATH proximity
-  prob -= barsSince * 0.035;                                            // Recency
-  prob += clamp(pctAboveEMA * 0.3, -5, 6);                             // EMA position
-  prob -= belowBars * 0.7;                                              // Below-EMA episode
-  prob += volRatio >= 1.5 ? 5 : volRatio >= SCR_VOLUME_CONFIRM_RATIO ? 3 : volRatio >= 1.0 ? 1 : 0; // Volume strength
-  prob += clamp(momentum20 * 0.3, -4, 5);                              // Momentum
-  if (!weeklyTrendOk) prob -= WEEKLY_TREND_PENALTY;                    // Weekly trend
-  if (rsOk) prob += 4; else if (rsValue !== null) prob -= 3;           // Relative strength
-  if (tight) prob += 3;                                                 // Tight structure bonus
-  return clamp(Math.round(prob), 40, 96);
+  const base = 60; // ATH base score (Change 5)
+  const bd = computeScoreComponents('ath', pctBelowATH, pctAboveEMA, barsSince, volRatio, momentum20, rsValue, tight);
+  let prob = base + bd.vol + bd.rs + bd.ema + bd.str + bd.age + bd.ath + bd.mom;
+  // Cap score at 50 max if RS < -1% (Change 5, RS rule)
+  if (rsValue !== null && rsValue < -1) prob = Math.min(prob, 50);
+  return { prob: clamp(Math.round(prob), 40, 96), breakdown: bd };
 }
 
 function scoreSwingEnhanced(pctToResistance, pctAboveEMA, barsSince, belowBars, pctBelowATH, volRatio, momentum20, weeklyTrendOk, rsOk, rsValue, tight) {
-  let prob = 78;
-  prob -= pctToResistance * 5.5;
-  prob -= barsSince * 0.05;
-  prob += clamp(pctAboveEMA * 0.3, -5, 5);
-  prob -= belowBars * 0.7;
-  prob -= pctBelowATH * 1.1;
-  prob += volRatio >= 1.5 ? 5 : volRatio >= SCR_VOLUME_CONFIRM_RATIO ? 3 : volRatio >= 1.0 ? 1 : 0;
-  prob += clamp(momentum20 * 0.3, -4, 5);
-  if (!weeklyTrendOk) prob -= WEEKLY_TREND_PENALTY;
-  if (rsOk) prob += 4; else if (rsValue !== null) prob -= 3;
-  if (tight) prob += 3;
-  return clamp(Math.round(prob), 35, 90);
+  const base = 55; // Swing base score (Change 5)
+  const bd = computeScoreComponents('swing', pctBelowATH, pctAboveEMA, barsSince, volRatio, momentum20, rsValue, tight);
+  let prob = base + bd.vol + bd.rs + bd.ema + bd.str + bd.age + bd.ath + bd.mom;
+  // Cap score at 50 max if RS < -1% (Change 5, RS rule)
+  if (rsValue !== null && rsValue < -1) prob = Math.min(prob, 50);
+  return { prob: clamp(Math.round(prob), 35, 90), breakdown: bd };
+}
+
+// Format breakdown string for tooltip: "Vol +6 | RS +5 | EMA +10 | Str 0 | Age -10 | ATH +5 | Mom +2"
+function formatBreakdown(bd) {
+  const fmt = v => (v >= 0 ? '+' : '') + v;
+  return `Vol ${fmt(bd.vol)} | RS ${fmt(bd.rs)} | EMA ${fmt(bd.ema)} | Str ${fmt(bd.str)} | Age ${fmt(bd.age)} | ATH ${fmt(bd.ath)} | Mom ${fmt(bd.mom)}`;
 }
 
 // ─── FETCH WITH EXPONENTIAL BACKOFF ──────────────────────────────────────────
@@ -5877,7 +5950,8 @@ function updateRegimeBanner(regime) {
   }
 }
 
-// ─── PROCESS TICKER (now passes benchmark for RS calculation) ────────────────
+// ─── PROCESS TICKER ──────────────────────────────────────────────────────────
+// Step 3–5: Only stocks passing hard filters reach scoring; sorted by prob desc
 async function processTicker(ticker) {
   const ohlcv = await fetchOHLCV(ticker);
   const exchange = EXCHANGE_MAP[ticker] || 'US';
@@ -5886,27 +5960,27 @@ async function processTicker(ticker) {
 
   const athResult = screenATH(ohlcv, benchOHLCV);
   if (athResult) {
-    const prob = scoreATHEnhanced(
+    const { prob, breakdown } = scoreATHEnhanced(
       athResult.pctBelowATH * 100, athResult.pctAboveEMA,
       athResult.barsSince, athResult.belowEpisodeBars,
       athResult.volRatio, athResult.momentum20, athResult.weeklyTrendOk,
       athResult.rsOk, athResult.rsValue, athResult.tight
     );
     athTickers.add(ticker);
-    return { type: 'ath', ticker, result: athResult, prob };
+    return { type: 'ath', ticker, result: athResult, prob, breakdown };
   }
 
   if (!athTickers.has(ticker)) {
     const swingResult = screenSwing(ohlcv, benchOHLCV);
     if (swingResult) {
-      const prob = scoreSwingEnhanced(
+      const { prob, breakdown } = scoreSwingEnhanced(
         swingResult.pctToSwing * 100, swingResult.pctAboveEMA,
         swingResult.barsSince, swingResult.belowEpisodeBars,
         swingResult.pctBelowATH * 100, swingResult.volRatio,
         swingResult.momentum20, swingResult.weeklyTrendOk,
         swingResult.rsOk, swingResult.rsValue, swingResult.tight
       );
-      return { type: 'swing', ticker, result: swingResult, prob };
+      return { type: 'swing', ticker, result: swingResult, prob, breakdown };
     }
   }
   return null;
@@ -5937,13 +6011,13 @@ function rowHighlightStyle(prob, tight, rsOk) {
 }
 
 function buildRow(item) {
-  const { ticker, result: r, prob, type } = item;
+  const { ticker, result: r, prob, type, breakdown } = item;
   const name  = COMPANY_NAMES[ticker] || ticker;
   const price = fmtPrice(r.lastClose);
   const flag  = EXCHANGE_MAP[ticker] === 'TSX' ? '🇨🇦' : '🇺🇸';
 
   const labels = [];
-  if (!r.volumeOk)     labels.push('<span class="label-tag label-no-volume">Low Volume</span>');
+  if (!r.volumeOk)      labels.push('<span class="label-tag label-no-volume">Low Volume</span>');
   if (!r.weeklyTrendOk) labels.push('<span class="label-tag label-no-trend">Weekly Trend ✗</span>');
   if (r.regimeCaution)  labels.push('<span class="label-tag label-caution">Regime Caution</span>');
 
@@ -5966,12 +6040,12 @@ function buildRow(item) {
     `;
   }
 
-  // Quality filters column (new)
+  // Quality filters column
   const rsColor = r.rsValue === null ? '#8b949e' : r.rsOk ? '#3fb950' : '#f85149';
   const rsText  = r.rsValue !== null ? `${r.rsValue > 0 ? '+' : ''}${r.rsValue}%` : '—';
   const rsIcon  = r.rsOk ? '✓' : r.rsValue !== null ? '✗' : '—';
   const volMultColor = r.volRatio >= 1.5 ? '#3fb950' : r.volRatio >= SCR_VOLUME_CONFIRM_RATIO ? '#d4a017' : '#f85149';
-  const emaDistColor = r.pctAboveEMA <= 10 ? '#3fb950' : r.pctAboveEMA <= 20 ? '#d4a017' : '#f85149';
+  const emaDistColor = r.pctAboveEMA <= 8 ? '#3fb950' : r.pctAboveEMA <= 15 ? '#d4a017' : '#f85149';
   const structBg = r.tight ? 'background:#0d4a20;color:#3fb950;border:1px solid #238636' : 'background:#21262d;color:#8b949e;border:1px solid #30363d';
 
   const qualityHTML = `
@@ -5998,6 +6072,13 @@ function buildRow(item) {
       </div>
     </div>`;
 
+  // Breakdown tooltip (Change 7)
+  const bdStr = breakdown ? formatBreakdown(breakdown) : '';
+  const baseScore = type === 'ath' ? 60 : 55;
+  const bdTooltip = bdStr
+    ? `<div style="margin-top:5px;font-size:10px;color:#484f58;line-height:1.5;max-width:180px;word-break:break-word" title="Score breakdown: base ${baseScore} → ${bdStr}">${bdStr}</div>`
+    : '';
+
   const rowStyle = rowHighlightStyle(prob, r.tight, r.rsOk);
 
   return `<tr data-prob="${Math.round(prob)}"${rowStyle}>
@@ -6012,6 +6093,7 @@ function buildRow(item) {
     <td>
       ${probBadge(prob)}
       <div style="margin-top:6px">${strengthBadge(prob)}</div>
+      ${bdTooltip}
     </td>
   </tr>`;
 }
