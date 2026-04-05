@@ -4829,11 +4829,25 @@ function updatePauseBanner() {
 
 // Create pending entry (entry timing: wait for next-session confirmation) (Change 5)
 function createPendingEntry(ticker, type, prob, reclaimClose, runTime) {
-  if (isAlreadyHolding(ticker) || isAlreadyPending(ticker) || isInCooldown(ticker)) return null;
+  if (isAlreadyHolding(ticker) || isInCooldown(ticker)) return null;
   if (availableCapital() < TRADE_SIZE) return null;
   if (isAutoTradePaused()) return null;
-  // Signals are valid any day — pending entries sit here until confirmed by market open.
-  // confirmPendingEntries() has the market-hours guard that prevents premature conversion.
+
+  // UPSERT: if a pending entry already exists for this ticker, UPDATE it with
+  // fresh data from the latest screener run instead of skipping it.
+  // This ensures prob, reclaimClose and runTime always reflect the newest signal.
+  const existingIdx = STATE.pendingEntries.findIndex(p => p.ticker === ticker);
+  if (existingIdx !== -1) {
+    const existing = STATE.pendingEntries[existingIdx];
+    existing.prob        = prob;
+    existing.reclaimClose = reclaimClose;
+    existing.runTime     = runTime;
+    existing.signalDate  = todayET();
+    existing.type        = type;
+    return 'updated';
+  }
+
+  // New entry — only block if already holding (not already pending, since we upsert above)
   STATE.pendingEntries.push({
     id: `p_${Date.now()}_${Math.random().toString(36).slice(2,5)}`,
     ticker, type, prob, reclaimClose, runTime,
@@ -5092,6 +5106,7 @@ async function runScreener(scheduledTime) {
   const regime = await checkRegime();
 
   let athCount = 0, swingCount = 0, tradedCount = 0, pendingCount = 0, skippedCount = 0, screened = 0;
+  const qualifiedThisRun = new Set(); // track tickers that qualify in this run
 
   document.getElementById('screenerProgressWrap').style.display = 'block';
   document.getElementById('runNowBtn').disabled = true;
@@ -5124,6 +5139,7 @@ async function runScreener(scheduledTime) {
           const threshold = res.type === 'ath' ? ATH_PROB_THRESHOLD : SWING_PROB_THRESHOLD;
           if (res.prob < threshold) return;
           if (res.type === 'ath') athCount++; else swingCount++;
+          qualifiedThisRun.add(ticker); // mark as qualifying in this run
 
           // Regime suppression check
           const exchange = EXCHANGE_MAP[ticker] || 'US';
@@ -5138,12 +5154,21 @@ async function runScreener(scheduledTime) {
 
           // Change 5: queue as pending entry (next-session confirmation)
           const added = createPendingEntry(ticker, res.type, res.prob, res.reclaimClose, runTime);
-          if (added) pendingCount++; else skippedCount++;
+          if (added) pendingCount++;
+          // 'null' = skipped (already holding / cooldown / capital); 'updated' = refreshed existing
+          else if (added === null) skippedCount++;
         } catch {}
       }));
 
       await new Promise(r => setTimeout(r, 250));
     }
+
+    // Remove stale pending entries for tickers that no longer qualify in this run.
+    // Only purge entries that were queued from a previous run (signalDate != today
+    // OR runTime != current runTime), and whose ticker wasn't seen in this run.
+    STATE.pendingEntries = STATE.pendingEntries.filter(p =>
+      qualifiedThisRun.has(p.ticker) || isAlreadyHolding(p.ticker)
+    );
 
     STATE.screenerRuns.push({
       date: todayET(), time: runTime,
