@@ -4832,13 +4832,8 @@ function createPendingEntry(ticker, type, prob, reclaimClose, runTime) {
   if (isAlreadyHolding(ticker) || isAlreadyPending(ticker) || isInCooldown(ticker)) return null;
   if (availableCapital() < TRADE_SIZE) return null;
   if (isAutoTradePaused()) return null;
-  // Never create pending entries on weekends or market holidays
-  // (they would confirm incorrectly on non-trading days)
-  if (!isWeekdayET()) return null;
-  const today = todayET();
-  const exchange = EXCHANGE_MAP[ticker] || 'US';
-  if (exchange === 'TSX' && TSX_HOLIDAYS.has(today)) return null;
-  if (exchange === 'US'  && NYSE_HOLIDAYS.has(today)) return null;
+  // Signals are valid any day — pending entries sit here until confirmed by market open.
+  // confirmPendingEntries() has the market-hours guard that prevents premature conversion.
   STATE.pendingEntries.push({
     id: `p_${Date.now()}_${Math.random().toString(36).slice(2,5)}`,
     ticker, type, prob, reclaimClose, runTime,
@@ -5070,21 +5065,16 @@ function purgeInvalidWeekendTrades() {
     }
   }
 
-  // 2. Remove any PENDING entries whose signalDate is a non-trading day
-  const beforePending = STATE.pendingEntries.length;
-  STATE.pendingEntries = STATE.pendingEntries.filter(p => !_isNonTradingDate(p.signalDate));
-  const purgedPending = beforePending - STATE.pendingEntries.length;
+  // NOTE: Pending entries are intentionally NOT purged by signalDate.
+  // Signals generated on weekends/after-hours are valid — they should
+  // remain in pending and confirm on the next market open (e.g. Monday).
 
-  const total = purgedTrades + purgedPending;
-  if (total > 0) {
+  if (purgedTrades > 0) {
     saveState();
-    const parts = [];
-    if (purgedTrades > 0) parts.push(`${purgedTrades} invalid trade${purgedTrades > 1 ? 's' : ''}`);
-    if (purgedPending > 0) parts.push(`${purgedPending} invalid pending entr${purgedPending > 1 ? 'ies' : 'y'}`);
-    notify(`🗑 Removed ${parts.join(' and ')} created on a non-trading day. Data synced to Google Sheets.`);
+    notify(`🗑 Removed ${purgedTrades} invalid trade${purgedTrades > 1 ? 's' : ''} entered on a non-trading day. Data synced to Google Sheets.`);
     renderAll();
   }
-  return total;
+  return purgedTrades;
 }
 
 async function runScreener(scheduledTime) {
