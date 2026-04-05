@@ -4415,14 +4415,6 @@ function st_scoreSwingEnhanced(pctToResistance, pctAboveEMA, barsSince, belowBar
   return clamp(Math.round(prob), 35, 90);
 }
 
-// ─── WEAK SETUP SCORE CAP (identical to Screener page) ───────────────────────
-function st_applyWeakSetupCap(prob, volRatio, tight, rsValue) {
-  if (volRatio < 1.0 || !tight || (rsValue !== null && rsValue < 2)) {
-    return Math.min(prob, 75);
-  }
-  return prob;
-}
-
 // Legacy wrappers kept for safety (not called by new runScreenOnOHLCV)
 function scoreATH(pctBelowATH, pctAboveEMA, barsSince, belowBars, volRatio, momentum20, weeklyTrendOk) {
   let p = 88 - pctBelowATH * 4.5 - barsSince * 0.035 + clamp(pctAboveEMA * 0.3, -5, 6) - belowBars * 0.7;
@@ -4552,8 +4544,6 @@ function runScreenOnOHLCV(ticker, ohlcv) {
       pctBelowATH * 100, pctAboveEMA, barsSince, belowEpisodeBars,
       volRatio, momentum20, weeklyTrendOk, rsValue, tight
     );
-    // Step 5: Apply weak-setup score cap
-    prob = st_applyWeakSetupCap(prob, volRatio, tight, rsValue);
     return { type: 'ath', prob: Math.round(prob), lastClose, reclaimClose, reclaimDate: dates[reclaimIdx] };
   }
   if (pctBelowATH <= S2_ATH_MAX_DRAWDOWN) {
@@ -4566,8 +4556,6 @@ function runScreenOnOHLCV(ticker, ohlcv) {
       pctToSwing * 100, pctAboveEMA, barsSince, belowEpisodeBars,
       pctBelowATH * 100, volRatio, momentum20, weeklyTrendOk, rsValue, tight
     );
-    // Step 5: Apply weak-setup score cap
-    prob = st_applyWeakSetupCap(prob, volRatio, tight, rsValue);
     return { type: 'swing', prob: Math.round(prob), lastClose, reclaimClose, reclaimDate: dates[reclaimIdx] };
   }
   return null;
