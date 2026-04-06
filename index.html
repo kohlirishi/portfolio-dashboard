@@ -145,37 +145,33 @@ header{background:var(--surface);border-bottom:1px solid var(--border);padding:1
 #pg-main table{width:100%;border-collapse:collapse;table-layout:fixed}
 #pg-main thead th{padding:9px 10px;text-align:left;font-size:11px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.5px;background:var(--bg2);border-bottom:1px solid var(--border);white-space:nowrap;cursor:pointer;user-select:none;transition:color .1s;overflow:hidden}
 #pg-main thead th:hover{color:var(--text2)}
-#pg-main thead th:first-child{padding-left:18px;width:220px;min-width:220px}
-#pg-main thead th:last-child{padding-right:12px;width:200px;min-width:180px}
-#pg-main thead th:nth-last-child(2){width:130px;min-width:120px}
+/* Fund Name col — wide enough for long names */
+#pg-main thead th:first-child{padding-left:18px;width:210px;min-width:210px}
+/* Technical Indicator col (last) — widest, holds 2-line text */
+#pg-main thead th:last-child{padding-right:12px;padding-left:24px;width:220px;min-width:220px;border-left:1px solid rgba(30,50,80,0.7)}
+/* Strength col (2nd last) — wide enough for "88% – Very Strong" */
+#pg-main thead th:nth-last-child(2){width:175px;min-width:175px;padding-right:16px}
 #pg-main thead th.sa::after{content:" ↑";color:var(--blue);font-size:10px}
 #pg-main thead th.sd::after{content:" ↓";color:var(--blue);font-size:10px}
 #pg-main tbody tr{border-bottom:1px solid rgba(30,50,80,.5);transition:background .1s}
 #pg-main tbody tr:hover{background:var(--surface2)}
 #pg-main tbody tr:last-child{border-bottom:none}
-#pg-main tbody td{padding:10px 10px;font-size:13px;white-space:normal;word-break:break-word;vertical-align:top}
-#pg-main tbody td:first-child{padding-left:18px;width:220px;min-width:220px}
-#pg-main tbody td:last-child{padding-right:12px;width:200px;min-width:180px}
-#pg-main tbody td:nth-last-child(2){width:130px;min-width:120px}
+#pg-main tbody td{padding:10px 10px;font-size:13px;white-space:normal;word-break:break-word;vertical-align:middle}
+#pg-main tbody td:first-child{padding-left:18px;width:210px;min-width:210px}
+/* Technical Indicator td (last) */
+#pg-main tbody td:last-child{padding-right:12px;padding-left:24px !important;width:220px;min-width:220px;border-left:1px solid rgba(30,50,80,0.7)}
+/* Strength td (2nd last) */
+#pg-main tbody td:nth-last-child(2){width:175px;min-width:175px;padding-right:16px;white-space:nowrap}
 /* ── COLUMN WIDTHS (scoped to #pg-main) ── */
 /* Numeric return/profit columns — tight */
 #pg-main table thead th:nth-child(2),#pg-main table thead th:nth-child(3),
 #pg-main table thead th:nth-child(4),#pg-main table thead th:nth-child(5),
 #pg-main table thead th:nth-child(6),#pg-main table thead th:nth-child(7),
-#pg-main table thead th:nth-child(8){width:90px;min-width:80px}
+#pg-main table thead th:nth-child(8){width:88px;min-width:80px}
 #pg-main table tbody td:nth-child(2),#pg-main table tbody td:nth-child(3),
 #pg-main table tbody td:nth-child(4),#pg-main table tbody td:nth-child(5),
 #pg-main table tbody td:nth-child(6),#pg-main table tbody td:nth-child(7),
-#pg-main table tbody td:nth-child(8){width:90px;min-width:80px;white-space:nowrap}
-/* Strength column — add right spacing to separate from tech */
-#pg-main table thead th:nth-last-child(2),
-#pg-main table tbody td:nth-last-child(2){padding-right:24px}
-/* Technical Indicator column — left border + padding to visually separate from Strength */
-#pg-main table thead th:last-child,
-#pg-main table tbody td:last-child{
-  border-left:1px solid rgba(30,50,80,0.7);
-  padding-left:20px !important;
-}
+#pg-main table tbody td:nth-child(8){width:88px;min-width:80px;white-space:nowrap}
 /* Tech indicator cell — allow multi-line */
 .tech-cell{line-height:1.4;display:block}
 .tech-cell-pct{font-size:11px;opacity:0.75;display:block;margin-top:1px}
@@ -2023,7 +2019,7 @@ function renderCell(d, id) {
       else if (sl.includes('moderate')) { scls = 'td-neu'; sstyle = ' style="color:var(--yellow)"'; }
       else if (sl.includes('very weak')) { scls = 'td-dn'; }
       else if (sl.includes('weak')) { scls = 'td-dn'; }
-      return `<td><span class="${scls}"${sstyle}>${sv}</span></td>`;
+      return `<td style="white-space:nowrap"><span class="${scls}"${sstyle}>${sv}</span></td>`;
     }
     case 'inv':  return `<td>${d.inv!==null?`<span class="td-dim">$${(d.inv).toLocaleString('en-CA',{minimumFractionDigits:2})}</span>`:'<span class="td-muted">—</span>'}</td>`;
     case 'curval':return `<td>${d.curval!==null?`<span class="td-dim">$${(d.curval).toLocaleString('en-CA',{minimumFractionDigits:2})}</span>`:'<span class="td-muted">—</span>'}</td>`;
