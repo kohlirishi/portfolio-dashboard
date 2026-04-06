@@ -1046,6 +1046,7 @@ table.div-ht tfoot td{padding:10px 14px;font-size:13px;font-weight:700;backgroun
         <button class="fbtn" data-f="etf" onclick="setFilter('etf',this)">ETF</button>
         <button class="fbtn" data-f="gt15" onclick="setFilter('gt15',this)">More than 15%</button>
         <button class="fbtn" data-f="lt15" onclick="setFilter('lt15',this)">Less than 15%</button>
+        <button class="fbtn" data-f="strong" onclick="setFilter('strong',this)">Strong Funds</button>
         <button class="fbtn" data-f="tech_view" onclick="setFilter('tech_view',this)">Technical Indicators</button>
         <button class="fbtn" data-f="bullish" onclick="setFilter('bullish',this)">Bullish Momentum</button>
       </div>
@@ -1441,8 +1442,6 @@ const ALL_COLS = [
   { id:'type',   label:'ETF / Stock',       sortKey:'type',   defaultOn:false },
   { id:'cmp',    label:'CMP',               sortKey:'cmp',    defaultOn:false },
   { id:'ma200',  label:'Below 200 Day MA',  sortKey:'ma200',  defaultOn:false },
-  { id:'tech',   label:'Technical Indicator',sortKey:'tech',  defaultOn:true  },
-  { id:'str',    label:'Strength',             sortKey:'str',    defaultOn:true  },
   { id:'inv',    label:'Total Invested',    sortKey:'inv',    defaultOn:false },
   { id:'curval', label:'Current Value',     sortKey:'curval', defaultOn:false },
   { id:'e5',     label:'5 EMA',             sortKey:'e5',     defaultOn:false },
@@ -1452,6 +1451,8 @@ const ALL_COLS = [
   { id:'s100',   label:'100 SMA',           sortKey:'s100',   defaultOn:false },
   { id:'s200',   label:'200 SMA',           sortKey:'s200',   defaultOn:false },
   { id:'s250',   label:'250 SMA',           sortKey:'s250',   defaultOn:false },
+  { id:'str',    label:'Strength',          sortKey:'str',    defaultOn:true  },
+  { id:'tech',   label:'Technical Indicator',sortKey:'tech',  defaultOn:true  },
 ];
 
 // ═══════════════════════════════════════════════
@@ -2062,6 +2063,7 @@ function applyFilter(data) {
     case 'lt15':      return data.filter(d => d.plP!==null && d.plP<15);
     case 'tech_view': return data; // all funds, columns change
     case 'bullish':   return data.filter(d => isAllBullish(d));
+    case 'strong':    return data.filter(d => { const s=(d.strength||'').toLowerCase(); return s.includes('very strong')||s.includes('strong'); });
     default: return data;
   }
 }
@@ -2171,7 +2173,7 @@ function setFilter(f, btnEl) {
   document.querySelectorAll('.fbtn').forEach(b=>b.classList.remove('fa','fp','fn','fg'));
   if (!btnEl) return;
   if (f==='all') btnEl.classList.add('fa');
-  else if (['1dp','30dp','ytdp','prof','etf','stk','buy','gt15','tech_view','bullish'].includes(f)) btnEl.classList.add('fp');
+  else if (['1dp','30dp','ytdp','prof','etf','stk','buy','gt15','tech_view','bullish','strong'].includes(f)) btnEl.classList.add('fp');
   else if (['1dn','30dn','ytdn','loss','sell'].includes(f)) btnEl.classList.add('fn');
   else btnEl.classList.add('fg');
   renderTable();
