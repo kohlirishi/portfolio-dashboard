@@ -1441,6 +1441,7 @@ const ALL_COLS = [
   { id:'cmp',    label:'CMP',               sortKey:'cmp',    defaultOn:false },
   { id:'ma200',  label:'Below 200 Day MA',  sortKey:'ma200',  defaultOn:false },
   { id:'tech',   label:'Technical Indicator',sortKey:'tech',  defaultOn:true  },
+  { id:'str',    label:'Strength',             sortKey:'str',    defaultOn:true  },
   { id:'inv',    label:'Total Invested',    sortKey:'inv',    defaultOn:false },
   { id:'curval', label:'Current Value',     sortKey:'curval', defaultOn:false },
   { id:'e5',     label:'5 EMA',             sortKey:'e5',     defaultOn:false },
@@ -1708,6 +1709,7 @@ function parseFunds(g) {
       s100:      gs(row, 34),               // AI
       s200:      gs(row, 35),               // AJ
       s250:      gs(row, 36),               // AK
+      strength:  gs(row, 37),               // AL — Strength (Stocks only)
       recommend: getRecommend(gs(row, 29)), // AD Trend
     };
   }).filter(Boolean);
@@ -1981,6 +1983,19 @@ function renderCell(d, id) {
       }
       return `<td><span class="${tcls}"${style}>${tv}</span></td>`;
     }
+    case 'str': {
+      const isEtf = (d.type||'').toLowerCase() === 'etf';
+      const sv = (d.strength||'').trim();
+      if (isEtf || !sv) return '<td><span class="td-muted">NA</span></td>';
+      const sl = sv.toLowerCase();
+      let scls = 'td-muted', sstyle = '';
+      if (sl.includes('very strong')) { scls = 'td-up'; }
+      else if (sl.includes('strong')) { scls = 'td-up'; }
+      else if (sl.includes('moderate')) { scls = 'td-neu'; sstyle = ' style="color:var(--yellow)"'; }
+      else if (sl.includes('very weak')) { scls = 'td-dn'; }
+      else if (sl.includes('weak')) { scls = 'td-dn'; }
+      return `<td><span class="${scls}"${sstyle}>${sv}</span></td>`;
+    }
     case 'inv':  return `<td>${d.inv!==null?`<span class="td-dim">$${(d.inv).toLocaleString('en-CA',{minimumFractionDigits:2})}</span>`:'<span class="td-muted">—</span>'}</td>`;
     case 'curval':return `<td>${d.curval!==null?`<span class="td-dim">$${(d.curval).toLocaleString('en-CA',{minimumFractionDigits:2})}</span>`:'<span class="td-muted">—</span>'}</td>`;
     case 'e5':   return `<td><span class="${isBullish(d.e5)?'td-up':isBearish(d.e5)?'td-dn':'td-dim'}">${d.e5||'—'}</span></td>`;
@@ -2057,6 +2072,16 @@ function applyFilter(data) {
 //  Closer to 0% = top, more negative = bottom.
 //  Tier bonuses handle edge cases (Breakout, YES, no %)
 // ═══════════════════════════════════════════════
+function strSortScore(s, type) {
+  if (!s || (type||'').toLowerCase() === 'etf') return -99;
+  const l = s.toLowerCase();
+  if (l.includes('very strong')) return 5;
+  if (l.includes('strong'))      return 4;
+  if (l.includes('moderate'))    return 3;
+  if (l.includes('very weak'))   return 1;
+  if (l.includes('weak'))        return 2;
+  return 0;
+}
 function techSortScore(tech) {
   if (!tech) return -999999;
   const t = String(tech).toLowerCase().trim();
@@ -2118,6 +2143,7 @@ function sortData(data) {
       case 'curval': va=a.curval??0; vb=b.curval??0; break;
       case 'sip':    va=a.sip;   vb=b.sip;   break;
       case 'tech':   va=techSortScore(a.tech); vb=techSortScore(b.tech); break;
+      case 'str':    va=strSortScore(a.strength,a.type); vb=strSortScore(b.strength,b.type); break;
       case 'cmp':    va=parseFloat((a.cmp||'0').replace(/[$,]/g,''))||0; vb=parseFloat((b.cmp||'0').replace(/[$,]/g,''))||0; break;
       default: return 0;
     }
