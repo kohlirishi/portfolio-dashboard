@@ -30,7 +30,7 @@
   --fb:'Inter',sans-serif;--fm:'Inter',sans-serif;--tr:180ms cubic-bezier(.16,1,.3,1);
 }
 html{font-size:15px}
-body{background:var(--bg);color:var(--text);font-family:'Inter',sans-serif;min-height:100vh;line-height:1.5}
+body{background:var(--bg);color:var(--text);font-family:'Inter',sans-serif;min-height:100vh;line-height:1.5;padding-top:68px}
 button{font-family:inherit;cursor:pointer;border:none;outline:none}
 input{font-family:inherit;outline:none}
 ::-webkit-scrollbar{width:4px;height:4px}
@@ -48,7 +48,7 @@ input{font-family:inherit;outline:none}
 .ld-sub{font-size:12px;color:var(--text3);letter-spacing:.5px}
 
 /* ── HEADER ── */
-header{background:var(--surface);border-bottom:1px solid var(--border);padding:14px 24px;display:flex;align-items:flex-start;justify-content:space-between;gap:16px;position:sticky;top:0;z-index:100}
+header{background:var(--surface);border-bottom:1px solid var(--border);padding:14px 24px;display:flex;align-items:flex-start;justify-content:space-between;gap:16px;position:fixed;top:0;left:0;right:0;z-index:1000}
 .h-left{display:flex;flex-direction:column;gap:2px}
 .h-title{font-size:24px;font-weight:800;color:var(--text);letter-spacing:-.5px;white-space:nowrap}
 .h-sub{font-size:13px;color:var(--text3);white-space:nowrap}
@@ -148,7 +148,7 @@ header{background:var(--surface);border-bottom:1px solid var(--border);padding:1
 /* Fund Name col — wide enough for long names */
 #pg-main thead th:first-child{padding-left:18px;width:210px;min-width:210px}
 /* Technical Indicator col (last) — widest, holds 2-line text */
-#pg-main thead th:last-child{padding-right:12px;padding-left:24px;width:220px;min-width:220px;border-left:1px solid rgba(30,50,80,0.7)}
+#pg-main thead th:last-child{padding-right:12px;padding-left:28px;width:220px;min-width:220px}
 /* Strength col (2nd last) — wide enough for "88% – Very Strong" */
 #pg-main thead th:nth-last-child(2){width:175px;min-width:175px;padding-right:16px}
 #pg-main thead th.sa::after{content:" ↑";color:var(--blue);font-size:10px}
@@ -159,7 +159,7 @@ header{background:var(--surface);border-bottom:1px solid var(--border);padding:1
 #pg-main tbody td{padding:10px 10px;font-size:13px;white-space:normal;word-break:break-word;vertical-align:middle}
 #pg-main tbody td:first-child{padding-left:18px;width:210px;min-width:210px}
 /* Technical Indicator td (last) */
-#pg-main tbody td:last-child{padding-right:12px;padding-left:24px !important;width:220px;min-width:220px;border-left:1px solid rgba(30,50,80,0.7)}
+#pg-main tbody td:last-child{padding-right:12px;padding-left:28px !important;width:220px;min-width:220px}
 /* Strength td (2nd last) */
 #pg-main tbody td:nth-last-child(2){width:175px;min-width:175px;padding-right:16px;white-space:nowrap}
 /* ── COLUMN WIDTHS (scoped to #pg-main) ── */
@@ -2011,7 +2011,7 @@ function renderCell(d, id) {
     }
     case 'str': {
       const sv = (d.strength||'').trim();
-      if (!sv) return '<td><span class="td-muted">NA</span></td>';
+      if (!sv || sv.toLowerCase().includes('insufficient')) return '<td style="white-space:nowrap"><span class="td-muted">NA</span></td>';
       const sl = sv.toLowerCase();
       let scls = 'td-muted', sstyle = '';
       if (sl.includes('very strong')) { scls = 'td-up'; }
@@ -3522,7 +3522,7 @@ async function loadAllRatings(){
 
 
 <div id="pg-short" style="display:none;background:#0d1117;color:#c9d1d9;font-family:-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, monospace;font-size:14px;min-height:100vh">
-<div id="st-back-bar" style="background:#161b22;border-bottom:1px solid #30363d;padding:10px 20px;display:flex;align-items:center;gap:14px;position:sticky;top:0;z-index:200">
+<div id="st-back-bar" style="background:#161b22;border-bottom:1px solid #30363d;padding:10px 20px;display:flex;align-items:center;gap:14px;position:sticky;top:68px;z-index:200">
   <button onclick="showMain()" style="display:inline-flex;align-items:center;gap:6px;padding:7px 16px;background:transparent;border:1px solid #30363d;color:#8b949e;font-size:13px;font-weight:600;border-radius:6px;cursor:pointer;font-family:inherit;transition:all .15s" onmouseover="this.style.borderColor='#58a6ff';this.style.color='#c9d1d9'" onmouseout="this.style.borderColor='#30363d';this.style.color='#8b949e'">
     ← Back to Dashboard
   </button>
@@ -3767,7 +3767,7 @@ async function loadAllRatings(){
 
 </div>
 <div id="pg-screener" style="display:none;background:#0d1117;color:#c9d1d9;font-family:-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, monospace;font-size:14px;min-height:100vh">
-<div id="sc-back-bar" style="background:#161b22;border-bottom:1px solid #30363d;padding:10px 20px;display:flex;align-items:center;gap:14px;position:sticky;top:0;z-index:200;flex-wrap:wrap">
+<div id="sc-back-bar" style="background:#161b22;border-bottom:1px solid #30363d;padding:10px 20px;display:flex;align-items:center;gap:14px;position:sticky;top:68px;z-index:200;flex-wrap:wrap">
   <button onclick="showMain()" style="display:inline-flex;align-items:center;gap:6px;padding:7px 16px;background:transparent;border:1px solid #30363d;color:#8b949e;font-size:13px;font-weight:600;border-radius:6px;cursor:pointer;font-family:inherit;transition:all .15s" onmouseover="this.style.borderColor='#58a6ff';this.style.color='#c9d1d9'" onmouseout="this.style.borderColor='#30363d';this.style.color='#8b949e'">
     ← Back to Dashboard
   </button>
@@ -3904,7 +3904,7 @@ async function loadAllRatings(){
 
 </div>
 <div id="pg-longterm" style="display:none;background:#0d1117;color:#c9d1d9;font-family:-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, monospace;font-size:14px;min-height:100vh">
-<div id="lt-back-bar" style="background:#161b22;border-bottom:1px solid #30363d;padding:10px 20px;display:flex;align-items:center;gap:14px;position:sticky;top:0;z-index:200">
+<div id="lt-back-bar" style="background:#161b22;border-bottom:1px solid #30363d;padding:10px 20px;display:flex;align-items:center;gap:14px;position:sticky;top:68px;z-index:200">
   <button onclick="showMain()" style="display:inline-flex;align-items:center;gap:6px;padding:7px 16px;background:transparent;border:1px solid #30363d;color:#8b949e;font-size:13px;font-weight:600;border-radius:6px;cursor:pointer;font-family:inherit;transition:all .15s" onmouseover="this.style.borderColor='#58a6ff';this.style.color='#c9d1d9'" onmouseout="this.style.borderColor='#30363d';this.style.color='#8b949e'">
     ← Back to Dashboard
   </button>
