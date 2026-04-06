@@ -1034,6 +1034,7 @@ table.div-ht tfoot td{padding:10px 14px;font-size:13px;font-weight:700;backgroun
         <button class="sbtn" data-col="pld" onclick="setSort('pld',this)">Profit ($)</button>
         <button class="sbtn" data-col="plp" onclick="setSort('plp',this)">Profit (%)</button>
         <button class="sbtn" data-col="inv" onclick="setSort('inv',this)">Total Invested</button>
+        <button class="sbtn" data-col="str" onclick="setSort('str',this)">Strength <span id="arr-str">↓</span></button>
       </div>
     </div>
     <!-- Filter -->
@@ -1984,9 +1985,8 @@ function renderCell(d, id) {
       return `<td><span class="${tcls}"${style}>${tv}</span></td>`;
     }
     case 'str': {
-      const isEtf = (d.type||'').toLowerCase() === 'etf';
       const sv = (d.strength||'').trim();
-      if (isEtf || !sv) return '<td><span class="td-muted">NA</span></td>';
+      if (!sv) return '<td><span class="td-muted">NA</span></td>';
       const sl = sv.toLowerCase();
       let scls = 'td-muted', sstyle = '';
       if (sl.includes('very strong')) { scls = 'td-up'; }
@@ -2073,7 +2073,7 @@ function applyFilter(data) {
 //  Tier bonuses handle edge cases (Breakout, YES, no %)
 // ═══════════════════════════════════════════════
 function strSortScore(s, type) {
-  if (!s || (type||'').toLowerCase() === 'etf') return -99;
+  if (!s) return -99;
   const l = s.toLowerCase();
   if (l.includes('very strong')) return 5;
   if (l.includes('strong'))      return 4;
