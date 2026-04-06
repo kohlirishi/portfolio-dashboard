@@ -861,7 +861,8 @@ table.div-ht tfoot td{padding:10px 14px;font-size:13px;font-weight:700;backgroun
 #pg-longterm .badge { background: #21262d; border: 1px solid #30363d; border-radius: 12px; padding: 2px 10px; font-size: 12px; font-weight: 600; color: #58a6ff; }
 #pg-longterm /* WATCHLIST TABLE */
   .table-wrap { background: #161b22; border: 1px solid #30363d; border-radius: 8px; overflow: hidden; overflow-x: auto; margin-bottom: 24px; }
-#pg-longterm table { width: 100%; border-collapse: collapse; }
+#pg-longterm table { width: 100%; border-collapse: collapse; min-width: 900px; }
+#pg-longterm #ltTableWrap, #pg-longterm .table-wrap { overflow-x: auto; }
 #pg-longterm thead th { background: #21262d; padding: 11px 14px; text-align: left; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; color: #8b949e; border-bottom: 1px solid #30363d; white-space: nowrap; }
 #pg-longterm thead th:last-child { text-align: center; }
 #pg-longterm tbody tr { border-bottom: 1px solid #21262d; transition: background 0.15s; }
@@ -3657,7 +3658,7 @@ async function loadAllRatings(){
       <div class="right">
         <div class="autosort-wrap">
           <label class="toggle-switch">
-            <input type="checkbox" id="closedAutoSortToggle" onchange="toggleAutoSort('closed')">
+            <input type="checkbox" id="closedAutoSortToggle" onchange="toggleAutoSort('closed')" checked>
             <span class="toggle-slider"></span>
           </label>
           <span class="autosort-label">Auto-sort</span>
@@ -5258,7 +5259,7 @@ const SORT_STATE = {
 
 const AUTO_SORT = {
   live:   { enabled: true,  timer: null, nextAt: null }, // ON by default
-  closed: { enabled: false, timer: null, nextAt: null },
+  closed: { enabled: true,  timer: null, nextAt: null }, // ON by default
 };
 
 const AUTO_SORT_INTERVAL_MS = 30 * 60 * 1000; // 30 minutes
@@ -5729,6 +5730,7 @@ document.addEventListener('DOMContentLoaded', () => {
   restoreSectionStates();
   // Kick off auto-sort timer since live auto-sort is enabled by default
   if (AUTO_SORT.live.enabled) scheduleAutoSort('live');
+  if (AUTO_SORT.closed.enabled) scheduleAutoSort('closed');
   fetchCadUsd();
   tick();
   setInterval(tick, 60 * 1000);
@@ -5749,6 +5751,7 @@ async function initShortTerm() {
     // Render from localStorage first for instant display
     renderAll(); renderNotes(); restoreSectionStates();
     if (AUTO_SORT.live.enabled) scheduleAutoSort('live');
+    if (AUTO_SORT.closed.enabled) scheduleAutoSort('closed');
 
     // Then fetch from Sheets -- ALWAYS overwrite with cloud data (source of truth)
     const cloudState = await loadStateFromCloud();
@@ -7302,7 +7305,7 @@ function renderLtResults() {
         <div style="font-weight:700;font-size:15px;color:${barColor}">${r.strengthPct}%</div>
         <div class="strength-bar-wrap"><div class="strength-bar-fill" style="width:${r.strengthPct}%;background:${barColor}"></div></div>
       </td>
-      <td style="font-size:12px;min-width:0">
+      <td style="font-size:12px;min-width:0;max-width:200px">
         <div style="display:flex;flex-wrap:wrap;gap:3px">
         ${tagHTML(tc.priceAboveEMA50d,   'Price > EMA50D')}
         ${tagHTML(tc.low52wAboveSMA200w, '52WLow > SMA200W')}
@@ -7311,7 +7314,7 @@ function renderLtResults() {
         ${tagHTML(tc.goldenCrossWeekly,  'Golden Cross W')}
         </div>
       </td>
-      <td style="font-size:12px;min-width:0">
+      <td style="font-size:12px;min-width:0;max-width:200px">
         <div style="display:flex;flex-wrap:wrap;gap:3px">
         ${tagHTML(fc.marketCap,   `MCap ${fmtB(fd.marketCap)}`)}
         ${tagHTML(fc.pe,          `P/E ${fmtPE(fd.pe)}`)}
