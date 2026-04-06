@@ -141,20 +141,44 @@ header{background:var(--surface);border-bottom:1px solid var(--border);padding:1
 .cols-drop-wrap{position:relative}
 
 /* ── TABLE ── */
-.tbl-wrap{overflow-x:auto}
-table{width:100%;border-collapse:collapse;min-width:760px}
-thead th{padding:9px 12px;text-align:left;font-size:12px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.6px;background:var(--bg2);border-bottom:1px solid var(--border);white-space:nowrap;cursor:pointer;user-select:none;transition:color .1s}
+.tbl-wrap{overflow-x:hidden}
+table{width:100%;border-collapse:collapse;table-layout:fixed}
+thead th{padding:9px 10px;text-align:left;font-size:11px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.5px;background:var(--bg2);border-bottom:1px solid var(--border);white-space:nowrap;cursor:pointer;user-select:none;transition:color .1s;overflow:hidden}
 thead th:hover{color:var(--text2)}
-thead th:first-child{padding-left:18px}
-thead th:last-child{padding-right:18px}
+thead th:first-child{padding-left:18px;width:220px;min-width:220px}
+thead th:last-child{padding-right:12px;width:200px;min-width:180px}
+thead th:nth-last-child(2){width:130px;min-width:120px}
 thead th.sa::after{content:" ↑";color:var(--blue);font-size:10px}
 thead th.sd::after{content:" ↓";color:var(--blue);font-size:10px}
 tbody tr{border-bottom:1px solid rgba(30,50,80,.5);transition:background .1s}
 tbody tr:hover{background:var(--surface2)}
 tbody tr:last-child{border-bottom:none}
-tbody td{padding:11px 12px;font-size:14px;white-space:nowrap}
-tbody td:first-child{padding-left:18px}
-tbody td:last-child{padding-right:18px}
+tbody td{padding:10px 10px;font-size:13px;white-space:normal;word-break:break-word;vertical-align:top}
+tbody td:first-child{padding-left:18px;width:220px;min-width:220px}
+tbody td:last-child{padding-right:12px;width:200px;min-width:180px}
+tbody td:nth-last-child(2){width:130px;min-width:120px}
+/* ── COLUMN WIDTHS ── */
+/* Numeric return/profit columns — tight */
+table thead th:nth-child(2),table thead th:nth-child(3),
+table thead th:nth-child(4),table thead th:nth-child(5),
+table thead th:nth-child(6),table thead th:nth-child(7),
+table thead th:nth-child(8){width:90px;min-width:80px}
+table tbody td:nth-child(2),table tbody td:nth-child(3),
+table tbody td:nth-child(4),table tbody td:nth-child(5),
+table tbody td:nth-child(6),table tbody td:nth-child(7),
+table tbody td:nth-child(8){width:90px;min-width:80px;white-space:nowrap}
+/* Strength column — add right spacing to separate from tech */
+table thead th:nth-last-child(2),
+table tbody td:nth-last-child(2){padding-right:24px}
+/* Technical Indicator column — left border + padding to visually separate from Strength */
+table thead th:last-child,
+table tbody td:last-child{
+  border-left:1px solid rgba(30,50,80,0.7);
+  padding-left:20px !important;
+}
+/* Tech indicator cell — allow multi-line */
+.tech-cell{line-height:1.4;display:block}
+.tech-cell-pct{font-size:11px;opacity:0.75;display:block;margin-top:1px}
 .td-fund{font-weight:600;color:var(--text);font-size:14px}
 .td-fund-sub{font-size:12px;color:var(--text3);margin-top:2px;font-weight:400}
 .td-up{color:var(--green);font-weight:600}
@@ -964,10 +988,7 @@ table.div-ht tfoot td{padding:10px 14px;font-size:13px;font-weight:700;backgroun
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></svg>
       Long Term Screener
     </button>
-    <button class="h-btn" id="btn-sa-nav" onclick="showAnalyser()">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 7 13.5 15.5 8.5 10.5 2 17"/><polyline points="16 7 22 7 22 13"/></svg>
-      Stock Analyser
-    </button>
+
   </div>
 </header>
 
@@ -1034,6 +1055,7 @@ table.div-ht tfoot td{padding:10px 14px;font-size:13px;font-weight:700;backgroun
         <button class="sbtn" data-col="pld" onclick="setSort('pld',this)">Profit ($)</button>
         <button class="sbtn" data-col="plp" onclick="setSort('plp',this)">Profit (%)</button>
         <button class="sbtn" data-col="inv" onclick="setSort('inv',this)">Total Invested</button>
+        <button class="sbtn" data-col="str" onclick="setSort('str',this)">Strength <span id="arr-str">↓</span></button>
       </div>
     </div>
     <!-- Filter -->
@@ -1045,6 +1067,7 @@ table.div-ht tfoot td{padding:10px 14px;font-size:13px;font-weight:700;backgroun
         <button class="fbtn" data-f="etf" onclick="setFilter('etf',this)">ETF</button>
         <button class="fbtn" data-f="gt15" onclick="setFilter('gt15',this)">More than 15%</button>
         <button class="fbtn" data-f="lt15" onclick="setFilter('lt15',this)">Less than 15%</button>
+        <button class="fbtn" data-f="strong" onclick="setFilter('strong',this)">Strong Funds</button>
         <button class="fbtn" data-f="tech_view" onclick="setFilter('tech_view',this)">Technical Indicators</button>
         <button class="fbtn" data-f="bullish" onclick="setFilter('bullish',this)">Bullish Momentum</button>
       </div>
@@ -1440,8 +1463,6 @@ const ALL_COLS = [
   { id:'type',   label:'ETF / Stock',       sortKey:'type',   defaultOn:false },
   { id:'cmp',    label:'CMP',               sortKey:'cmp',    defaultOn:false },
   { id:'ma200',  label:'Below 200 Day MA',  sortKey:'ma200',  defaultOn:false },
-  { id:'tech',   label:'Technical Indicator',sortKey:'tech',  defaultOn:true  },
-  { id:'str',    label:'Strength',             sortKey:'str',    defaultOn:true  },
   { id:'inv',    label:'Total Invested',    sortKey:'inv',    defaultOn:false },
   { id:'curval', label:'Current Value',     sortKey:'curval', defaultOn:false },
   { id:'e5',     label:'5 EMA',             sortKey:'e5',     defaultOn:false },
@@ -1451,6 +1472,8 @@ const ALL_COLS = [
   { id:'s100',   label:'100 SMA',           sortKey:'s100',   defaultOn:false },
   { id:'s200',   label:'200 SMA',           sortKey:'s200',   defaultOn:false },
   { id:'s250',   label:'250 SMA',           sortKey:'s250',   defaultOn:false },
+  { id:'str',    label:'Strength',          sortKey:'str',    defaultOn:true  },
+  { id:'tech',   label:'Technical Indicator',sortKey:'tech',  defaultOn:true  },
 ];
 
 // ═══════════════════════════════════════════════
@@ -1951,13 +1974,13 @@ function renderTable() {
 
 function renderCell(d, id) {
   switch(id) {
-    case 'name': return `<td><div class="td-fund">${d.shortName}</div><div class="td-fund-sub">${d.ticker_v||d.ticker} · ${d.sector}</div></td>`;
-    case 's1d':  return `<td>${pctTd(d.s1d)}</td>`;
-    case 's14d': return `<td>${pctTd(d.s14d)}</td>`;
-    case 's30d': return `<td>${pctTd(d.s30d, true)}</td>`;
-    case 'ytd':  return `<td>${pctTd(d.ytd)}</td>`;
-    case 'plD':  return `<td>${moneyTd(d.plD)}</td>`;
-    case 'plP':  return `<td>${pctTd(d.plP)}</td>`;
+    case 'name': return `<td style="min-width:180px;max-width:220px"><div class="td-fund" style="white-space:normal;word-break:break-word">${d.shortName}</div><div class="td-fund-sub">${d.ticker_v||d.ticker} · ${d.sector}</div></td>`;
+    case 's1d':  return `<td style="white-space:nowrap">${pctTd(d.s1d)}</td>`;
+    case 's14d': return `<td style="white-space:nowrap">${pctTd(d.s14d)}</td>`;
+    case 's30d': return `<td style="white-space:nowrap">${pctTd(d.s30d, true)}</td>`;
+    case 'ytd':  return `<td style="white-space:nowrap">${pctTd(d.ytd)}</td>`;
+    case 'plD':  return `<td style="white-space:nowrap">${moneyTd(d.plD)}</td>`;
+    case 'plP':  return `<td style="white-space:nowrap">${pctTd(d.plP)}</td>`;
     case 'type': return `<td><span class="badge ${d.type.toLowerCase()==='etf'?'b-etf':'b-stk'}">${d.type.toUpperCase()}</span>${d.recommend?` <span style="font-size:10px;color:var(--text3);margin-left:4px">${d.recommend}</span>`:''}</td>`;
     case 'cmp':  return `<td class="td-dim">${d.cmp||'—'}</td>`;
     case 'ma200':{
@@ -1981,12 +2004,18 @@ function renderCell(d, id) {
       } else {
         tcls = 'td-dn'; // red — below MAs / far from ATH
       }
+      // Split "LABEL (percentage)" into two lines for readability
+      const techParts = tv.match(/^(.+?)\s*(\([^)]+\))\s*$/);
+      if (techParts) {
+        const label = techParts[1].trim();
+        const pct   = techParts[2].trim();
+        return `<td><span class="${tcls}"${style} style="display:block;line-height:1.35">${label}<br><span style="font-size:11px;opacity:0.8">${pct}</span></span></td>`;
+      }
       return `<td><span class="${tcls}"${style}>${tv}</span></td>`;
     }
     case 'str': {
-      const isEtf = (d.type||'').toLowerCase() === 'etf';
       const sv = (d.strength||'').trim();
-      if (isEtf || !sv) return '<td><span class="td-muted">NA</span></td>';
+      if (!sv) return '<td><span class="td-muted">NA</span></td>';
       const sl = sv.toLowerCase();
       let scls = 'td-muted', sstyle = '';
       if (sl.includes('very strong')) { scls = 'td-up'; }
@@ -2062,6 +2091,7 @@ function applyFilter(data) {
     case 'lt15':      return data.filter(d => d.plP!==null && d.plP<15);
     case 'tech_view': return data; // all funds, columns change
     case 'bullish':   return data.filter(d => isAllBullish(d));
+    case 'strong':    return data.filter(d => { const s=(d.strength||'').toLowerCase(); return s.includes('very strong')||s.includes('strong'); });
     default: return data;
   }
 }
@@ -2072,14 +2102,18 @@ function applyFilter(data) {
 //  Closer to 0% = top, more negative = bottom.
 //  Tier bonuses handle edge cases (Breakout, YES, no %)
 // ═══════════════════════════════════════════════
-function strSortScore(s, type) {
-  if (!s || (type||'').toLowerCase() === 'etf') return -99;
+function strSortScore(s) {
+  if (!s) return -1;
+  // Extract leading percentage e.g. "86% - Very Strong" => 86
+  const pctMatch = String(s).match(/^(\d+(\.\d+)?)\s*%/);
+  if (pctMatch) return parseFloat(pctMatch[1]);
+  // Fallback keyword tiers if no percentage present
   const l = s.toLowerCase();
-  if (l.includes('very strong')) return 5;
-  if (l.includes('strong'))      return 4;
-  if (l.includes('moderate'))    return 3;
-  if (l.includes('very weak'))   return 1;
-  if (l.includes('weak'))        return 2;
+  if (l.includes('very strong')) return 95;
+  if (l.includes('strong'))      return 75;
+  if (l.includes('moderate'))    return 50;
+  if (l.includes('very weak'))   return 10;
+  if (l.includes('weak'))        return 25;
   return 0;
 }
 function techSortScore(tech) {
@@ -2143,7 +2177,7 @@ function sortData(data) {
       case 'curval': va=a.curval??0; vb=b.curval??0; break;
       case 'sip':    va=a.sip;   vb=b.sip;   break;
       case 'tech':   va=techSortScore(a.tech); vb=techSortScore(b.tech); break;
-      case 'str':    va=strSortScore(a.strength,a.type); vb=strSortScore(b.strength,b.type); break;
+      case 'str':    va=strSortScore(a.strength); vb=strSortScore(b.strength); break;
       case 'cmp':    va=parseFloat((a.cmp||'0').replace(/[$,]/g,''))||0; vb=parseFloat((b.cmp||'0').replace(/[$,]/g,''))||0; break;
       default: return 0;
     }
@@ -2171,7 +2205,7 @@ function setFilter(f, btnEl) {
   document.querySelectorAll('.fbtn').forEach(b=>b.classList.remove('fa','fp','fn','fg'));
   if (!btnEl) return;
   if (f==='all') btnEl.classList.add('fa');
-  else if (['1dp','30dp','ytdp','prof','etf','stk','buy','gt15','tech_view','bullish'].includes(f)) btnEl.classList.add('fp');
+  else if (['1dp','30dp','ytdp','prof','etf','stk','buy','gt15','tech_view','bullish','strong'].includes(f)) btnEl.classList.add('fp');
   else if (['1dn','30dn','ytdn','loss','sell'].includes(f)) btnEl.classList.add('fn');
   else btnEl.classList.add('fg');
   renderTable();
