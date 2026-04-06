@@ -167,6 +167,15 @@ table tbody td:nth-child(2),table tbody td:nth-child(3),
 table tbody td:nth-child(4),table tbody td:nth-child(5),
 table tbody td:nth-child(6),table tbody td:nth-child(7),
 table tbody td:nth-child(8){width:90px;min-width:80px;white-space:nowrap}
+/* Strength column — add right spacing to separate from tech */
+table thead th:nth-last-child(2),
+table tbody td:nth-last-child(2){padding-right:24px}
+/* Technical Indicator column — left border + padding to visually separate from Strength */
+table thead th:last-child,
+table tbody td:last-child{
+  border-left:1px solid rgba(30,50,80,0.7);
+  padding-left:20px !important;
+}
 /* Tech indicator cell — allow multi-line */
 .tech-cell{line-height:1.4;display:block}
 .tech-cell-pct{font-size:11px;opacity:0.75;display:block;margin-top:1px}
@@ -979,10 +988,7 @@ table.div-ht tfoot td{padding:10px 14px;font-size:13px;font-weight:700;backgroun
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></svg>
       Long Term Screener
     </button>
-    <button class="h-btn" id="btn-sa-nav" onclick="showAnalyser()">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 7 13.5 15.5 8.5 10.5 2 17"/><polyline points="16 7 22 7 22 13"/></svg>
-      Stock Analyser
-    </button>
+
   </div>
 </header>
 
