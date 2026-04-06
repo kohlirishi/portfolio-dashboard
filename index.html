@@ -6714,22 +6714,83 @@ function scInit() {
 // The published export key from the user's Google Sheet
 const LT_PUB_KEY = '2PACX-1vT5My0JskMjYCWacWPEih3vGdNCp_yvVmmbP4u7KPYCq_ApHWT-SG1SxZ2g35LUHnhG-wIA7Yk-Yx29';
 const LT_SID     = '1LM0lfjSdnkZu7lYNPjCoGsORXphkxU742EqWnUcxM6g';
+// Direct pubhtml URL — confirmed working by user
+const LT_PUBHTML = `https://docs.google.com/spreadsheets/d/e/${LT_PUB_KEY}/pubhtml`;
 
-// All URL strategies ordered by reliability for a published-but-not-shared sheet
+// All URL strategies — pubhtml first (confirmed working), then CSV fallbacks
 function getLtUrls() {
   const pub  = `https://docs.google.com/spreadsheets/d/e/${LT_PUB_KEY}`;
   const sid  = `https://docs.google.com/spreadsheets/d/${LT_SID}`;
   return [
-    // Published export — sheet name param (works when Entire Document is published)
+    // ── HIGHEST PRIORITY: pubhtml (user confirmed this works) ──
+    LT_PUBHTML,
+    // ── CSV exports ──
     `${pub}/pub?output=csv&sheet=testScreener`,
     `${pub}/pub?output=csv&single=true&sheet=testScreener`,
-    // gviz with published key
+    // ── gviz endpoints ──
     `${pub}/gviz/tq?tqx=out:csv&sheet=testScreener`,
     `${pub}/gviz/tq?tqx=out:json&sheet=testScreener`,
-    // gviz with direct SID (needs share permission)
     `${sid}/gviz/tq?tqx=out:csv&sheet=testScreener`,
     `${sid}/gviz/tq?tqx=out:json&sheet=testScreener`,
   ];
+}
+
+// ─── PARSE HTML TABLE (for pubhtml response) ──────────────────────────────────
+// Extracts the testScreener tab data from Google Sheets pubhtml output
+function parsePubHtml(html) {
+  // pubhtml contains multiple sheets as <table> elements inside <div id="sheet-...">
+  // We need to find the one for testScreener tab
+  const parser = new DOMParser();
+  const doc = parser.parseFromString(html, 'text/html');
+
+  // Try to find the testScreener sheet specifically
+  // Google pubhtml wraps each sheet in: <div id="sheet-.."><table>
+  let targetTable = null;
+
+  // Method 1: find the tab link for testScreener and use its anchor to find the table
+  const tabLinks = doc.querySelectorAll('li[id] a, .goog-tab');
+  for (const link of tabLinks) {
+    if (link.textContent.trim().toLowerCase() === 'testscreener') {
+      const sheetId = link.closest('li')?.id || link.getAttribute('data-sheet-id') || '';
+      const div = doc.querySelector(`#${sheetId} table, div[id*="${sheetId}"] table`);
+      if (div) { targetTable = div; break; }
+    }
+  }
+
+  // Method 2: scan all tables, find one whose first row header matches our columns
+  if (!targetTable) {
+    const tables = doc.querySelectorAll('table');
+    for (const tbl of tables) {
+      const firstRow = tbl.querySelector('tr');
+      if (!firstRow) continue;
+      const headers = Array.from(firstRow.querySelectorAll('td,th')).map(c => c.textContent.trim().toLowerCase());
+      // testScreener has Symbol, Status columns
+      if (headers.some(h => h === 'symbol') && headers.some(h => h === 'status')) {
+        targetTable = tbl;
+        break;
+      }
+    }
+  }
+
+  // Method 3: fallback — use the LAST table (testScreener is the last tab)
+  if (!targetTable) {
+    const tables = doc.querySelectorAll('table');
+    if (tables.length > 0) targetTable = tables[tables.length - 1];
+  }
+
+  if (!targetTable) return null;
+
+  // Convert HTML table to CSV-compatible rows array
+  const rows = [];
+  const trList = targetTable.querySelectorAll('tr');
+  for (const tr of trList) {
+    const cells = Array.from(tr.querySelectorAll('td,th')).map(td => {
+      // Get clean text content
+      return td.textContent.replace(/\n/g, ' ').replace(/\s+/g, ' ').trim();
+    });
+    if (cells.some(c => c)) rows.push(cells); // skip fully empty rows
+  }
+  return rows; // array of string arrays, same format as parseCSV output
 }
 
 // Proxy wrappers — try direct first, then proxies
@@ -6796,8 +6857,24 @@ async function loadLtFromSheet() {
           } catch(e2) { console.warn('gviz JSON parse fail:', e2); continue; }
         }
 
-        // ── Plain CSV / HTML check ──
-        if (trimmed.startsWith('<')) continue; // HTML = error page
+        // ── pubhtml response (HTML table) ──
+        if (trimmed.startsWith('<') && trimmed.includes('<table')) {
+          const parsedRows = parsePubHtml(trimmed);
+          if (parsedRows && parsedRows.length >= 2) {
+            // Convert rows back to CSV text for unified processing downstream
+            text = parsedRows.map(row =>
+              row.map(v => (String(v).includes(',') || String(v).includes('"'))
+                ? '"' + String(v).replace(/"/g, '""') + '"' : v).join(',')
+            ).join('\n');
+            console.log(`LT: got pubhtml → parsed ${parsedRows.length} rows via ${finalUrl.substring(0,60)}`);
+            break outer;
+          }
+          console.warn(`LT: HTML response but no usable table found at ${finalUrl.substring(0,60)}`);
+          continue; // HTML but no table — try next
+        }
+
+        // ── Plain CSV check ──
+        if (trimmed.startsWith('<')) continue; // other HTML = error page
         if (!trimmed.includes(',')) continue;  // Must have commas
 
         text = trimmed;
