@@ -6707,16 +6707,28 @@ function scInit() {
 // ═══ LONG TERM TRACKER JS ═══
 // Data now comes from Google Sheet tab "testScreener" -- no Yahoo Finance API needed.
 // Shows only PASS rows, sorted by Strength % descending.
+//
+// URL STRATEGY: Use gviz/tq with the direct Sheet ID + sheet name param.
+// This is the same approach used by the portfolio dashboard and is the most
+// reliable method — it targets named tabs directly and never needs a CORS proxy.
+// The published-export key (2PACX-...) with ?sheet= is unreliable because Google
+// ignores the sheet= param when "Entire document" is published.
 
-// Multiple URL strategies for testScreener tab -- tries each until one returns CSV data
-// The sheet name param works on published sheets; gid is a fallback
+const LT_SID = '1LM0lfjSdnkZu7lYNPjCoGsORXphkxU742EqWnUcxM6g';
+
+// Ordered list of URL builders to try — most reliable first
 const LT_SHEET_URLS = [
-  // Primary: published CSV using sheet name param (most reliable for named tabs)
+  // 1. gviz/tq CSV — direct Sheet ID + named tab (most reliable, no proxy needed)
+  `https://docs.google.com/spreadsheets/d/${LT_SID}/gviz/tq?tqx=out:csv&sheet=testScreener`,
+  // 2. gviz/tq JSON — same but JSON, parse as gviz table
+  `https://docs.google.com/spreadsheets/d/${LT_SID}/gviz/tq?tqx=out:json&sheet=testScreener`,
+  // 3. pub export with sheet name (works only when individual tab published)
+  `https://docs.google.com/spreadsheets/d/${LT_SID}/export?format=csv&sheet=testScreener`,
+  // 4. Legacy published export URL as last resort
   'https://docs.google.com/spreadsheets/d/e/2PACX-1vT5My0JskMjYCWacWPEih3vGdNCp_yvVmmbP4u7KPYCq_ApHWT-SG1SxZ2g35LUHnhG-wIA7Yk-Yx29/pub?output=csv&sheet=testScreener',
-  // Fallback: try with single=true
-  'https://docs.google.com/spreadsheets/d/e/2PACX-1vT5My0JskMjYCWacWPEih3vGdNCp_yvVmmbP4u7KPYCq_ApHWT-SG1SxZ2g35LUHnhG-wIA7Yk-Yx29/pub?single=true&output=csv&sheet=testScreener',
 ];
 const LT_PROXIES = [
+  u => u,  // Direct fetch first (gviz URLs are always CORS-accessible)
   u => `https://corsproxy.io/?url=${encodeURIComponent(u)}`,
   u => `https://api.allorigins.win/raw?url=${encodeURIComponent(u)}`,
 ];
@@ -6745,9 +6757,26 @@ async function loadLtFromSheet() {
         });
         if (!res.ok) continue;
         const raw = await res.text();
-        // Validate it looks like CSV (starts with a letter/quote, not HTML)
         const trimmed = raw.trim();
-        if (trimmed.startsWith('<') || trimmed.length < 10) continue;
+        // Reject empty or HTML responses
+        if (trimmed.length < 10) continue;
+        // Handle gviz JSON response (tqx=out:json) — unwrap to CSV-style text
+        if (trimmed.startsWith('google.visualization') || trimmed.startsWith('/*')) {
+          try {
+            const jsonStr = trimmed.replace(/^[^\(]+\(/, '').replace(/\);?\s*$/, '');
+            const gvizData = JSON.parse(jsonStr);
+            const gCols = gvizData.table.cols.map(c => c.label || c.id);
+            const gRows = gvizData.table.rows.map(r =>
+              r.c.map(cell => (cell && cell.v != null) ? String(cell.v) : '')
+            );
+            text = [gCols, ...gRows].map(row =>
+              row.map(v => v.includes(',') ? '"' + v + '"' : v).join(',')
+            ).join('\n');
+            break outer;
+          } catch(e2) { continue; }
+        }
+        // Reject HTML (e.g. login page or error page)
+        if (trimmed.startsWith('<')) continue;
         text = trimmed;
         break outer;
       } catch(e) { continue; }
@@ -6755,8 +6784,12 @@ async function loadLtFromSheet() {
   }
 
   if (!text) {
-    if (status) status.textContent = '⚠ Could not fetch sheet. Make sure testScreener tab is published to web.';
-    if (tbody)  tbody.innerHTML = '<tr><td colspan="8" style="padding:40px;text-align:center;color:#f85149">Failed to load. Go to Google Sheet → File → Share → Publish to web → select testScreener tab → CSV → Publish.</td></tr>';
+    if (status) status.textContent = '⚠ Could not fetch sheet data.';
+    if (tbody)  tbody.innerHTML = `<tr><td colspan="8" style="padding:40px;text-align:center;color:#f85149;font-size:13px;line-height:1.8">
+      <strong>Could not load data from Google Sheet.</strong><br><br>
+      Make sure the sheet is shared: <strong>File → Share → Share with others → Anyone with link → Viewer</strong><br>
+      Or published: <strong>File → Share → Publish to web → Entire Document → Web page → Publish</strong>
+    </td></tr>`;
     if (btn) { btn.disabled = false; btn.textContent = '↻ Refresh Data'; }
     return;
   }
