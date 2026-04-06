@@ -4049,21 +4049,19 @@ async function loadAllRatings(){
 
   <!-- RESULTS TABLE -->
   <div style="background:#161b22;border:1px solid #30363d;border-radius:8px;overflow:hidden;overflow-x:auto">
-    <table id="ltTable" style="width:100%;border-collapse:collapse;min-width:900px">
+    <table id="ltTable" style="width:100%;border-collapse:collapse;min-width:860px">
       <thead>
         <tr style="background:#21262d">
           <th style="padding:11px 16px;text-align:left;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:#8b949e;border-bottom:1px solid #30363d;white-space:nowrap">Stock</th>
-          <th style="padding:11px 16px;text-align:left;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:#8b949e;border-bottom:1px solid #30363d">Price</th>
-          <th style="padding:11px 16px;text-align:left;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:#8b949e;border-bottom:1px solid #30363d">Strength %</th>
-          <th style="padding:11px 16px;text-align:left;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:#8b949e;border-bottom:1px solid #30363d">Grade</th>
-          <th style="padding:11px 16px;text-align:left;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:#8b949e;border-bottom:1px solid #30363d;white-space:nowrap">Valuation &amp; Growth</th>
-          <th style="padding:11px 16px;text-align:left;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:#8b949e;border-bottom:1px solid #30363d;white-space:nowrap">Technical Levels</th>
-          <th style="padding:11px 16px;text-align:left;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:#8b949e;border-bottom:1px solid #30363d;white-space:nowrap">Change &amp; Volume</th>
-          <th style="padding:11px 16px;text-align:left;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:#8b949e;border-bottom:1px solid #30363d">Notes</th>
+          <th style="padding:11px 16px;text-align:left;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:#8b949e;border-bottom:1px solid #30363d;white-space:nowrap">Price &amp; Volume</th>
+          <th style="padding:11px 16px;text-align:left;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:#8b949e;border-bottom:1px solid #30363d;white-space:nowrap">Strength</th>
+          <th style="padding:11px 16px;text-align:left;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:#8b949e;border-bottom:1px solid #30363d;white-space:nowrap">Technical Checks</th>
+          <th style="padding:11px 16px;text-align:left;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:#8b949e;border-bottom:1px solid #30363d;white-space:nowrap">Fundamentals</th>
+          <th style="padding:11px 16px;text-align:left;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:#8b949e;border-bottom:1px solid #30363d;white-space:nowrap">Notes</th>
         </tr>
       </thead>
       <tbody id="ltBody">
-        <tr><td colspan="8" style="padding:40px;text-align:center;color:#484f58;font-size:14px">Click ↻ Refresh Data to load from Google Sheet</td></tr>
+        <tr><td colspan="6" style="padding:40px;text-align:center;color:#484f58;font-size:14px">Click ↻ Refresh Data to load from Google Sheet</td></tr>
       </tbody>
     </table>
   </div>
@@ -6705,90 +6703,121 @@ function scInit() {
 </script>
 <script>
 // ═══ LONG TERM TRACKER JS ═══
-// Data now comes from Google Sheet tab "testScreener" -- no Yahoo Finance API needed.
-// Shows only PASS rows, sorted by Strength % descending.
-//
-// URL STRATEGY: Use gviz/tq with the direct Sheet ID + sheet name param.
-// This is the same approach used by the portfolio dashboard and is the most
-// reliable method — it targets named tabs directly and never needs a CORS proxy.
-// The published-export key (2PACX-...) with ?sheet= is unreliable because Google
-// ignores the sheet= param when "Entire document" is published.
+// ═══════════════════════════════════════════════════════════════════════════════
+//  LONG TERM SCREENER — DATA FROM GOOGLE SHEET (testScreener tab)
+//  Columns: Symbol, Company Name, Price, Strength %, Status, Change %,
+//           Volume, Market Cap, P/E, EPS dil TTM, 52W Low, SMA50W,
+//           SMA200W, Perf 5Y %, Date Added, Notes
+//  Only PASS rows shown, sorted by Strength % descending.
+// ═══════════════════════════════════════════════════════════════════════════════
 
-const LT_SID = '1LM0lfjSdnkZu7lYNPjCoGsORXphkxU742EqWnUcxM6g';
+// The published export key from the user's Google Sheet
+const LT_PUB_KEY = '2PACX-1vT5My0JskMjYCWacWPEih3vGdNCp_yvVmmbP4u7KPYCq_ApHWT-SG1SxZ2g35LUHnhG-wIA7Yk-Yx29';
+const LT_SID     = '1LM0lfjSdnkZu7lYNPjCoGsORXphkxU742EqWnUcxM6g';
 
-// Ordered list of URL builders to try — most reliable first
-const LT_SHEET_URLS = [
-  // 1. gviz/tq CSV — direct Sheet ID + named tab (most reliable, no proxy needed)
-  `https://docs.google.com/spreadsheets/d/${LT_SID}/gviz/tq?tqx=out:csv&sheet=testScreener`,
-  // 2. gviz/tq JSON — same but JSON, parse as gviz table
-  `https://docs.google.com/spreadsheets/d/${LT_SID}/gviz/tq?tqx=out:json&sheet=testScreener`,
-  // 3. pub export with sheet name (works only when individual tab published)
-  `https://docs.google.com/spreadsheets/d/${LT_SID}/export?format=csv&sheet=testScreener`,
-  // 4. Legacy published export URL as last resort
-  'https://docs.google.com/spreadsheets/d/e/2PACX-1vT5My0JskMjYCWacWPEih3vGdNCp_yvVmmbP4u7KPYCq_ApHWT-SG1SxZ2g35LUHnhG-wIA7Yk-Yx29/pub?output=csv&sheet=testScreener',
-];
-const LT_PROXIES = [
-  u => u,  // Direct fetch first (gviz URLs are always CORS-accessible)
-  u => `https://corsproxy.io/?url=${encodeURIComponent(u)}`,
-  u => `https://api.allorigins.win/raw?url=${encodeURIComponent(u)}`,
-];
+// All URL strategies ordered by reliability for a published-but-not-shared sheet
+function getLtUrls() {
+  const pub  = `https://docs.google.com/spreadsheets/d/e/${LT_PUB_KEY}`;
+  const sid  = `https://docs.google.com/spreadsheets/d/${LT_SID}`;
+  return [
+    // Published export — sheet name param (works when Entire Document is published)
+    `${pub}/pub?output=csv&sheet=testScreener`,
+    `${pub}/pub?output=csv&single=true&sheet=testScreener`,
+    // gviz with published key
+    `${pub}/gviz/tq?tqx=out:csv&sheet=testScreener`,
+    `${pub}/gviz/tq?tqx=out:json&sheet=testScreener`,
+    // gviz with direct SID (needs share permission)
+    `${sid}/gviz/tq?tqx=out:csv&sheet=testScreener`,
+    `${sid}/gviz/tq?tqx=out:json&sheet=testScreener`,
+  ];
+}
 
-let _ltInited = false;
+// Proxy wrappers — try direct first, then proxies
+function getLtProxies() {
+  return [
+    u => u,
+    u => `https://corsproxy.io/?url=${encodeURIComponent(u)}`,
+    u => `https://corsproxy.io/?${encodeURIComponent(u)}`,
+    u => `https://api.allorigins.win/raw?url=${encodeURIComponent(u)}`,
+    u => `https://thingproxy.freeboard.io/fetch/${u}`,
+  ];
+}
+
+let _ltInited  = false;
 let ltSheetData = [];
 
-// ─── FETCH CSV FROM GOOGLE SHEET ─────────────────────────────────────────────
+// ─── FETCH FROM GOOGLE SHEET ──────────────────────────────────────────────────
 async function loadLtFromSheet() {
   const btn    = document.getElementById('ltRefreshBtn');
   const status = document.getElementById('ltLoadStatus');
   const tbody  = document.getElementById('ltBody');
   if (btn)    { btn.disabled = true; btn.textContent = '⏳ Loading…'; }
   if (status) status.textContent = 'Fetching from Google Sheet…';
+  if (tbody)  tbody.innerHTML = `<tr><td colspan="8" style="padding:40px;text-align:center;color:#8b949e">Loading data…</td></tr>`;
 
   let text = null;
+  const urls    = getLtUrls();
+  const proxies = getLtProxies();
 
-  // Try each URL + each proxy until we get valid CSV
   outer:
-  for (const sheetUrl of LT_SHEET_URLS) {
-    for (const proxyFn of LT_PROXIES) {
+  for (const url of urls) {
+    for (const proxyFn of proxies) {
+      const finalUrl = proxyFn(url);
       try {
-        const res = await fetch(proxyFn(sheetUrl), {
+        const res = await fetch(finalUrl, {
           cache: 'no-store',
-          signal: AbortSignal.timeout(12000)
+          signal: AbortSignal.timeout(15000),
+          headers: { 'Accept': 'text/plain,text/csv,*/*' }
         });
         if (!res.ok) continue;
         const raw = await res.text();
         const trimmed = raw.trim();
-        // Reject empty or HTML responses
-        if (trimmed.length < 10) continue;
-        // Handle gviz JSON response (tqx=out:json) — unwrap to CSV-style text
-        if (trimmed.startsWith('google.visualization') || trimmed.startsWith('/*')) {
+        if (trimmed.length < 20) continue;
+
+        // ── gviz JSON response ──
+        if (trimmed.includes('google.visualization') || (trimmed.startsWith('/*') && trimmed.includes('{"version"'))) {
           try {
-            const jsonStr = trimmed.replace(/^[^\(]+\(/, '').replace(/\);?\s*$/, '');
-            const gvizData = JSON.parse(jsonStr);
-            const gCols = gvizData.table.cols.map(c => c.label || c.id);
-            const gRows = gvizData.table.rows.map(r =>
-              r.c.map(cell => (cell && cell.v != null) ? String(cell.v) : '')
+            const jsonStr = trimmed.replace(/^\/\*.*?\*\/\s*/s, '').replace(/^[^(]+\(/, '').replace(/\);?\s*$/, '');
+            const gviz = JSON.parse(jsonStr);
+            if (!gviz.table || !gviz.table.rows) continue;
+            const cols = gviz.table.cols.map(c => c.label || c.id || '');
+            const rows = gviz.table.rows.map(r =>
+              (r.c || []).map(cell => {
+                if (!cell || cell.v == null) return '';
+                // Use formatted value if available (preserves dates, percentages)
+                return cell.f != null ? String(cell.f) : String(cell.v);
+              })
             );
-            text = [gCols, ...gRows].map(row =>
-              row.map(v => v.includes(',') ? '"' + v + '"' : v).join(',')
+            text = [cols, ...rows].map(row =>
+              row.map(v => (String(v).includes(',') || String(v).includes('"')) ? '"' + String(v).replace(/"/g, '\"') + '"' : v).join(',')
             ).join('\n');
+            console.log(`LT: got gviz JSON via ${finalUrl.substring(0,60)}`);
             break outer;
-          } catch(e2) { continue; }
+          } catch(e2) { console.warn('gviz JSON parse fail:', e2); continue; }
         }
-        // Reject HTML (e.g. login page or error page)
-        if (trimmed.startsWith('<')) continue;
+
+        // ── Plain CSV / HTML check ──
+        if (trimmed.startsWith('<')) continue; // HTML = error page
+        if (!trimmed.includes(',')) continue;  // Must have commas
+
         text = trimmed;
+        console.log(`LT: got CSV via ${finalUrl.substring(0,60)}`);
         break outer;
-      } catch(e) { continue; }
+      } catch(e) {
+        console.warn(`LT fetch failed: ${finalUrl.substring(0,60)}`, e.message);
+        continue;
+      }
     }
   }
 
   if (!text) {
-    if (status) status.textContent = '⚠ Could not fetch sheet data.';
-    if (tbody)  tbody.innerHTML = `<tr><td colspan="8" style="padding:40px;text-align:center;color:#f85149;font-size:13px;line-height:1.8">
-      <strong>Could not load data from Google Sheet.</strong><br><br>
-      Make sure the sheet is shared: <strong>File → Share → Share with others → Anyone with link → Viewer</strong><br>
-      Or published: <strong>File → Share → Publish to web → Entire Document → Web page → Publish</strong>
+    if (status) status.textContent = '⚠ Could not load sheet. Check console for details.';
+    if (tbody)  tbody.innerHTML = `<tr><td colspan="8" style="padding:40px;text-align:center;color:#f85149;font-size:13px;line-height:2">
+      <strong style="font-size:15px">⚠ Unable to fetch data from Google Sheet</strong><br><br>
+      The sheet is published — but CORS restrictions may be blocking the browser.<br><br>
+      <strong>Quick fix:</strong> Make sure the sheet is also shared publicly:<br>
+      Google Sheet → <strong>Share</strong> → <strong>Change to Anyone with the link</strong> → <strong>Viewer</strong> → Save<br><br>
+      Then click <strong>↻ Refresh Data</strong> again.
     </td></tr>`;
     if (btn) { btn.disabled = false; btn.textContent = '↻ Refresh Data'; }
     return;
@@ -6796,82 +6825,85 @@ async function loadLtFromSheet() {
 
   try {
     const rows = parseCSV(text);
-    if (!rows.length) throw new Error('Empty CSV');
+    if (rows.length < 2) throw new Error('No data rows in CSV');
 
-    // Build flexible header map -- tolerates case/spacing differences
+    // ── Build flexible header map ──
     const rawHeader = rows[0];
     const header = rawHeader.map(h => h.trim().toLowerCase().replace(/\s+/g, ' '));
-    console.log('LT Sheet headers found:', header); // debug
+    console.log('LT headers:', header);
 
-    // Flexible column finder -- tries exact then partial match
     const col = name => {
-      const exact = header.indexOf(name.toLowerCase());
+      const n = name.toLowerCase();
+      const exact = header.indexOf(n);
       if (exact !== -1) return exact;
-      // Partial match fallback
-      return header.findIndex(h => h.includes(name.toLowerCase().split(' ')[0]));
+      const partial = header.findIndex(h => h.includes(n.split(' ')[0]));
+      return partial;
     };
 
-    const iSym      = col('symbol');
-    const iName     = col('company name');
-    const iPrice    = col('price');
-    const iStrength = col('strength %');
-    const iStatus   = col('status');
-    const iChange   = col('change %');
-    const iVol      = col('volume');
-    const iMCap     = col('market cap');
-    const iPE       = col('p/e');
-    const iEPS      = col('eps dil ttm');
-    const i52wLow   = col('52w low');
-    const iSMA50    = col('sma50w');
-    const iSMA200   = col('sma200w');
-    const iPerf5Y   = col('perf 5y %');
-    const iDateAdded = col('date added');
-    const iNotes    = col('notes');
+    const iSym    = col('symbol');
+    const iName   = col('company name');
+    const iPrice  = col('price');
+    const iStr    = col('strength');
+    const iStat   = col('status');
+    const iChg    = col('change');
+    const iVol    = col('volume');
+    const iMCap   = col('market cap');
+    const iPE     = col('p/e');
+    const iEPS    = col('eps');
+    const i52W    = col('52w');
+    const iSMA50  = col('sma50');
+    const iSMA200 = col('sma200');
+    const iPerf5  = col('perf');
+    const iDate   = col('date');
+    const iNotes  = col('notes');
 
-    console.log('LT col indices:', { iSym, iName, iPrice, iStrength, iStatus, iChange });
+    console.log('LT col map:', {iSym,iName,iPrice,iStr,iStat,iChg,iVol,iMCap,iPE,iEPS,i52W,iSMA50,iSMA200,iPerf5});
 
-    // Filter PASS only -- check both exact and case-insensitive
+    const pf  = (i, r) => i >= 0 ? parseFloat((r[i]||'0').replace(/[^\d.\-]/g,'')) || 0 : 0;
+    const gs  = (i, r) => i >= 0 ? (r[i]||''). trim() : '';
+    const pi  = (i, r) => i >= 0 ? parseInt((r[i]||'0').replace(/[^\d]/g,'')) || 0 : 0;
+
     ltSheetData = rows.slice(1)
       .filter(r => {
-        if (r.length < 3) return false;
-        const statusVal = iStatus >= 0 ? (r[iStatus] || '').trim().toUpperCase() : '';
-        return statusVal === 'PASS';
+        if (!r || r.length < 3) return false;
+        const stat = gs(iStat, r).toUpperCase();
+        return stat === 'PASS';
       })
       .map(r => ({
-        symbol:    iSym >= 0      ? (r[iSym]  || '').trim() : '',
-        name:      iName >= 0     ? (r[iName] || '').trim() : '',
-        price:     iPrice >= 0    ? parseFloat(r[iPrice])   || 0 : 0,
-        strength:  iStrength >= 0 ? parseFloat(r[iStrength])|| 0 : 0,
-        status:    iStatus >= 0   ? (r[iStatus]||'').trim() : '',
-        change:    iChange >= 0   ? parseFloat(r[iChange])  || 0 : 0,
-        volume:    iVol >= 0      ? parseInt((r[iVol]||'').replace(/,/g,'')) || 0 : 0,
-        marketCap: iMCap >= 0     ? parseFloat(r[iMCap])   || 0 : 0,
-        pe:        iPE >= 0       ? parseFloat(r[iPE])      || 0 : 0,
-        eps:       iEPS >= 0      ? parseFloat(r[iEPS])     || 0 : 0,
-        w52low:    i52wLow >= 0   ? parseFloat(r[i52wLow])  || 0 : 0,
-        sma50w:    iSMA50 >= 0    ? parseFloat(r[iSMA50])   || 0 : 0,
-        sma200w:   iSMA200 >= 0   ? parseFloat(r[iSMA200])  || 0 : 0,
-        perf5y:    iPerf5Y >= 0   ? parseFloat(r[iPerf5Y])  || 0 : 0,
-        dateAdded: iDateAdded >= 0? (r[iDateAdded]||'').trim(): '',
-        notes:     iNotes >= 0    ? (r[iNotes]   ||'').trim(): '',
+        symbol:    gs(iSym, r),
+        name:      gs(iName, r),
+        price:     pf(iPrice, r),
+        strength:  pf(iStr, r),
+        change:    pf(iChg, r),
+        volume:    pi(iVol, r),
+        marketCap: pf(iMCap, r),
+        pe:        pf(iPE, r),
+        eps:       pf(iEPS, r),
+        w52low:    pf(i52W, r),
+        sma50w:    pf(iSMA50, r),
+        sma200w:   pf(iSMA200, r),
+        perf5y:    pf(iPerf5, r),
+        dateAdded: gs(iDate, r),
+        notes:     gs(iNotes, r),
       }))
+      .filter(r => r.symbol) // skip blank rows
       .sort((a, b) => b.strength - a.strength);
 
-    console.log(`LT: ${rows.length - 1} total rows, ${ltSheetData.length} PASS rows`);
+    console.log(`LT: ${rows.length-1} total rows → ${ltSheetData.length} PASS rows`);
 
     renderLtTable();
-    const now = new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
-    if (status) status.textContent = `Last refreshed: ${now}`;
+    const now = new Date().toLocaleTimeString('en-US', {hour:'2-digit',minute:'2-digit'});
+    if (status) status.textContent = `✓ ${ltSheetData.length} stocks · refreshed ${now}`;
   } catch(e) {
-    console.error('LT parse failed:', e);
+    console.error('LT parse error:', e);
     if (status) status.textContent = '⚠ Parse error: ' + e.message;
-    if (tbody)  tbody.innerHTML = '<tr><td colspan="8" style="padding:40px;text-align:center;color:#f85149">Error parsing sheet data: ' + e.message + '</td></tr>';
+    if (tbody)  tbody.innerHTML = `<tr><td colspan="8" style="padding:20px;text-align:center;color:#f85149">Parse error: ${e.message}</td></tr>`;
   } finally {
     if (btn) { btn.disabled = false; btn.textContent = '↻ Refresh Data'; }
   }
 }
 
-// ─── PARSE CSV ────────────────────────────────────────────────────────────────
+// ─── PARSE CSV (handles quoted fields) ────────────────────────────────────────
 function parseCSV(text) {
   const rows = [];
   const lines = text.split(/\r?\n/);
@@ -6881,9 +6913,11 @@ function parseCSV(text) {
     let cur = '', inQ = false;
     for (let i = 0; i < line.length; i++) {
       const ch = line[i];
-      if (ch === '"') { inQ = !inQ; }
-      else if (ch === ',' && !inQ) { cells.push(cur); cur = ''; }
-      else { cur += ch; }
+      if (ch === '"' && !inQ)                   { inQ = true; }
+      else if (ch === '"' && inQ && line[i+1] === '"') { cur += '"'; i++; }
+      else if (ch === '"' && inQ)               { inQ = false; }
+      else if (ch === ',' && !inQ)              { cells.push(cur); cur = ''; }
+      else                                        { cur += ch; }
     }
     cells.push(cur);
     rows.push(cells);
@@ -6899,92 +6933,119 @@ function renderLtTable() {
   if (badge) badge.textContent = ltSheetData.length;
 
   if (!ltSheetData.length) {
-    tbody.innerHTML = '<tr><td colspan="8" style="padding:40px;text-align:center;color:#484f58">No PASS stocks found in sheet</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="6" style="padding:40px;text-align:center;color:#484f58;font-size:14px">No PASS stocks found in sheet</td></tr>';
     return;
   }
 
+  const fmtMCap = v => {
+    if (!v) return 'N/A';
+    if (v >= 1e12) return '$' + (v/1e12).toFixed(1) + 'T';
+    if (v >= 1e9)  return '$' + (v/1e9).toFixed(0) + 'B';
+    if (v >= 1e6)  return '$' + (v/1e6).toFixed(0) + 'M';
+    return '$' + v;
+  };
+  const fmtVol = v => {
+    if (!v) return '—';
+    if (v >= 1e6) return (v/1e6).toFixed(1) + 'M';
+    if (v >= 1e3) return (v/1e3).toFixed(0) + 'K';
+    return v;
+  };
+  const fmtN = (v, d=2) => (v !== 0 && v != null) ? Number(v).toFixed(d) : 'N/A';
+  const chkPass = v => v > 0;
+
   tbody.innerHTML = ltSheetData.map(s => {
-    // Grade
-    const grade = s.strength >= 80 ? { label: 'A', color: '#3fb950', bg: 'rgba(63,185,80,.12)' }
-                : s.strength >= 60 ? { label: 'B', color: '#d4a017', bg: 'rgba(212,160,23,.12)' }
-                : s.strength >= 40 ? { label: 'C', color: '#f0883e', bg: 'rgba(240,136,62,.12)' }
-                :                    { label: 'D', color: '#f85149', bg: 'rgba(240,81,73,.12)' };
+    // ── Grade ──
+    const grade = s.strength >= 80 ? { label:'A', color:'#3fb950', bg:'rgba(63,185,80,.12)', border:'#238636' }
+                : s.strength >= 60 ? { label:'B', color:'#d4a017', bg:'rgba(212,160,23,.12)', border:'#9e6a03' }
+                : s.strength >= 40 ? { label:'C', color:'#f0883e', bg:'rgba(240,136,62,.12)', border:'#bd561d' }
+                :                    { label:'D', color:'#f85149', bg:'rgba(248,81,73,.12)',  border:'#6e1a1a' };
 
-    // Strength bar
-    const barColor = grade.label === 'A' ? '#3fb950' : grade.label === 'B' ? '#d4a017' : grade.label === 'C' ? '#f0883e' : '#f85149';
-    const strengthBar = `
-      <div style="display:flex;align-items:center;gap:8px">
-        <div style="flex:1;height:5px;background:#21262d;border-radius:3px;overflow:hidden;min-width:60px">
-          <div style="height:100%;width:${s.strength}%;background:${barColor};border-radius:3px"></div>
-        </div>
-        <span style="font-size:13px;font-weight:700;color:${barColor};min-width:36px">${s.strength}%</span>
-      </div>`;
+    const barC = grade.label==='A'?'#3fb950':grade.label==='B'?'#d4a017':grade.label==='C'?'#f0883e':'#f85149';
 
-    // Change color
-    const chgColor = s.change >= 0 ? '#3fb950' : '#f85149';
-    const chgSign  = s.change >= 0 ? '+' : '';
-
-    // Market cap format
-    const fmtMCap = v => {
-      if (!v) return 'N/A';
-      if (v >= 1e12) return '$' + (v/1e12).toFixed(1) + 'T';
-      if (v >= 1e9)  return '$' + (v/1e9).toFixed(0) + 'B';
-      return '$' + (v/1e6).toFixed(0) + 'M';
-    };
-    const fmtVol = v => {
-      if (!v) return '—';
-      if (v >= 1e6) return (v/1e6).toFixed(1) + 'M';
-      if (v >= 1e3) return (v/1e3).toFixed(0) + 'K';
-      return v;
-    };
-    const fmtNum = (v, dec=2) => v ? Number(v).toFixed(dec) : 'N/A';
-
-    // Technical: SMA50W vs SMA200W (golden cross check)
+    // ── Golden cross check ──
     const goldenCross = s.sma50w > 0 && s.sma200w > 0 && s.sma50w > s.sma200w;
-    const techLine = `
-      <div style="font-size:12px;color:#8b949e;line-height:1.8">
-        <span style="color:#c9d1d9">SMA50W:</span> $${fmtNum(s.sma50w)} &nbsp;
-        <span style="color:#c9d1d9">SMA200W:</span> $${fmtNum(s.sma200w)}<br>
-        <span style="color:#c9d1d9">52W Low:</span> $${fmtNum(s.w52low)} &nbsp;
-        ${goldenCross ? '<span style="color:#3fb950;font-size:11px">✓ Golden Cross</span>' : '<span style="color:#484f58;font-size:11px">No Golden Cross</span>'}
-      </div>`;
+    const aboveSMA50  = s.price > 0 && s.sma50w  > 0 && s.price > s.sma50w;
+    const aboveSMA200 = s.price > 0 && s.sma200w > 0 && s.price > s.sma200w;
+    const above52wLow = s.price > 0 && s.w52low  > 0 && s.price > s.w52low;
+    const goodPE      = s.pe > 0 && s.pe <= 60;
+    const goodPerf    = s.perf5y >= 100;
+    const goodEPS     = s.eps > 0;
+    const goodMCap    = s.marketCap >= 1e11;
 
-    // Valuation: P/E, EPS, MarketCap, Perf5Y
-    const valLine = `
-      <div style="font-size:12px;color:#8b949e;line-height:1.8">
-        <span style="color:#c9d1d9">P/E:</span> ${fmtNum(s.pe,1)} &nbsp;
-        <span style="color:#c9d1d9">EPS:</span> ${fmtNum(s.eps,2)}<br>
-        <span style="color:#c9d1d9">MCap:</span> ${fmtMCap(s.marketCap)} &nbsp;
-        <span style="color:#c9d1d9">5Y Perf:</span> <span style="color:${s.perf5y >= 100 ? '#3fb950' : '#d4a017'}">${fmtNum(s.perf5y,1)}%</span>
-      </div>`;
+    const chk = (pass, label) =>
+      `<span style="display:inline-flex;align-items:center;gap:3px;padding:2px 7px;border-radius:4px;font-size:10px;font-weight:600;margin:2px;
+        background:${pass ? 'rgba(63,185,80,.1)' : 'rgba(248,81,73,.08)'};
+        color:${pass ? '#3fb950' : '#f85149'};
+        border:1px solid ${pass ? 'rgba(63,185,80,.3)' : 'rgba(248,81,73,.2)'}"
+      >${pass ? '✓' : '✗'} ${label}</span>`;
 
-    // Row highlight for top performers
-    const rowBorder = s.strength >= 80 ? 'border-left:3px solid #3fb950' : s.strength >= 70 ? 'border-left:3px solid #d4a017' : 'border-left:3px solid transparent';
+    // ── Change color ──
+    const chgC = s.change >= 0 ? '#3fb950' : '#f85149';
+    const chgSign = s.change >= 0 ? '+' : '';
+    const rowBorderC = s.strength>=80?'#3fb950':s.strength>=70?'#d4a017':'transparent';
 
-    return `<tr style="border-bottom:1px solid #21262d;${rowBorder}" onmouseover="this.style.background='#1c2128'" onmouseout="this.style.background=''">
-      <td style="padding:12px 16px;vertical-align:top">
-        <div style="font-weight:700;font-size:14px;color:#f0f6fc;letter-spacing:.03em">${s.symbol}</div>
-        <div style="font-size:11px;color:#8b949e;margin-top:2px;max-width:140px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${s.name}</div>
-        ${s.dateAdded ? '<div style="font-size:10px;color:#484f58;margin-top:3px">' + s.dateAdded + '</div>' : ''}
+    return `<tr style="border-bottom:1px solid #21262d;border-left:3px solid ${rowBorderC};transition:background .15s"
+      onmouseover="this.style.background='#1c2128'" onmouseout="this.style.background=''">
+
+      <!-- Stock -->
+      <td style="padding:14px 16px;vertical-align:top;min-width:140px">
+        <div style="font-weight:700;font-size:15px;color:#f0f6fc;letter-spacing:.03em">${s.symbol}</div>
+        <div style="font-size:11px;color:#8b949e;margin-top:3px;max-width:150px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${s.name}</div>
+        ${s.dateAdded ? `<div style="font-size:10px;color:#484f58;margin-top:4px">Added ${s.dateAdded}</div>` : ''}
       </td>
-      <td style="padding:12px 16px;vertical-align:top">
-        <div style="font-size:14px;font-weight:600;color:#3fb950">$${fmtNum(s.price,2)}</div>
-        <div style="font-size:12px;color:${chgColor};margin-top:2px">${chgSign}${fmtNum(s.change,2)}%</div>
+
+      <!-- Price & Change -->
+      <td style="padding:14px 16px;vertical-align:top;white-space:nowrap">
+        <div style="font-size:15px;font-weight:700;color:#f0f6fc">$${fmtN(s.price,2)}</div>
+        <div style="font-size:12px;color:${chgC};margin-top:3px;font-weight:600">${chgSign}${fmtN(s.change,2)}%</div>
+        <div style="font-size:11px;color:#484f58;margin-top:2px">Vol: ${fmtVol(s.volume)}</div>
       </td>
-      <td style="padding:12px 16px;vertical-align:middle;min-width:120px">${strengthBar}</td>
-      <td style="padding:12px 16px;vertical-align:middle;text-align:center">
-        <span style="display:inline-block;padding:4px 12px;border-radius:20px;font-size:14px;font-weight:700;background:${grade.bg};color:${grade.color};border:1px solid ${grade.color}">
-          ${grade.label}
-        </span>
+
+      <!-- Strength -->
+      <td style="padding:14px 16px;vertical-align:top;min-width:130px">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:5px">
+          <span style="font-size:18px;font-weight:700;color:${barC}">${s.strength}%</span>
+          <span style="padding:3px 10px;border-radius:20px;font-size:12px;font-weight:700;background:${grade.bg};color:${grade.color};border:1px solid ${grade.border}">${grade.label}</span>
+        </div>
+        <div style="height:6px;background:#21262d;border-radius:3px;overflow:hidden">
+          <div style="height:100%;width:${Math.min(s.strength,100)}%;background:${barC};border-radius:3px;transition:width .4s"></div>
+        </div>
+        <div style="font-size:10px;color:#484f58;margin-top:5px">Strength Score</div>
       </td>
-      <td style="padding:12px 16px;vertical-align:top">${valLine}</td>
-      <td style="padding:12px 16px;vertical-align:top">${techLine}</td>
-      <td style="padding:12px 16px;vertical-align:top">
-        <div style="font-size:12px;color:#8b949e;line-height:1.8">
-          <span style="color:#c9d1d9">Vol:</span> ${fmtVol(s.volume)}
+
+      <!-- Technical Checks -->
+      <td style="padding:14px 16px;vertical-align:top">
+        <div style="display:flex;flex-wrap:wrap;gap:0;max-width:220px">
+          ${chk(aboveSMA50,  'Price > SMA50W')}
+          ${chk(aboveSMA200, 'Price > SMA200W')}
+          ${chk(goldenCross, 'Golden Cross')}
+          ${chk(above52wLow, 'Above 52W Low')}
+        </div>
+        <div style="font-size:11px;color:#8b949e;margin-top:6px;line-height:1.8">
+          <span style="color:#c9d1d9">SMA50W:</span> $${fmtN(s.sma50w,2)}<br>
+          <span style="color:#c9d1d9">SMA200W:</span> $${fmtN(s.sma200w,2)}<br>
+          <span style="color:#c9d1d9">52W Low:</span> $${fmtN(s.w52low,2)}
         </div>
       </td>
-      <td style="padding:12px 16px;vertical-align:top;max-width:160px">
+
+      <!-- Fundamentals -->
+      <td style="padding:14px 16px;vertical-align:top">
+        <div style="display:flex;flex-wrap:wrap;gap:0;max-width:220px">
+          ${chk(goodMCap,  'MCap>$100B')}
+          ${chk(goodPE,    'P/E 0-60')}
+          ${chk(goodPerf,  '5Y Perf>100%')}
+          ${chk(goodEPS,   'EPS>0')}
+        </div>
+        <div style="font-size:11px;color:#8b949e;margin-top:6px;line-height:1.8">
+          <span style="color:#c9d1d9">MCap:</span> ${fmtMCap(s.marketCap)} &nbsp;
+          <span style="color:#c9d1d9">P/E:</span> ${fmtN(s.pe,1)}<br>
+          <span style="color:#c9d1d9">EPS:</span> ${fmtN(s.eps,2)} &nbsp;
+          <span style="color:#c9d1d9">5Y Perf:</span> <span style="color:${s.perf5y>=100?'#3fb950':'#d4a017'}">${fmtN(s.perf5y,1)}%</span>
+        </div>
+      </td>
+
+      <!-- Notes -->
+      <td style="padding:14px 16px;vertical-align:top;max-width:160px">
         <div style="font-size:12px;color:#8b949e;line-height:1.6">${s.notes || '—'}</div>
       </td>
     </tr>`;
