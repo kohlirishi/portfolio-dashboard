@@ -5715,7 +5715,7 @@ function renderClosed() {
 
 function renderRunLog() {
   const tbody = document.getElementById('runLogBody');
-  const runs  = [...STATE.screenerRuns].reverse().slice(0, 30);
+  const runs  = [...STATE.screenerRuns].reverse().slice(0, 7);
   if (!runs.length) { tbody.innerHTML = '<tr><td colspan="9" class="empty">No runs yet</td></tr>'; return; }
   tbody.innerHTML = runs.map(r => `<tr>
     <td>${formatDate(r.date)}</td><td>${formatTimeEST(r.time)}</td>
