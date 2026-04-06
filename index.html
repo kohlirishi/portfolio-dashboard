@@ -6703,10 +6703,9 @@ function scInit() {
 </script>
 <script>
 
-  // ═══ LONG TERM TRACKER JS (USES GVIZ – NO PROXY) ═══
-const LT_SHEET_ID = '17nJvyA-XQ3AeuBwID_4DR2yMYHE6PJRcBOWBgqLWlek';
-const LT_GID = 1955075183;
-const LT_GVIZ = `https://docs.google.com/spreadsheets/d/${LT_SHEET_ID}/gviz/tq?tqx=out:json&gid=${LT_GID}`;
+// ═══ LONG TERM TRACKER JS (USES PUBLISHED HTML + PROXY) ═══
+// Use the published HTML URL from File → Share → Publish to web
+const LT_PUB_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vT5My0JskMjYCWacWPEih3vGdNCp_yvVmmbP4u7KPYCq_ApHWT-SG1SxZ2g35LUHnhG-wIA7Yk-Yx29/pubhtml';
 
 let _ltInited = false;
 let ltSheetData = [];
@@ -6720,32 +6719,52 @@ async function loadLtFromSheet() {
   if (status) status.textContent = 'Fetching from Google Sheet…';
   if (tbody) tbody.innerHTML = `<tr><td colspan="8" style="padding:40px;text-align:center;color:#8b949e">Loading data…</td></tr>`;
 
+  // Use a reliable CORS proxy
+  const proxyUrl = `https://corsproxy.io/?url=${encodeURIComponent(LT_PUB_URL)}`;
+
   try {
-    const res = await fetch(LT_GVIZ, { cache: 'no-store' });
+    const res = await fetch(proxyUrl, { cache: 'no-store', signal: AbortSignal.timeout(15000) });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const text = await res.text();
-    const jsonStr = text.replace(/^[^(]*\(/, '').replace(/\);?\s*$/, '');
-    const data = JSON.parse(jsonStr);
-    const rows = data.table.rows;
-    if (!rows || rows.length === 0) throw new Error('No data rows');
+    const html = await res.text();
 
-    // Helper: get cell value (prefer formatted value)
-    const getVal = (row, idx) => {
-      if (!row.c || idx >= row.c.length || !row.c[idx]) return '';
-      const cell = row.c[idx];
-      return (cell.f !== undefined && cell.f !== null) ? String(cell.f) : (cell.v !== null && cell.v !== undefined ? String(cell.v) : '');
-    };
+    // Parse HTML table
+    const parser = new DOMParser();
+    const doc = parser.parseFromString(html, 'text/html');
+    const tables = doc.querySelectorAll('table');
+    if (!tables.length) throw new Error('No table found in published HTML');
 
-    // Column indices based on your sheet layout:
+    // Find the largest table (data table)
+    let targetTable = null;
+    let maxRows = 0;
+    for (const tbl of tables) {
+      const rowCount = tbl.querySelectorAll('tr').length;
+      if (rowCount > maxRows) {
+        maxRows = rowCount;
+        targetTable = tbl;
+      }
+    }
+    if (!targetTable) throw new Error('Could not locate data table');
+
+    const rows = targetTable.querySelectorAll('tr');
+    if (rows.length < 2) throw new Error('Table has no data rows');
+
+    // Column indices based on your sheet layout (0‑based)
     // 0: Symbol, 1: Company Name, 2: Price, 3: Strength %, 4: Status,
     // 5: % Change, 6: Volume, 7: Market Cap, 8: P/E, 9: EPS Dil TTM,
     // 10: 52W Low, 11: SMA200W, 12: Perf 5Y, 13: Date Added, 14: Notes
+    const dataRows = Array.from(rows).slice(1); // skip header row
     const parsed = [];
-    for (const row of rows) {
-      const symbol = getVal(row, 0).trim();
+
+    for (const tr of dataRows) {
+      const cells = Array.from(tr.querySelectorAll('td'));
+      if (cells.length < 5) continue;
+
+      const get = (idx) => idx < cells.length ? cells[idx].textContent.trim() : '';
+
+      const symbol = get(0);
       if (!symbol) continue;
 
-      const statusVal = getVal(row, 4).toUpperCase();
+      const statusVal = get(4).toUpperCase();
       if (statusVal !== 'PASS') continue; // only PASS rows
 
       const toNum = (val) => {
@@ -6757,19 +6776,19 @@ async function loadLtFromSheet() {
 
       parsed.push({
         symbol: symbol,
-        name: getVal(row, 1),
-        price: toNum(getVal(row, 2)) || 0,
-        strength: toNum(getVal(row, 3)) || 0,
-        change: toNum(getVal(row, 5)) || 0,
-        volume: toNum(getVal(row, 6)) || 0,
-        marketCap: toNum(getVal(row, 7)) || 0,
-        pe: toNum(getVal(row, 8)) || 0,
-        eps: toNum(getVal(row, 9)) || 0,
-        w52low: toNum(getVal(row, 10)) || 0,
-        sma200w: toNum(getVal(row, 11)) || 0,
-        perf5y: toNum(getVal(row, 12)) || 0,
-        dateAdded: getVal(row, 13),
-        notes: getVal(row, 14),
+        name: get(1),
+        price: toNum(get(2)) || 0,
+        strength: toNum(get(3)) || 0,
+        change: toNum(get(5)) || 0,
+        volume: toNum(get(6)) || 0,
+        marketCap: toNum(get(7)) || 0,
+        pe: toNum(get(8)) || 0,
+        eps: toNum(get(9)) || 0,
+        w52low: toNum(get(10)) || 0,
+        sma200w: toNum(get(11)) || 0,
+        perf5y: toNum(get(12)) || 0,
+        dateAdded: get(13),
+        notes: get(14),
       });
     }
 
@@ -6785,13 +6804,13 @@ async function loadLtFromSheet() {
     const now = new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
     if (status) status.textContent = `✓ ${ltSheetData.length} PASS stocks · refreshed ${now}`;
   } catch (err) {
-    console.error('LT error:', err);
-    if (status) status.textContent = '⚠ Failed to load data. Check that the sheet is shared (Anyone with link can view).';
+    console.error('LT fetch error:', err);
+    if (status) status.textContent = '⚠ Failed to load data. Check that the sheet is published (File → Share → Publish to web).';
     if (tbody) tbody.innerHTML = `<tr><td colspan="8" style="padding:40px;text-align:center;color:#f85149">
       Failed to load data. Make sure:<br>
-      1. The sheet is shared publicly (File → Share → Anyone with the link can view).<br>
-      2. The sheet is published (File → Share → Publish to web → Entire document → Publish).<br>
-      3. The tab contains columns at the expected positions (Symbol, Company Name, Price, Strength %, Status, ...).<br>
+      1. The sheet is published (File → Share → Publish to web → Entire document → Publish).<br>
+      2. The published URL above is correct.<br>
+      3. The sheet contains columns at positions: Symbol, Company Name, Price, Strength %, Status, ...<br>
       If the problem persists, open the browser console (F12) and share the error.
     </td></tr>`;
   } finally {
@@ -6799,7 +6818,7 @@ async function loadLtFromSheet() {
   }
 }
 
-// ─── RENDER TABLE (same as before) ──────────────────────────────────────────
+// ─── RENDER TABLE (unchanged) ────────────────────────────────────────────────
 function renderLtTable() {
   const tbody = document.getElementById('ltBody');
   const badge = document.getElementById('ltResultBadge');
@@ -6861,7 +6880,7 @@ function renderLtTable() {
         <div style="font-size:15px;font-weight:700;color:#f0f6fc">$${fmtN(s.price,2)}</div>
         <div style="font-size:12px;color:${chgC};margin-top:3px;font-weight:600">${chgSign}${fmtN(s.change,2)}%</div>
         <div style="font-size:11px;color:#484f58;margin-top:2px">Vol: ${fmtVol(s.volume)}</div>
-       </td>
+        </td>
       <td style="padding:14px 16px;vertical-align:top;min-width:130px">
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:5px">
           <span style="font-size:18px;font-weight:700;color:${barC}">${s.strength}%</span>
@@ -6871,7 +6890,7 @@ function renderLtTable() {
           <div style="height:100%;width:${Math.min(s.strength,100)}%;background:${barC};border-radius:3px;transition:width .4s"></div>
         </div>
         <div style="font-size:10px;color:#484f58;margin-top:5px">Strength Score</div>
-       </td>
+        </td>
       <td style="padding:14px 16px;vertical-align:top">
         <div style="display:flex;flex-wrap:wrap;gap:0;max-width:220px">
           ${chk(aboveSMA200, 'Price > SMA200W')}
@@ -6881,7 +6900,7 @@ function renderLtTable() {
           <span style="color:#c9d1d9">SMA200W:</span> $${fmtN(s.sma200w,2)}<br>
           <span style="color:#c9d1d9">52W Low:</span> $${fmtN(s.w52low,2)}
         </div>
-       </td>
+        </td>
       <td style="padding:14px 16px;vertical-align:top">
         <div style="display:flex;flex-wrap:wrap;gap:0;max-width:220px">
           ${chk(goodMCap,  'MCap>$100B')}
@@ -6895,15 +6914,14 @@ function renderLtTable() {
           <span style="color:#c9d1d9">EPS:</span> ${fmtN(s.eps,2)} &nbsp;
           <span style="color:#c9d1d9">5Y Perf:</span> <span style="color:${s.perf5y>=100?'#3fb950':'#d4a017'}">${fmtN(s.perf5y,1)}%</span>
         </div>
-       </td>
+        </td>
       <td style="padding:14px 16px;vertical-align:top;max-width:160px">
         <div style="font-size:12px;color:#8b949e;line-height:1.6">${s.notes || '—'}</div>
-       </td>
-     </tr>`;
+        </td>
+      </tr>`;
   }).join('');
 }
 
-// ─── INIT ────────────────────────────────────────────────────────────────────
 async function initLongTerm() {
   if (_ltInited) return;
   _ltInited = true;
