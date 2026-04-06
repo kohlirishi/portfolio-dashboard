@@ -6708,29 +6708,75 @@ function scInit() {
 // Data now comes from Google Sheet tab "testScreener" -- no Yahoo Finance API needed.
 // Shows only PASS rows, sorted by Strength % descending.
 
-const LT_SHEET_CSV_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vT5My0JskMjYCWacWPEih3vGdNCp_yvVmmbP4u7KPYCq_ApHWT-SG1SxZ2g35LUHnhG-wIA7Yk-Yx29/pub?gid=0&single=true&output=csv&sheet=testScreener';
+// Multiple URL strategies for testScreener tab -- tries each until one returns CSV data
+// The sheet name param works on published sheets; gid is a fallback
+const LT_SHEET_URLS = [
+  // Primary: published CSV using sheet name param (most reliable for named tabs)
+  'https://docs.google.com/spreadsheets/d/e/2PACX-1vT5My0JskMjYCWacWPEih3vGdNCp_yvVmmbP4u7KPYCq_ApHWT-SG1SxZ2g35LUHnhG-wIA7Yk-Yx29/pub?output=csv&sheet=testScreener',
+  // Fallback: try with single=true
+  'https://docs.google.com/spreadsheets/d/e/2PACX-1vT5My0JskMjYCWacWPEih3vGdNCp_yvVmmbP4u7KPYCq_ApHWT-SG1SxZ2g35LUHnhG-wIA7Yk-Yx29/pub?single=true&output=csv&sheet=testScreener',
+];
+const LT_PROXIES = [
+  u => `https://corsproxy.io/?url=${encodeURIComponent(u)}`,
+  u => `https://api.allorigins.win/raw?url=${encodeURIComponent(u)}`,
+];
+
 let _ltInited = false;
 let ltSheetData = [];
 
 // ─── FETCH CSV FROM GOOGLE SHEET ─────────────────────────────────────────────
 async function loadLtFromSheet() {
-  const btn = document.getElementById('ltRefreshBtn');
+  const btn    = document.getElementById('ltRefreshBtn');
   const status = document.getElementById('ltLoadStatus');
   const tbody  = document.getElementById('ltBody');
-  if (btn) { btn.disabled = true; btn.textContent = '⏳ Loading…'; }
+  if (btn)    { btn.disabled = true; btn.textContent = '⏳ Loading…'; }
   if (status) status.textContent = 'Fetching from Google Sheet…';
-  try {
-    // Use allorigins to bypass CORS on published sheet CSV
-    const proxyUrl = 'https://api.allorigins.win/raw?url=' + encodeURIComponent(LT_SHEET_CSV_URL + '&t=' + Date.now());
-    const res = await fetch(proxyUrl, { cache: 'no-store' });
-    if (!res.ok) throw new Error('HTTP ' + res.status);
-    const text = await res.text();
-    const rows = parseCSV(text);
-    if (!rows.length) throw new Error('No data returned');
 
-    // Header row: Symbol,Company Name,Price,Strength %,Status,Change %,Volume,Market Cap,P/E,EPS dil TTM,52W Low,SMA50W,SMA200W,Perf 5Y %,Date Added,Notes
-    const header = rows[0].map(h => h.trim().toLowerCase());
-    const col = name => header.indexOf(name);
+  let text = null;
+
+  // Try each URL + each proxy until we get valid CSV
+  outer:
+  for (const sheetUrl of LT_SHEET_URLS) {
+    for (const proxyFn of LT_PROXIES) {
+      try {
+        const res = await fetch(proxyFn(sheetUrl), {
+          cache: 'no-store',
+          signal: AbortSignal.timeout(12000)
+        });
+        if (!res.ok) continue;
+        const raw = await res.text();
+        // Validate it looks like CSV (starts with a letter/quote, not HTML)
+        const trimmed = raw.trim();
+        if (trimmed.startsWith('<') || trimmed.length < 10) continue;
+        text = trimmed;
+        break outer;
+      } catch(e) { continue; }
+    }
+  }
+
+  if (!text) {
+    if (status) status.textContent = '⚠ Could not fetch sheet. Make sure testScreener tab is published to web.';
+    if (tbody)  tbody.innerHTML = '<tr><td colspan="8" style="padding:40px;text-align:center;color:#f85149">Failed to load. Go to Google Sheet → File → Share → Publish to web → select testScreener tab → CSV → Publish.</td></tr>';
+    if (btn) { btn.disabled = false; btn.textContent = '↻ Refresh Data'; }
+    return;
+  }
+
+  try {
+    const rows = parseCSV(text);
+    if (!rows.length) throw new Error('Empty CSV');
+
+    // Build flexible header map -- tolerates case/spacing differences
+    const rawHeader = rows[0];
+    const header = rawHeader.map(h => h.trim().toLowerCase().replace(/\s+/g, ' '));
+    console.log('LT Sheet headers found:', header); // debug
+
+    // Flexible column finder -- tries exact then partial match
+    const col = name => {
+      const exact = header.indexOf(name.toLowerCase());
+      if (exact !== -1) return exact;
+      // Partial match fallback
+      return header.findIndex(h => h.includes(name.toLowerCase().split(' ')[0]));
+    };
 
     const iSym      = col('symbol');
     const iName     = col('company name');
@@ -6749,36 +6795,44 @@ async function loadLtFromSheet() {
     const iDateAdded = col('date added');
     const iNotes    = col('notes');
 
-    // Filter PASS only, parse
+    console.log('LT col indices:', { iSym, iName, iPrice, iStrength, iStatus, iChange });
+
+    // Filter PASS only -- check both exact and case-insensitive
     ltSheetData = rows.slice(1)
-      .filter(r => r.length > 3 && (r[iStatus] || '').trim().toUpperCase() === 'PASS')
+      .filter(r => {
+        if (r.length < 3) return false;
+        const statusVal = iStatus >= 0 ? (r[iStatus] || '').trim().toUpperCase() : '';
+        return statusVal === 'PASS';
+      })
       .map(r => ({
-        symbol:    (r[iSym]  || '').trim(),
-        name:      (r[iName] || '').trim(),
-        price:     parseFloat(r[iPrice]) || 0,
-        strength:  parseFloat(r[iStrength]) || 0,
-        status:    (r[iStatus] || '').trim(),
-        change:    parseFloat(r[iChange]) || 0,
-        volume:    parseInt((r[iVol]||'').replace(/,/g,'')) || 0,
-        marketCap: parseFloat(r[iMCap]) || 0,
-        pe:        parseFloat(r[iPE])   || 0,
-        eps:       parseFloat(r[iEPS])  || 0,
-        w52low:    parseFloat(r[i52wLow]) || 0,
-        sma50w:    parseFloat(r[iSMA50])  || 0,
-        sma200w:   parseFloat(r[iSMA200]) || 0,
-        perf5y:    parseFloat(r[iPerf5Y]) || 0,
-        dateAdded: (r[iDateAdded] || '').trim(),
-        notes:     (r[iNotes]    || '').trim(),
+        symbol:    iSym >= 0      ? (r[iSym]  || '').trim() : '',
+        name:      iName >= 0     ? (r[iName] || '').trim() : '',
+        price:     iPrice >= 0    ? parseFloat(r[iPrice])   || 0 : 0,
+        strength:  iStrength >= 0 ? parseFloat(r[iStrength])|| 0 : 0,
+        status:    iStatus >= 0   ? (r[iStatus]||'').trim() : '',
+        change:    iChange >= 0   ? parseFloat(r[iChange])  || 0 : 0,
+        volume:    iVol >= 0      ? parseInt((r[iVol]||'').replace(/,/g,'')) || 0 : 0,
+        marketCap: iMCap >= 0     ? parseFloat(r[iMCap])   || 0 : 0,
+        pe:        iPE >= 0       ? parseFloat(r[iPE])      || 0 : 0,
+        eps:       iEPS >= 0      ? parseFloat(r[iEPS])     || 0 : 0,
+        w52low:    i52wLow >= 0   ? parseFloat(r[i52wLow])  || 0 : 0,
+        sma50w:    iSMA50 >= 0    ? parseFloat(r[iSMA50])   || 0 : 0,
+        sma200w:   iSMA200 >= 0   ? parseFloat(r[iSMA200])  || 0 : 0,
+        perf5y:    iPerf5Y >= 0   ? parseFloat(r[iPerf5Y])  || 0 : 0,
+        dateAdded: iDateAdded >= 0? (r[iDateAdded]||'').trim(): '',
+        notes:     iNotes >= 0    ? (r[iNotes]   ||'').trim(): '',
       }))
-      .sort((a, b) => b.strength - a.strength); // highest strength first
+      .sort((a, b) => b.strength - a.strength);
+
+    console.log(`LT: ${rows.length - 1} total rows, ${ltSheetData.length} PASS rows`);
 
     renderLtTable();
     const now = new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
     if (status) status.textContent = `Last refreshed: ${now}`;
   } catch(e) {
-    console.error('LT Sheet load failed:', e);
-    if (status) status.textContent = '⚠ Failed to load. Check sheet is published.';
-    if (tbody)  tbody.innerHTML = '<tr><td colspan="8" style="padding:40px;text-align:center;color:#f85149">Failed to load data. Make sure the Google Sheet is published to web.</td></tr>';
+    console.error('LT parse failed:', e);
+    if (status) status.textContent = '⚠ Parse error: ' + e.message;
+    if (tbody)  tbody.innerHTML = '<tr><td colspan="8" style="padding:40px;text-align:center;color:#f85149">Error parsing sheet data: ' + e.message + '</td></tr>';
   } finally {
     if (btn) { btn.disabled = false; btn.textContent = '↻ Refresh Data'; }
   }
