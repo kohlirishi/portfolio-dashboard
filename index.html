@@ -6703,16 +6703,14 @@ function scInit() {
 </script>
 <script>
 
-// ═══ LONG TERM TRACKER JS (USES YOUR EXACT SHEET) ═══
+  // ═══ LONG TERM TRACKER JS (USES GVIZ – NO PROXY) ═══
 const LT_SHEET_ID = '17nJvyA-XQ3AeuBwID_4DR2yMYHE6PJRcBOWBgqLWlek';
-const LT_GID = 1955075183;   // from your URL
-
+const LT_GID = 1955075183;
 const LT_GVIZ = `https://docs.google.com/spreadsheets/d/${LT_SHEET_ID}/gviz/tq?tqx=out:json&gid=${LT_GID}`;
 
 let _ltInited = false;
 let ltSheetData = [];
 
-// ─── FETCH USING GVIZ (same as main dashboard) ──────────────────────────────
 async function loadLtFromSheet() {
   const btn = document.getElementById('ltRefreshBtn');
   const status = document.getElementById('ltLoadStatus');
@@ -6726,22 +6724,19 @@ async function loadLtFromSheet() {
     const res = await fetch(LT_GVIZ, { cache: 'no-store' });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const text = await res.text();
-    // Remove Google's wrapper
     const jsonStr = text.replace(/^[^(]*\(/, '').replace(/\);?\s*$/, '');
     const data = JSON.parse(jsonStr);
     const rows = data.table.rows;
-
     if (!rows || rows.length === 0) throw new Error('No data rows');
 
-    // Helper: get cell value (prefer formatted value, e.g. "$856.77")
+    // Helper: get cell value (prefer formatted value)
     const getVal = (row, idx) => {
       if (!row.c || idx >= row.c.length || !row.c[idx]) return '';
       const cell = row.c[idx];
-      // Use formatted value if available (preserves percentages, dates)
       return (cell.f !== undefined && cell.f !== null) ? String(cell.f) : (cell.v !== null && cell.v !== undefined ? String(cell.v) : '');
     };
 
-    // Column indices based on your sheet:
+    // Column indices based on your sheet layout:
     // 0: Symbol, 1: Company Name, 2: Price, 3: Strength %, 4: Status,
     // 5: % Change, 6: Volume, 7: Market Cap, 8: P/E, 9: EPS Dil TTM,
     // 10: 52W Low, 11: SMA200W, 12: Perf 5Y, 13: Date Added, 14: Notes
@@ -6751,7 +6746,7 @@ async function loadLtFromSheet() {
       if (!symbol) continue;
 
       const statusVal = getVal(row, 4).toUpperCase();
-      if (statusVal !== 'PASS') continue;  // only show PASS rows
+      if (statusVal !== 'PASS') continue; // only PASS rows
 
       const toNum = (val) => {
         if (!val || val === '—' || val === '#N/A') return null;
@@ -6790,13 +6785,13 @@ async function loadLtFromSheet() {
     const now = new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
     if (status) status.textContent = `✓ ${ltSheetData.length} PASS stocks · refreshed ${now}`;
   } catch (err) {
-    console.error('LT gviz error:', err);
+    console.error('LT error:', err);
     if (status) status.textContent = '⚠ Failed to load data. Check that the sheet is shared (Anyone with link can view).';
     if (tbody) tbody.innerHTML = `<tr><td colspan="8" style="padding:40px;text-align:center;color:#f85149">
       Failed to load data. Make sure:<br>
       1. The sheet is shared publicly (File → Share → Anyone with the link can view).<br>
       2. The sheet is published (File → Share → Publish to web → Entire document → Publish).<br>
-      3. The tab contains columns at the expected positions (Symbol, Company Name, Price, Strength %, Status, …).<br>
+      3. The tab contains columns at the expected positions (Symbol, Company Name, Price, Strength %, Status, ...).<br>
       If the problem persists, open the browser console (F12) and share the error.
     </td></tr>`;
   } finally {
@@ -6804,7 +6799,7 @@ async function loadLtFromSheet() {
   }
 }
 
-// ─── RENDER TABLE (cleaned, matches your sheet) ──────────────────────────────
+// ─── RENDER TABLE (same as before) ──────────────────────────────────────────
 function renderLtTable() {
   const tbody = document.getElementById('ltBody');
   const badge = document.getElementById('ltResultBadge');
@@ -6914,6 +6909,7 @@ async function initLongTerm() {
   _ltInited = true;
   await loadLtFromSheet();
 }
+
 </script>
 <div id="syncBadge" class="local">🟡 Local Only</div>
 </body>
