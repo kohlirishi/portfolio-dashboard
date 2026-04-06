@@ -6703,84 +6703,16 @@ function scInit() {
 </script>
 <script>
 
-// ═══ LONG TERM TRACKER JS (COLUMN INDEX VERSION) ═══
-const LT_PUB_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vT5My0JskMjYCWacWPEih3vGdNCp_yvVmmbP4u7KPYCq_ApHWT-SG1SxZ2g35LUHnhG-wIA7Yk-Yx29/pubhtml';
+// ═══ LONG TERM TRACKER JS (USES YOUR EXACT SHEET) ═══
+const LT_SHEET_ID = '17nJvyA-XQ3AeuBwID_4DR2yMYHE6PJRcBOWBgqLWlek';
+const LT_GID = 1955075183;   // from your URL
+
+const LT_GVIZ = `https://docs.google.com/spreadsheets/d/${LT_SHEET_ID}/gviz/tq?tqx=out:json&gid=${LT_GID}`;
 
 let _ltInited = false;
 let ltSheetData = [];
 
-// ─── PARSE PUBHTML USING COLUMN INDICES ──────────────────────────────────────
-function parsePubHtml(html) {
-  const parser = new DOMParser();
-  const doc = parser.parseFromString(html, 'text/html');
-  const tables = doc.querySelectorAll('table');
-  if (!tables.length) {
-    console.warn('LT: No tables found in HTML');
-    return null;
-  }
-
-  // Find the largest table (most rows) – usually the main data table
-  let targetTable = null;
-  let maxRows = 0;
-  for (const tbl of tables) {
-    const rowCount = tbl.querySelectorAll('tr').length;
-    if (rowCount > maxRows) {
-      maxRows = rowCount;
-      targetTable = tbl;
-    }
-  }
-  if (!targetTable) return null;
-
-  const rows = targetTable.querySelectorAll('tr');
-  if (rows.length < 2) return null;
-
-  // Skip the first row if it contains headers (we use fixed indices anyway)
-  const dataRows = Array.from(rows).slice(1);
-
-  const parsed = [];
-  for (const tr of dataRows) {
-    const cells = Array.from(tr.querySelectorAll('td'));
-    if (cells.length < 5) continue; // need at least Symbol, Name, Price, Strength, Status
-
-    const get = (idx) => idx < cells.length ? cells[idx].textContent.trim() : '';
-
-    const symbol = get(0);
-    if (!symbol) continue;
-
-    const status = get(4).toUpperCase();
-    // Only keep rows with Status = "PASS"
-    if (status !== 'PASS') continue;
-
-    const toNum = (val) => {
-      if (!val || val === '—' || val === '#N/A') return null;
-      const cleaned = String(val).replace(/[^0-9.-]/g, '');
-      const num = parseFloat(cleaned);
-      return isNaN(num) ? null : num;
-    };
-
-    parsed.push({
-      symbol: symbol,
-      name: get(1),
-      price: toNum(get(2)) || 0,
-      strength: toNum(get(3)) || 0,
-      change: toNum(get(5)) || 0,
-      volume: toNum(get(6)) || 0,
-      marketCap: toNum(get(7)) || 0,
-      pe: toNum(get(8)) || 0,
-      eps: toNum(get(9)) || 0,
-      w52low: toNum(get(10)) || 0,
-      sma200w: toNum(get(11)) || 0,
-      perf5y: toNum(get(12)) || 0,
-      dateAdded: get(13),
-      notes: get(14),
-    });
-  }
-
-  console.log(`LT: Parsed ${parsed.length} PASS rows using column indices`);
-  return parsed;
-}
-
-// ─── FETCH AND LOAD ──────────────────────────────────────────────────────────
+// ─── FETCH USING GVIZ (same as main dashboard) ──────────────────────────────
 async function loadLtFromSheet() {
   const btn = document.getElementById('ltRefreshBtn');
   const status = document.getElementById('ltLoadStatus');
@@ -6790,54 +6722,89 @@ async function loadLtFromSheet() {
   if (status) status.textContent = 'Fetching from Google Sheet…';
   if (tbody) tbody.innerHTML = `<tr><td colspan="8" style="padding:40px;text-align:center;color:#8b949e">Loading data…</td></tr>`;
 
-  // Use proxies to avoid CORS issues
-  const proxies = [
-    url => url,
-    url => `https://corsproxy.io/?url=${encodeURIComponent(url)}`,
-    url => `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`,
-  ];
+  try {
+    const res = await fetch(LT_GVIZ, { cache: 'no-store' });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const text = await res.text();
+    // Remove Google's wrapper
+    const jsonStr = text.replace(/^[^(]*\(/, '').replace(/\);?\s*$/, '');
+    const data = JSON.parse(jsonStr);
+    const rows = data.table.rows;
 
-  let html = null;
-  for (const proxy of proxies) {
-    try {
-      const res = await fetch(proxy(LT_PUB_URL), { cache: 'no-store', signal: AbortSignal.timeout(15000) });
-      if (!res.ok) continue;
-      const text = await res.text();
-      if (text.includes('<table') && text.length > 5000) {
-        html = text;
-        console.log('LT: Fetched via', proxy(LT_PUB_URL).substring(0, 80));
-        break;
-      }
-    } catch (e) {
-      console.warn('LT fetch error', e);
+    if (!rows || rows.length === 0) throw new Error('No data rows');
+
+    // Helper: get cell value (prefer formatted value, e.g. "$856.77")
+    const getVal = (row, idx) => {
+      if (!row.c || idx >= row.c.length || !row.c[idx]) return '';
+      const cell = row.c[idx];
+      // Use formatted value if available (preserves percentages, dates)
+      return (cell.f !== undefined && cell.f !== null) ? String(cell.f) : (cell.v !== null && cell.v !== undefined ? String(cell.v) : '');
+    };
+
+    // Column indices based on your sheet:
+    // 0: Symbol, 1: Company Name, 2: Price, 3: Strength %, 4: Status,
+    // 5: % Change, 6: Volume, 7: Market Cap, 8: P/E, 9: EPS Dil TTM,
+    // 10: 52W Low, 11: SMA200W, 12: Perf 5Y, 13: Date Added, 14: Notes
+    const parsed = [];
+    for (const row of rows) {
+      const symbol = getVal(row, 0).trim();
+      if (!symbol) continue;
+
+      const statusVal = getVal(row, 4).toUpperCase();
+      if (statusVal !== 'PASS') continue;  // only show PASS rows
+
+      const toNum = (val) => {
+        if (!val || val === '—' || val === '#N/A') return null;
+        const cleaned = String(val).replace(/[^0-9.-]/g, '');
+        const num = parseFloat(cleaned);
+        return isNaN(num) ? null : num;
+      };
+
+      parsed.push({
+        symbol: symbol,
+        name: getVal(row, 1),
+        price: toNum(getVal(row, 2)) || 0,
+        strength: toNum(getVal(row, 3)) || 0,
+        change: toNum(getVal(row, 5)) || 0,
+        volume: toNum(getVal(row, 6)) || 0,
+        marketCap: toNum(getVal(row, 7)) || 0,
+        pe: toNum(getVal(row, 8)) || 0,
+        eps: toNum(getVal(row, 9)) || 0,
+        w52low: toNum(getVal(row, 10)) || 0,
+        sma200w: toNum(getVal(row, 11)) || 0,
+        perf5y: toNum(getVal(row, 12)) || 0,
+        dateAdded: getVal(row, 13),
+        notes: getVal(row, 14),
+      });
     }
-  }
 
-  if (!html) {
-    if (status) status.textContent = '⚠ Could not fetch sheet. Check network or CORS.';
-    if (tbody) tbody.innerHTML = `<tr><td colspan="8" style="padding:40px;text-align:center;color:#f85149">Failed to load data. Make sure the sheet is published (File → Share → Publish to web).</td></tr>`;
+    if (parsed.length === 0) {
+      if (status) status.textContent = '⚠ No rows with Status = "PASS" found.';
+      if (tbody) tbody.innerHTML = `<tr><td colspan="8" style="padding:40px;text-align:center;color:#d4a017">No PASS rows. Make sure column E (Status) contains "PASS" (uppercase).</td></tr>`;
+      return;
+    }
+
+    ltSheetData = parsed.sort((a, b) => b.strength - a.strength);
+    renderLtTable();
+
+    const now = new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
+    if (status) status.textContent = `✓ ${ltSheetData.length} PASS stocks · refreshed ${now}`;
+  } catch (err) {
+    console.error('LT gviz error:', err);
+    if (status) status.textContent = '⚠ Failed to load data. Check that the sheet is shared (Anyone with link can view).';
+    if (tbody) tbody.innerHTML = `<tr><td colspan="8" style="padding:40px;text-align:center;color:#f85149">
+      Failed to load data. Make sure:<br>
+      1. The sheet is shared publicly (File → Share → Anyone with the link can view).<br>
+      2. The sheet is published (File → Share → Publish to web → Entire document → Publish).<br>
+      3. The tab contains columns at the expected positions (Symbol, Company Name, Price, Strength %, Status, …).<br>
+      If the problem persists, open the browser console (F12) and share the error.
+    </td></tr>`;
+  } finally {
     if (btn) { btn.disabled = false; btn.textContent = '↻ Refresh Data'; }
-    return;
   }
-
-  const rows = parsePubHtml(html);
-  if (!rows || rows.length === 0) {
-    if (status) status.textContent = '⚠ No PASS rows found. Check that column E contains "PASS" for the stocks you want to see.';
-    if (tbody) tbody.innerHTML = `<tr><td colspan="8" style="padding:40px;text-align:center;color:#d4a017">No stocks with Status = "PASS" found. Make sure column E has "PASS" (uppercase).</td></tr>`;
-    if (btn) { btn.disabled = false; btn.textContent = '↻ Refresh Data'; }
-    return;
-  }
-
-  // Sort by Strength % descending
-  ltSheetData = rows.sort((a, b) => b.strength - a.strength);
-  renderLtTable();
-
-  const now = new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
-  if (status) status.textContent = `✓ ${ltSheetData.length} PASS stocks · refreshed ${now}`;
-  if (btn) { btn.disabled = false; btn.textContent = '↻ Refresh Data'; }
 }
 
-// ─── RENDER TABLE ────────────────────────────────────────────────────────────
+// ─── RENDER TABLE (cleaned, matches your sheet) ──────────────────────────────
 function renderLtTable() {
   const tbody = document.getElementById('ltBody');
   const badge = document.getElementById('ltResultBadge');
@@ -6863,7 +6830,6 @@ function renderLtTable() {
     return v;
   };
   const fmtN = (v, d=2) => (v && v !== 0) ? v.toFixed(d) : 'N/A';
-  const chkPass = v => v > 0;
 
   tbody.innerHTML = ltSheetData.map(s => {
     const grade = s.strength >= 80 ? { label:'A', color:'#3fb950', bg:'rgba(63,185,80,.12)', border:'#238636' }
@@ -6872,7 +6838,6 @@ function renderLtTable() {
                 : { label:'D', color:'#f85149', bg:'rgba(248,81,73,.12)', border:'#6e1a1a' };
     const barC = grade.label==='A'?'#3fb950':grade.label==='B'?'#d4a017':grade.label==='C'?'#f0883e':'#f85149';
 
-    const goldenCross = s.sma200w > 0;  // simplified (no SMA50W in your sheet)
     const aboveSMA200 = s.price > 0 && s.sma200w > 0 && s.price > s.sma200w;
     const above52wLow = s.price > 0 && s.w52low > 0 && s.price > s.w52low;
     const goodPE      = s.pe > 0 && s.pe <= 60;
@@ -6915,7 +6880,6 @@ function renderLtTable() {
       <td style="padding:14px 16px;vertical-align:top">
         <div style="display:flex;flex-wrap:wrap;gap:0;max-width:220px">
           ${chk(aboveSMA200, 'Price > SMA200W')}
-          ${chk(goldenCross, 'SMA50W > SMA200W')}
           ${chk(above52wLow, 'Above 52W Low')}
         </div>
         <div style="font-size:11px;color:#8b949e;margin-top:6px;line-height:1.8">
