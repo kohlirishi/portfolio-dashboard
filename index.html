@@ -5665,26 +5665,38 @@ function buildProbBreakdownHTML(closed) {
 }
 
 function renderClosed() {
-  const tbody  = document.getElementById('closedBody');
+  const tbody   = document.getElementById('closedBody');
   const panelEl = document.getElementById('closedProbBreakdown');
-  const closed = STATE.trades.filter(t => t.status !== 'live' && t.status !== 'partial');
-  document.getElementById('closedBadge').textContent = closed.length;
+  const closed  = STATE.trades.filter(t => t.status !== 'live' && t.status !== 'partial');
 
-  // Render prob bracket breakdown above the table
-  if (panelEl) panelEl.innerHTML = buildProbBreakdownHTML(closed);
+  // Only show trades with actual P&L -- filter out $0 / 0.00% entries (e.g. manual same-day cancels)
+  const meaningful = closed.filter(t => Math.abs(t.pnl || 0) > 0.001 || Math.abs(t.pnlPct || 0) > 0.001);
 
-  if (!closed.length) { tbody.innerHTML = '<tr><td colspan="11" class="empty">No closed trades yet</td></tr>'; return; }
+  // Badge shows meaningful count; tooltip explains if some are hidden
+  const badge = document.getElementById('closedBadge');
+  badge.textContent = meaningful.length;
+  if (closed.length > meaningful.length) {
+    badge.title = `${closed.length - meaningful.length} zero-P&L entries hidden`;
+  }
+
+  // Prob breakdown uses only meaningful trades
+  if (panelEl) panelEl.innerHTML = buildProbBreakdownHTML(meaningful);
+
+  if (!meaningful.length) {
+    tbody.innerHTML = '<tr><td colspan="11" class="empty">No closed trades with P&amp;L yet</td></tr>';
+    return;
+  }
 
   // Apply sort
-  const sorted = sortPositions(closed, SORT_STATE.closed.col, SORT_STATE.closed.dir, 'closed');
+  const sorted = sortPositions(meaningful, SORT_STATE.closed.col, SORT_STATE.closed.dir, 'closed');
   updateSortHeaders('closed');
 
   tbody.innerHTML = sorted.map(t => {
     const cls = (t.pnl||0) >= 0 ? 'positive' : 'negative';
     let reasonBadge = '';
-    if (t.exitReason === 'profit')       reasonBadge = '<span class="badge-profit">✓ Profit</span>';
-    else if (t.exitReason === 'loss')    reasonBadge = '<span class="badge-loss">✗ Stop Loss</span>';
-    else                                  reasonBadge = '<span class="badge-manual">Manual</span>';
+    if (t.exitReason === 'profit')    reasonBadge = '<span class="badge-profit">✓ Profit</span>';
+    else if (t.exitReason === 'loss') reasonBadge = '<span class="badge-loss">✗ Stop Loss</span>';
+    else                               reasonBadge = '<span class="badge-manual">Manual</span>';
     const partialNote = t.partialExitDone
       ? `<br><small style="color:#e3b341">⚡ 50% @ $${(t.partialExitPrice||0).toFixed(2)} (+$${(t.partialExitPnl||0).toFixed(2)})</small>` : '';
     return `<tr>
