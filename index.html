@@ -6703,92 +6703,54 @@ function scInit() {
 </script>
 <script>
 
-// ═══ LONG TERM TRACKER JS (FIXED) ═══
+// ═══ LONG TERM TRACKER JS (COLUMN INDEX VERSION) ═══
 const LT_PUB_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vT5My0JskMjYCWacWPEih3vGdNCp_yvVmmbP4u7KPYCq_ApHWT-SG1SxZ2g35LUHnhG-wIA7Yk-Yx29/pubhtml';
 
 let _ltInited = false;
 let ltSheetData = [];
 
-// ─── PARSE PUBHTML – finds any table with expected columns ──────────────────
+// ─── PARSE PUBHTML USING COLUMN INDICES ──────────────────────────────────────
 function parsePubHtml(html) {
   const parser = new DOMParser();
   const doc = parser.parseFromString(html, 'text/html');
   const tables = doc.querySelectorAll('table');
-  if (!tables.length) return null;
-
-  // Find the table that has columns like "Symbol", "Company Name", "Strength %"
-  let targetTable = null;
-  let headerMap = null;
-
-  for (const tbl of tables) {
-    const rows = tbl.querySelectorAll('tr');
-    if (rows.length < 2) continue;
-
-    // Examine first row (headers)
-    const headers = Array.from(rows[0].querySelectorAll('td, th')).map(cell =>
-      cell.textContent.trim().toLowerCase().replace(/\s+/g, ' ')
-    );
-    // Look for known column identifiers
-    const hasSymbol = headers.some(h => h.includes('symbol') || h === 'ticker');
-    const hasStrength = headers.some(h => h.includes('strength') || h === 'strength %');
-    const hasPrice = headers.some(h => h.includes('price'));
-    if (hasSymbol && (hasStrength || hasPrice)) {
-      targetTable = tbl;
-      headerMap = headers;
-      break;
-    }
-  }
-
-  if (!targetTable || !headerMap) {
-    console.warn('LT: Could not find a table with expected columns');
+  if (!tables.length) {
+    console.warn('LT: No tables found in HTML');
     return null;
   }
 
-  // Helper: get column index by flexible matching
-  const colIndex = (patterns) => {
-    for (let i = 0; i < headerMap.length; i++) {
-      const h = headerMap[i];
-      for (const p of patterns) {
-        if (h.includes(p.toLowerCase())) return i;
-      }
+  // Find the largest table (most rows) – usually the main data table
+  let targetTable = null;
+  let maxRows = 0;
+  for (const tbl of tables) {
+    const rowCount = tbl.querySelectorAll('tr').length;
+    if (rowCount > maxRows) {
+      maxRows = rowCount;
+      targetTable = tbl;
     }
-    return -1;
-  };
+  }
+  if (!targetTable) return null;
 
-  const idxSym   = colIndex(['symbol', 'ticker']);
-  const idxName  = colIndex(['company name', 'company', 'name']);
-  const idxPrice = colIndex(['price']);
-  const idxStr   = colIndex(['strength', 'strength %']);
-  const idxChg   = colIndex(['change', 'change %']);
-  const idxVol   = colIndex(['volume']);
-  const idxMCap  = colIndex(['market cap', 'mkt cap']);
-  const idxPE    = colIndex(['p/e', 'pe']);
-  const idxEPS   = colIndex(['eps', 'eps dil']);
-  const idx52W   = colIndex(['52w low', '52 week low']);
-  const idxSMA50 = colIndex(['sma50w', 'sma 50w']);
-  const idxSMA200= colIndex(['sma200w', 'sma 200w']);
-  const idxPerf5 = colIndex(['perf 5y', 'perf5y', '5y perf']);
-  const idxDate  = colIndex(['date added', 'added']);
-  const idxNotes = colIndex(['notes']);
-  const idxStatus= colIndex(['status']);
+  const rows = targetTable.querySelectorAll('tr');
+  if (rows.length < 2) return null;
 
-  // Parse data rows (skip header)
-  const dataRows = Array.from(targetTable.querySelectorAll('tr')).slice(1);
+  // Skip the first row if it contains headers (we use fixed indices anyway)
+  const dataRows = Array.from(rows).slice(1);
+
   const parsed = [];
-
   for (const tr of dataRows) {
     const cells = Array.from(tr.querySelectorAll('td'));
-    if (cells.length === 0) continue;
-    const get = (i) => (i >= 0 && i < cells.length) ? cells[i].textContent.trim() : '';
+    if (cells.length < 5) continue; // need at least Symbol, Name, Price, Strength, Status
 
-    const symbol = get(idxSym);
-    if (!symbol) continue; // skip rows without symbol
+    const get = (idx) => idx < cells.length ? cells[idx].textContent.trim() : '';
 
-    // Status filter: if status column exists, require "PASS"
-    const status = get(idxStatus);
-    if (idxStatus !== -1 && status.toUpperCase() !== 'PASS') continue;
+    const symbol = get(0);
+    if (!symbol) continue;
 
-    // Parse numbers (remove $, commas, etc.)
+    const status = get(4).toUpperCase();
+    // Only keep rows with Status = "PASS"
+    if (status !== 'PASS') continue;
+
     const toNum = (val) => {
       if (!val || val === '—' || val === '#N/A') return null;
       const cleaned = String(val).replace(/[^0-9.-]/g, '');
@@ -6798,28 +6760,27 @@ function parsePubHtml(html) {
 
     parsed.push({
       symbol: symbol,
-      name: get(idxName),
-      price: toNum(get(idxPrice)) || 0,
-      strength: toNum(get(idxStr)) || 0,
-      change: toNum(get(idxChg)) || 0,
-      volume: toNum(get(idxVol)) || 0,
-      marketCap: toNum(get(idxMCap)) || 0,
-      pe: toNum(get(idxPE)) || 0,
-      eps: toNum(get(idxEPS)) || 0,
-      w52low: toNum(get(idx52W)) || 0,
-      sma50w: toNum(get(idxSMA50)) || 0,
-      sma200w: toNum(get(idxSMA200)) || 0,
-      perf5y: toNum(get(idxPerf5)) || 0,
-      dateAdded: get(idxDate),
-      notes: get(idxNotes),
+      name: get(1),
+      price: toNum(get(2)) || 0,
+      strength: toNum(get(3)) || 0,
+      change: toNum(get(5)) || 0,
+      volume: toNum(get(6)) || 0,
+      marketCap: toNum(get(7)) || 0,
+      pe: toNum(get(8)) || 0,
+      eps: toNum(get(9)) || 0,
+      w52low: toNum(get(10)) || 0,
+      sma200w: toNum(get(11)) || 0,
+      perf5y: toNum(get(12)) || 0,
+      dateAdded: get(13),
+      notes: get(14),
     });
   }
 
-  console.log(`LT: parsed ${parsed.length} rows from HTML table`);
+  console.log(`LT: Parsed ${parsed.length} PASS rows using column indices`);
   return parsed;
 }
 
-// ─── FETCH FROM PUBLISHED SHEET ────────────────────────────────────────────
+// ─── FETCH AND LOAD ──────────────────────────────────────────────────────────
 async function loadLtFromSheet() {
   const btn = document.getElementById('ltRefreshBtn');
   const status = document.getElementById('ltLoadStatus');
@@ -6829,7 +6790,7 @@ async function loadLtFromSheet() {
   if (status) status.textContent = 'Fetching from Google Sheet…';
   if (tbody) tbody.innerHTML = `<tr><td colspan="8" style="padding:40px;text-align:center;color:#8b949e">Loading data…</td></tr>`;
 
-  // Use CORS proxies (the pubhtml itself is often accessible directly, but fallback)
+  // Use proxies to avoid CORS issues
   const proxies = [
     url => url,
     url => `https://corsproxy.io/?url=${encodeURIComponent(url)}`,
@@ -6844,7 +6805,7 @@ async function loadLtFromSheet() {
       const text = await res.text();
       if (text.includes('<table') && text.length > 5000) {
         html = text;
-        console.log('LT: fetched pubhtml via', proxy(LT_PUB_URL).substring(0, 80));
+        console.log('LT: Fetched via', proxy(LT_PUB_URL).substring(0, 80));
         break;
       }
     } catch (e) {
@@ -6861,8 +6822,8 @@ async function loadLtFromSheet() {
 
   const rows = parsePubHtml(html);
   if (!rows || rows.length === 0) {
-    if (status) status.textContent = '⚠ No data rows found. Check that the sheet contains a table with columns like Symbol, Strength %, etc.';
-    if (tbody) tbody.innerHTML = `<tr><td colspan="8" style="padding:40px;text-align:center;color:#d4a017">No valid data rows. Make sure the sheet has a "Status" column with "PASS" values, or remove the status filter if not needed.</td></tr>`;
+    if (status) status.textContent = '⚠ No PASS rows found. Check that column E contains "PASS" for the stocks you want to see.';
+    if (tbody) tbody.innerHTML = `<tr><td colspan="8" style="padding:40px;text-align:center;color:#d4a017">No stocks with Status = "PASS" found. Make sure column E has "PASS" (uppercase).</td></tr>`;
     if (btn) { btn.disabled = false; btn.textContent = '↻ Refresh Data'; }
     return;
   }
@@ -6872,11 +6833,11 @@ async function loadLtFromSheet() {
   renderLtTable();
 
   const now = new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
-  if (status) status.textContent = `✓ ${ltSheetData.length} stocks · refreshed ${now}`;
+  if (status) status.textContent = `✓ ${ltSheetData.length} PASS stocks · refreshed ${now}`;
   if (btn) { btn.disabled = false; btn.textContent = '↻ Refresh Data'; }
 }
 
-// ─── RENDER TABLE (same as before, but works with parsed data) ─────────────
+// ─── RENDER TABLE ────────────────────────────────────────────────────────────
 function renderLtTable() {
   const tbody = document.getElementById('ltBody');
   const badge = document.getElementById('ltResultBadge');
@@ -6884,7 +6845,7 @@ function renderLtTable() {
   if (badge) badge.textContent = ltSheetData.length;
 
   if (!ltSheetData.length) {
-    tbody.innerHTML = '<tr><td colspan="6" style="padding:40px;text-align:center;color:#484f58">No PASS stocks found in sheet</td></tr>';
+    tbody.innerHTML = `<tr><td colspan="6" style="padding:40px;text-align:center;color:#484f58">No PASS stocks found in sheet</td></tr>`;
     return;
   }
 
@@ -6911,10 +6872,9 @@ function renderLtTable() {
                 : { label:'D', color:'#f85149', bg:'rgba(248,81,73,.12)', border:'#6e1a1a' };
     const barC = grade.label==='A'?'#3fb950':grade.label==='B'?'#d4a017':grade.label==='C'?'#f0883e':'#f85149';
 
-    const goldenCross = s.sma50w > 0 && s.sma200w > 0 && s.sma50w > s.sma200w;
-    const aboveSMA50  = s.price > 0 && s.sma50w  > 0 && s.price > s.sma50w;
+    const goldenCross = s.sma200w > 0;  // simplified (no SMA50W in your sheet)
     const aboveSMA200 = s.price > 0 && s.sma200w > 0 && s.price > s.sma200w;
-    const above52wLow = s.price > 0 && s.w52low  > 0 && s.price > s.w52low;
+    const above52wLow = s.price > 0 && s.w52low > 0 && s.price > s.w52low;
     const goodPE      = s.pe > 0 && s.pe <= 60;
     const goodPerf    = s.perf5y >= 100;
     const goodEPS     = s.eps > 0;
@@ -6936,12 +6896,12 @@ function renderLtTable() {
         <div style="font-weight:700;font-size:15px;color:#f0f6fc">${s.symbol}</div>
         <div style="font-size:11px;color:#8b949e;margin-top:3px;max-width:150px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${s.name || ''}</div>
         ${s.dateAdded ? `<div style="font-size:10px;color:#484f58;margin-top:4px">Added ${s.dateAdded}</div>` : ''}
-      </td>
+       </td>
       <td style="padding:14px 16px;vertical-align:top;white-space:nowrap">
         <div style="font-size:15px;font-weight:700;color:#f0f6fc">$${fmtN(s.price,2)}</div>
         <div style="font-size:12px;color:${chgC};margin-top:3px;font-weight:600">${chgSign}${fmtN(s.change,2)}%</div>
         <div style="font-size:11px;color:#484f58;margin-top:2px">Vol: ${fmtVol(s.volume)}</div>
-      </td>
+       </td>
       <td style="padding:14px 16px;vertical-align:top;min-width:130px">
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:5px">
           <span style="font-size:18px;font-weight:700;color:${barC}">${s.strength}%</span>
@@ -6951,20 +6911,18 @@ function renderLtTable() {
           <div style="height:100%;width:${Math.min(s.strength,100)}%;background:${barC};border-radius:3px;transition:width .4s"></div>
         </div>
         <div style="font-size:10px;color:#484f58;margin-top:5px">Strength Score</div>
-      </td>
+       </td>
       <td style="padding:14px 16px;vertical-align:top">
         <div style="display:flex;flex-wrap:wrap;gap:0;max-width:220px">
-          ${chk(aboveSMA50,  'Price > SMA50W')}
           ${chk(aboveSMA200, 'Price > SMA200W')}
-          ${chk(goldenCross, 'Golden Cross')}
+          ${chk(goldenCross, 'SMA50W > SMA200W')}
           ${chk(above52wLow, 'Above 52W Low')}
         </div>
         <div style="font-size:11px;color:#8b949e;margin-top:6px;line-height:1.8">
-          <span style="color:#c9d1d9">SMA50W:</span> $${fmtN(s.sma50w,2)}<br>
           <span style="color:#c9d1d9">SMA200W:</span> $${fmtN(s.sma200w,2)}<br>
           <span style="color:#c9d1d9">52W Low:</span> $${fmtN(s.w52low,2)}
         </div>
-      </td>
+       </td>
       <td style="padding:14px 16px;vertical-align:top">
         <div style="display:flex;flex-wrap:wrap;gap:0;max-width:220px">
           ${chk(goodMCap,  'MCap>$100B')}
@@ -6978,11 +6936,11 @@ function renderLtTable() {
           <span style="color:#c9d1d9">EPS:</span> ${fmtN(s.eps,2)} &nbsp;
           <span style="color:#c9d1d9">5Y Perf:</span> <span style="color:${s.perf5y>=100?'#3fb950':'#d4a017'}">${fmtN(s.perf5y,1)}%</span>
         </div>
-      </td>
+       </td>
       <td style="padding:14px 16px;vertical-align:top;max-width:160px">
         <div style="font-size:12px;color:#8b949e;line-height:1.6">${s.notes || '—'}</div>
-      </td>
-    </tr>`;
+       </td>
+     </tr>`;
   }).join('');
 }
 
@@ -6992,7 +6950,6 @@ async function initLongTerm() {
   _ltInited = true;
   await loadLtFromSheet();
 }
-  
 </script>
 <div id="syncBadge" class="local">🟡 Local Only</div>
 </body>
