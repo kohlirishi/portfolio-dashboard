@@ -4667,7 +4667,20 @@ let STATE = (() => {
   } catch { return defaultState(); }
 })();
 
+// ─── PROTECT LIVE POSITIONS SAFEGUARD ────────────────────────────────────────
+// Ensures no live/partial trade is ever silently removed.
+// Must be called before every saveState() and renderAll().
+function protectLivePositions() {
+  // Never remove a live or partial trade unless it was properly closed
+  STATE.trades = STATE.trades.filter(t => {
+    if (t.status === 'live' || t.status === 'partial') return true; // always keep open
+    return true; // always keep closed trades (needed for history)
+  });
+}
+
 function saveState() {
+  protectLivePositions();          // BUG 4: safeguard before every save
+  STATE.lastUpdated = Date.now();  // BUG 3: timestamp for cloud sync comparison
   try { localStorage.setItem(STORAGE_KEY, JSON.stringify(STATE)); } catch {}
   cloudWrite('tracker', STATE);
 }
@@ -4915,7 +4928,7 @@ async function confirmPendingEntries() {
     } catch {}
   }
   STATE.pendingEntries = STATE.pendingEntries.filter(p => !toRemove.includes(p.id));
-  if (changed) { saveState(); renderAll(); }
+  if (changed) { protectLivePositions(); saveState(); renderAll(); }
 }
 
 function createTrade(ticker, type, prob, priceUSD, runTime) {
@@ -5054,7 +5067,7 @@ async function monitorPositions() {
         } else { changed = true; }
       } catch {}
     }
-    if (changed) { saveState(); renderAll(); }
+    if (changed) { protectLivePositions(); saveState(); renderAll(); }
   } finally { monitorBusy = false; }
 }
 
@@ -5122,6 +5135,12 @@ async function runScreener(scheduledTime) {
   if (screenerRunning) return;
   screenerRunning = true; screenerStop = false;
   const runTime = scheduledTime || timeET().slice(0, 5);
+  // BUG 2: Determine if this is an intraday run (market is already open)
+  // 8 AM run → pre-market, use pendingEntries flow
+  // 1 PM run (and manual runs during market hours) → intraday, go straight to live
+  const _etNow = nowET();
+  const _etMins = _etNow.getHours() * 60 + _etNow.getMinutes();
+  const isIntradayRun = (_etMins >= 570 && _etMins < 960) && isWeekdayET() && !NYSE_HOLIDAYS.has(todayET());
 
   // ── Step 0: Purge any trades that were incorrectly entered on weekends/holidays
   purgeInvalidWeekendTrades();
@@ -5179,23 +5198,36 @@ async function runScreener(scheduledTime) {
           let priceUSD = res.lastClose;
           if (exchange === 'TSX') priceUSD = toUSD(res.lastClose);
 
-          // Change 5: queue as pending entry (next-session confirmation)
-          const added = createPendingEntry(ticker, res.type, res.prob, res.reclaimClose, runTime);
-          if (added) pendingCount++;
-          // 'null' = skipped (already holding / cooldown / capital); 'updated' = refreshed existing
-          else if (added === null) skippedCount++;
+          if (isIntradayRun) {
+            // BUG 2: Intraday run — go straight to live, skip pendingEntries entirely
+            if (!isAlreadyHolding(ticker) && !isInCooldown(ticker) &&
+                availableCapital() >= TRADE_SIZE && !isAutoTradePaused()) {
+              const trade = createTrade(ticker, res.type, res.prob, priceUSD, runTime);
+              if (trade) { tradedCount++; notify(`📈 Intraday entry: ${ticker} added directly to Live Positions`); }
+              else skippedCount++;
+            } else { skippedCount++; }
+          } else {
+            // Pre-market run — queue as pending entry (next-session confirmation)
+            const added = createPendingEntry(ticker, res.type, res.prob, res.reclaimClose, runTime);
+            if (added) pendingCount++;
+            else if (added === null) skippedCount++;
+          }
         } catch {}
       }));
 
       await new Promise(r => setTimeout(r, 250));
     }
 
-    // Remove stale pending entries for tickers that no longer qualify in this run.
-    // Only purge entries that were queued from a previous run (signalDate != today
-    // OR runTime != current runTime), and whose ticker wasn't seen in this run.
-    STATE.pendingEntries = STATE.pendingEntries.filter(p =>
-      qualifiedThisRun.has(p.ticker) || isAlreadyHolding(p.ticker)
-    );
+    // BUG 2: Only clean up pendingEntries on pre-market runs.
+    // Intraday runs must never touch pendingEntries or existing live positions.
+    if (!isIntradayRun) {
+      STATE.pendingEntries = STATE.pendingEntries.filter(p =>
+        qualifiedThisRun.has(p.ticker) || isAlreadyHolding(p.ticker)
+      );
+    }
+
+    // BUG 4: Protect live positions before saving
+    protectLivePositions();
 
     STATE.screenerRuns.push({
       date: todayET(), time: runTime,
@@ -5378,6 +5410,7 @@ function restoreSectionStates() {
 
 // ─────────────────────────────────────────────────────────────────────────────
 function renderAll() {
+  protectLivePositions(); // BUG 4: ensure live positions are never silently removed
   renderCapitalBar();
   renderCards();
   renderPending();
@@ -5768,11 +5801,20 @@ async function initShortTerm() {
     cloudListen('tracker', remote => {
       if (!remote || remote.trades === undefined) return;
       remote.totalCapital = TOTAL_CAPITAL;
-      // Only update if data actually changed (compare trade+pending counts as quick check)
-      const remoteKey = (remote.trades||[]).length + '|' + (remote.pendingEntries||[]).length + '|' + (remote.screenerRuns||[]).length;
-      const stateKey  = (STATE.trades||[]).length + '|' + (STATE.pendingEntries||[]).length + '|' + (STATE.screenerRuns||[]).length;
-      if (remoteKey === stateKey) return; // no meaningful change
+      // BUG 3: Use timestamp comparison instead of count-based check
+      // Count-based check fails when trade/pending counts happen to sum to the same value
+      const remoteLastUpdated = remote.lastUpdated || 0;
+      const localLastUpdated  = STATE.lastUpdated  || 0;
+      if (remoteLastUpdated <= localLastUpdated) return; // remote is not newer — ignore
+      // BUG 4: Protect live positions before applying remote state
+      // Never let a remote snapshot wipe out live positions that exist locally
+      const localLive = (STATE.trades||[]).filter(t => t.status==='live'||t.status==='partial');
       STATE = remote;
+      // Merge: if remote is missing any live position that exists locally, keep it
+      for (const lt of localLive) {
+        const inRemote = (STATE.trades||[]).find(t => t.id === lt.id);
+        if (!inRemote) STATE.trades.push(lt);
+      }
       try { localStorage.setItem(STORAGE_KEY, JSON.stringify(STATE)); } catch {}
       renderAll(); renderNotes();
     });
