@@ -6730,12 +6730,10 @@ async function loadLtFromSheet() {
   if (tbody) tbody.innerHTML = `<tr><td colspan="7" style="padding:40px;text-align:center;color:#8b949e">Loading data…</td></tr>`;
 
   try {
-    // Direct fetch – works when sheet is shared with "Anyone with the link"
     const res = await fetch(LT_HTML_URL, { cache: 'no-store' });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const html = await res.text();
 
-    // Parse the HTML table
     const parser = new DOMParser();
     const doc = parser.parseFromString(html, 'text/html');
     const table = doc.querySelector('table');
@@ -6744,10 +6742,11 @@ async function loadLtFromSheet() {
     const rows = table.querySelectorAll('tr');
     if (rows.length < 2) throw new Error('No data rows');
 
-    // Column indices based on your sheet layout (0‑based)
-    // 0: Symbol, 1: Company Name, 2: Price, 3: Strength %, 4: Status,
-    // 5: % Change, 6: Volume, 7: Market Cap, 8: P/E, 9: EPS Dil TTM,
-    // 10: 52W Low, 11: SMA200W, 12: Perf 5Y, 13: Date Added, 14: Notes
+    // Column indices (0‑based) based on your sheet:
+    // 0: Symbol, 1: Company Name, 2: Price, 3: Strength %,
+    // 4: Status, 5: Change %, 6: Volume, 7: Market Cap,
+    // 8: P/E, 9: EPS dil TTM, 10: 52W Low, 11: SMA50W,
+    // 12: SMA200W, 13: Perf 5Y %, 14: Date Added, 15: Notes
     const dataRows = Array.from(rows).slice(1);
     const parsed = [];
 
@@ -6780,10 +6779,10 @@ async function loadLtFromSheet() {
         pe: toNum(get(8)) || 0,
         eps: toNum(get(9)) || 0,
         w52low: toNum(get(10)) || 0,
-        sma200w: toNum(get(11)) || 0,
-        perf5y: toNum(get(12)) || 0,
-        dateAdded: get(13),
-        notes: get(14),
+        sma200w: toNum(get(12)) || 0,    // ✅ SMA200W from column M (index 12)
+        perf5y: toNum(get(13)) || 0,     // ✅ Perf 5Y % from column N (index 13)
+        dateAdded: get(14),              // ✅ Date Added from column O (index 14)
+        notes: get(15),                  // ✅ Notes from column P (index 15)
       });
     }
 
