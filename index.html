@@ -4813,6 +4813,34 @@ function isAlreadyHolding(ticker) {
 function isAlreadyPending(ticker) {
   return STATE.pendingEntries.some(p => p.ticker === ticker);
 }
+function deduplicateLiveTrades() {
+  const seen = new Set();
+  const toClose = [];
+  for (const t of STATE.trades) {
+    if (t.status !== 'live' && t.status !== 'partial') continue;
+    if (seen.has(t.ticker)) {
+      toClose.push(t.id);
+    } else {
+      seen.add(t.ticker);
+    }
+  }
+  if (toClose.length === 0) return;
+  for (const id of toClose) {
+    const t = STATE.trades.find(x => x.id === id);
+    if (!t) continue;
+    t.status = 'closedmanual';
+    t.sellDate = todayET();
+    t.sellTime = timeET();
+    t.sellPrice = t.buyPrice;
+    t.exitReason = 'duplicate';
+    t.pnl = '0.00';
+    t.pnlPct = '0.00';
+    t.currentPrice = t.buyPrice;
+  }
+  saveState();
+  renderAll();
+  notify(`Cleaned up ${toClose.length} duplicate live position${toClose.length > 1 ? 's' : ''}. Closed at buy price with zero P&L.`);
+}
 function isInCooldown(ticker) {
   // 48h cooldown after stop loss (Change 7)
   const now = Date.now();
@@ -4911,6 +4939,7 @@ async function confirmPendingEntries() {
       // Confirm: price still above reclaim close (next-session close confirmation)
       if (price > p.reclaimClose) {
         const priceUSD = exchange === 'TSX' ? toUSD(price) : price;
+        if (isAlreadyHolding(p.ticker)) { toRemove.push(p.id); continue; }
         const trade = createTrade(p.ticker, p.type, p.prob, priceUSD, p.runTime);
         if (trade) {
           notify(`✅ Entry confirmed: ${p.ticker} at $${priceUSD.toFixed(2)} USD (next-session close above reclaim)`);
@@ -5077,8 +5106,12 @@ function checkSchedule() {
   if (!isWeekdayET()) return;
   if (shouldSkipTodayUS() && shouldSkipTodayTSX()) return; // both markets holiday
   const et = timeET();
+  const [eh, em] = et.split(':').map(Number);
+  const currentEtMins = eh * 60 + em;
   for (const t of SCHED_TIMES) {
-    if (et >= t && !hasRunToday(t)) { runScreener(t); return; }
+    const ts = t.replace(':', '');
+    const scheduledTimeMins = Number(ts.slice(0, 2)) * 60 + Number(ts.slice(2, 4));
+    if (currentEtMins >= scheduledTimeMins && currentEtMins <= scheduledTimeMins + 5 && !hasRunToday(t)) { runScreener(t); return; }
   }
 }
 
@@ -5163,6 +5196,7 @@ async function runScreener(scheduledTime) {
 
   try {
     const BATCH = 4;
+    const enteredThisRun = new Set();
     for (let i = 0; i < tickersToRun.length && !screenerStop; i += BATCH) {
       const batch = tickersToRun.slice(i, i + BATCH);
       const pct = Math.round(i / tickersToRun.length * 100);
@@ -5198,8 +5232,9 @@ async function runScreener(scheduledTime) {
             // BUG 2: Intraday run — go straight to live, skip pendingEntries entirely
             if (!isAlreadyHolding(ticker) && !isInCooldown(ticker) &&
                 availableCapital() >= TRADE_SIZE && !isAutoTradePaused()) {
+              if (enteredThisRun.has(ticker)) return;
               const trade = createTrade(ticker, res.type, res.prob, priceUSD, runTime);
-              if (trade) { tradedCount++; notify(`📈 Intraday entry: ${ticker} added directly to Live Positions`); }
+              if (trade) { enteredThisRun.add(ticker); tradedCount++; notify(`📈 Intraday entry: ${ticker} added directly to Live Positions`); }
               else skippedCount++;
             } else { skippedCount++; }
           } else {
@@ -5741,7 +5776,7 @@ function clearAllData() {
 function tick() {
   updateClock();
   if (!screenerRunning) {
-    checkSchedule();
+    if (cloudStateLoaded) checkSchedule();
     monitorPositions();
     confirmPendingEntries();
   }
@@ -5766,6 +5801,7 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 
+let cloudStateLoaded = false;
 let _stInited = false;
 async function initShortTerm() {
   if(_stInited) return;
@@ -5788,9 +5824,12 @@ async function initShortTerm() {
       cloudState.totalCapital = TOTAL_CAPITAL;
       STATE = cloudState;
       try { localStorage.setItem(STORAGE_KEY, JSON.stringify(STATE)); } catch {}
-      // Re-render with definitive cloud data
-      renderAll(); renderNotes();
     }
+
+    deduplicateLiveTrades();
+
+    // Re-render with definitive cloud data
+    renderAll(); renderNotes();
 
     // Poll every 15s for updates from other devices
     // Always apply cloud data -- no stale comparison that can block updates
@@ -5821,6 +5860,7 @@ async function initShortTerm() {
     if(!window._stTickInterval) {
       window._stTickInterval = setInterval(tick, 60*1000);
     }
+    cloudStateLoaded = true;
   } catch(e) { console.error('initShortTerm error:', e); }
 }
 
