@@ -4046,7 +4046,7 @@ async function loadAllRatings(){
   <div style="display:flex;align-items:center;gap:12px;margin-bottom:14px;flex-wrap:wrap">
     <div style="font-size:17px;font-weight:700;color:#f0f6fc">📊 Screening Results</div>
     <span id="ltResultBadge" style="background:#21262d;border:1px solid #3fb950;color:#3fb950;border-radius:12px;padding:2px 10px;font-size:12px;font-weight:700">0</span>
-    <span style="font-size:12px;color:#484f58">PASS only · sorted by Strength % (high to low) · from Google Sheet tab: testScreener</span>
+    <span id="ltSortSubtitle" style="font-size:12px;color:#484f58">PASS only · sorted by Strength % (high to low) · from Google Sheet tab: testScreener</span>
     <span id="ltLoadStatus" style="font-size:12px;color:#8b949e;margin-left:auto"></span>
   </div>
 
@@ -4060,7 +4060,7 @@ async function loadAllRatings(){
           <th id="ltStrengthHeader" onclick="toggleLtSort()" style="padding:11px 16px;text-align:left;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:#58a6ff;border-bottom:1px solid #30363d;white-space:nowrap;cursor:pointer;user-select:none" title="Click to toggle sort direction">Strength <span id="ltSortIcon">↓</span></th>
           <th style="padding:11px 16px;text-align:left;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:#8b949e;border-bottom:1px solid #30363d;white-space:nowrap">Technical Checks</th>
           <th style="padding:11px 16px;text-align:left;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:#8b949e;border-bottom:1px solid #30363d;white-space:nowrap">Fundamentals</th>
-          <th style="padding:11px 16px;text-align:left;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:#8b949e;border-bottom:1px solid #30363d;white-space:nowrap">Date Added</th>
+          <th id="ltDateHeader" onclick="toggleLtDateSort()" style="padding:11px 16px;text-align:left;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:#58a6ff;border-bottom:1px solid #30363d;white-space:nowrap;cursor:pointer;user-select:none" title="Click to toggle sort direction">Date Added <span id="ltDateSortIcon"></span></th>
           <th style="padding:11px 16px;text-align:left;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:#8b949e;border-bottom:1px solid #30363d;white-space:nowrap">Notes</th>
         </tr>
       </thead>
@@ -6851,13 +6851,70 @@ async function loadLtFromSheet() {
 }
 
 // ─── RENDER TABLE (same as before – unchanged) ───────────────────────────────
-let ltSortDir = 'desc'; // 'desc' = high to low, 'asc' = low to high
+let ltSortDir       = 'desc'; // 'desc' = high to low, 'asc' = low to high
+let ltActiveSortCol = 'strength'; // 'strength' | 'date'
+let ltDateSortDir   = 'desc';     // 'desc' = newest first, 'asc' = oldest first
+
+// Helper: parse date strings like "06-April-2025" or "07-April-2026"
+function parseLtDate(dateStr) {
+  if (!dateStr || dateStr === '—') return 0;
+  const d = new Date(dateStr);
+  return isNaN(d.getTime()) ? 0 : d.getTime();
+}
+
+function updateLtSortSubtitle() {
+  const el = document.getElementById('ltSortSubtitle');
+  if (!el) return;
+  if (ltActiveSortCol === 'date') {
+    el.textContent = 'PASS only · sorted by Date Added (' + (ltDateSortDir === 'desc' ? 'newest first' : 'oldest first') + ') · from Google Sheet tab: testScreener';
+  } else {
+    el.textContent = 'PASS only · sorted by Strength % (' + (ltSortDir === 'desc' ? 'high to low' : 'low to high') + ') · from Google Sheet tab: testScreener';
+  }
+}
 
 function toggleLtSort() {
+  ltActiveSortCol = 'strength';
   ltSortDir = ltSortDir === 'desc' ? 'asc' : 'desc';
-  const icon = document.getElementById('ltSortIcon');
-  if (icon) icon.textContent = ltSortDir === 'desc' ? '↓' : '↑';
+
+  // Update Strength header: active (blue + arrow)
+  const strIcon = document.getElementById('ltSortIcon');
+  if (strIcon) strIcon.textContent = ltSortDir === 'desc' ? '↓' : '↑';
+  const strHeader = document.getElementById('ltStrengthHeader');
+  if (strHeader) strHeader.style.color = '#58a6ff';
+
+  // Clear Date Added header: inactive (grey, no arrow)
+  const dateIcon = document.getElementById('ltDateSortIcon');
+  if (dateIcon) dateIcon.textContent = '';
+  const dateHeader = document.getElementById('ltDateHeader');
+  if (dateHeader) dateHeader.style.color = '#8b949e';
+
   ltSheetData.sort((a, b) => ltSortDir === 'desc' ? b.strength - a.strength : a.strength - b.strength);
+  updateLtSortSubtitle();
+  renderLtTable();
+}
+
+function toggleLtDateSort() {
+  ltActiveSortCol = 'date';
+  ltDateSortDir = ltDateSortDir === 'desc' ? 'asc' : 'desc';
+
+  // Update Date Added header: active (blue + arrow)
+  const dateIcon = document.getElementById('ltDateSortIcon');
+  if (dateIcon) dateIcon.textContent = ltDateSortDir === 'desc' ? '↓' : '↑';
+  const dateHeader = document.getElementById('ltDateHeader');
+  if (dateHeader) dateHeader.style.color = '#58a6ff';
+
+  // Clear Strength header: inactive (grey, no arrow)
+  const strIcon = document.getElementById('ltSortIcon');
+  if (strIcon) strIcon.textContent = '';
+  const strHeader = document.getElementById('ltStrengthHeader');
+  if (strHeader) strHeader.style.color = '#8b949e';
+
+  ltSheetData.sort((a, b) => {
+    const da = parseLtDate(a.dateAdded);
+    const db = parseLtDate(b.dateAdded);
+    return ltDateSortDir === 'desc' ? db - da : da - db;
+  });
+  updateLtSortSubtitle();
   renderLtTable();
 }
 
