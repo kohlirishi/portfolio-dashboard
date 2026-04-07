@@ -3619,11 +3619,10 @@ async function loadAllRatings(){
 
 
 <div id="pg-short" style="display:none;background:#0d1117;color:#c9d1d9;font-family:-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, monospace;font-size:14px;min-height:100vh">
-<div id="st-back-bar" style="background:#161b22;border-bottom:1px solid #30363d;padding:14px 20px;display:flex;align-items:center;gap:14px;position:sticky;top:68px;z-index:200;margin-top:8px">
+<div id="st-back-bar" style="background:#161b22;border-bottom:1px solid #30363d;padding:10px 20px;display:flex;align-items:center;gap:14px;position:sticky;top:68px;z-index:200">
   <button onclick="showMain()" style="display:inline-flex;align-items:center;gap:6px;padding:7px 16px;background:transparent;border:1px solid #30363d;color:#8b949e;font-size:13px;font-weight:600;border-radius:6px;cursor:pointer;font-family:inherit;transition:all .15s" onmouseover="this.style.borderColor='#58a6ff';this.style.color='#c9d1d9'" onmouseout="this.style.borderColor='#30363d';this.style.color='#8b949e'">
     ← Back to Dashboard
   </button>
-  <span style="font-size:12px;color:#484f58">Portfolio Dashboard</span>
 </div>
 <!-- ST BANNERS (moved inside pg-short) -->
 <div id="ruleBanner" style="display:none;background:#1c2e1c;border-bottom:1px solid #238636;padding:8px 20px;font-size:13px;color:#3fb950;align-items:center;gap:12px;flex-wrap:wrap">
@@ -3864,10 +3863,12 @@ async function loadAllRatings(){
 
 </div>
 <div id="pg-screener" style="display:none;background:#0d1117;color:#c9d1d9;font-family:-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, monospace;font-size:14px;min-height:100vh">
-<div id="sc-back-bar" style="background:#161b22;border-bottom:1px solid #30363d;padding:14px 20px;display:flex;align-items:center;gap:14px;position:sticky;top:68px;z-index:200;flex-wrap:wrap;margin-top:8px">
+<div id="sc-back-bar" style="background:#161b22;border-bottom:1px solid #30363d;padding:10px 20px;display:flex;align-items:center;gap:14px;position:sticky;top:68px;z-index:200;flex-wrap:wrap">
   <button onclick="showMain()" style="display:inline-flex;align-items:center;gap:6px;padding:7px 16px;background:transparent;border:1px solid #30363d;color:#8b949e;font-size:13px;font-weight:600;border-radius:6px;cursor:pointer;font-family:inherit;transition:all .15s" onmouseover="this.style.borderColor='#58a6ff';this.style.color='#c9d1d9'" onmouseout="this.style.borderColor='#30363d';this.style.color='#8b949e'">
     ← Back to Dashboard
   </button>
+  <span style="font-size:15px;font-weight:700;color:#f0f6fc;letter-spacing:-.3px">🔍 EMA Reclaim Screener</span>
+  <span style="font-size:11px;color:#484f58">S&amp;P 500 + TSX</span>
   <div style="margin-left:auto;display:flex;gap:8px;align-items:center">
     <button id="runBtn" onclick="startScreen()" style="background:#238636;color:#fff;border:none;padding:8px 20px;border-radius:6px;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;transition:background .2s;white-space:nowrap" onmouseover="this.style.background='#2ea043'" onmouseout="this.style.background='#238636'">▶ Run Screener</button>
     <button id="stopBtn" onclick="stopScreen()" style="display:none;background:#da3633;color:#fff;border:none;padding:8px 16px;border-radius:6px;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;white-space:nowrap">■ Stop</button>
@@ -3999,11 +4000,10 @@ async function loadAllRatings(){
 
 </div>
 <div id="pg-longterm" style="display:none;background:#0d1117;color:#c9d1d9;font-family:-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, monospace;font-size:14px;min-height:100vh">
-<div id="lt-back-bar" style="background:#161b22;border-bottom:1px solid #30363d;padding:14px 20px;display:flex;align-items:center;gap:14px;position:sticky;top:68px;z-index:200;margin-top:8px">
+<div id="lt-back-bar" style="background:#161b22;border-bottom:1px solid #30363d;padding:10px 20px;display:flex;align-items:center;gap:14px;position:sticky;top:68px;z-index:200">
   <button onclick="showMain()" style="display:inline-flex;align-items:center;gap:6px;padding:7px 16px;background:transparent;border:1px solid #30363d;color:#8b949e;font-size:13px;font-weight:600;border-radius:6px;cursor:pointer;font-family:inherit;transition:all .15s" onmouseover="this.style.borderColor='#58a6ff';this.style.color='#c9d1d9'" onmouseout="this.style.borderColor='#30363d';this.style.color='#8b949e'">
     ← Back to Dashboard
   </button>
-  <span style="font-size:12px;color:#484f58">Portfolio Dashboard</span>
   <button onclick="loadLtFromSheet()" id="ltRefreshBtn" style="display:inline-flex;align-items:center;gap:6px;padding:7px 14px;background:#1f6feb;border:none;color:#fff;font-size:12px;font-weight:600;border-radius:6px;cursor:pointer;font-family:inherit;margin-left:auto">
     ↻ Refresh Data
   </button>
