@@ -6703,9 +6703,11 @@ function scInit() {
 </script>
 <script>
 
-// ═══ LONG TERM TRACKER JS (USES PUBLISHED HTML + PROXY) ═══
-// Use the published HTML URL from File → Share → Publish to web
-const LT_PUB_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vT5My0JskMjYCWacWPEih3vGdNCp_yvVmmbP4u7KPYCq_ApHWT-SG1SxZ2g35LUHnhG-wIA7Yk-Yx29/pubhtml';
+// ═══ LONG TERM TRACKER JS (USES GVIZ HTML OUTPUT – NO PROXY NEEDED) ═══
+const LT_SHEET_ID = '17nJvyA-XQ3AeuBwID_4DR2yMYHE6PJRcBOWBgqLWlek';
+const LT_GID = 1955075183;
+// This URL returns a static HTML table – works when sheet is shared
+const LT_HTML_URL = `https://docs.google.com/spreadsheets/d/${LT_SHEET_ID}/gviz/tq?tqx=out:html&gid=${LT_GID}`;
 
 let _ltInited = false;
 let ltSheetData = [];
@@ -6719,53 +6721,38 @@ async function loadLtFromSheet() {
   if (status) status.textContent = 'Fetching from Google Sheet…';
   if (tbody) tbody.innerHTML = `<tr><td colspan="8" style="padding:40px;text-align:center;color:#8b949e">Loading data…</td></tr>`;
 
-  // Use a reliable CORS proxy
-  const proxyUrl = `https://corsproxy.io/?url=${encodeURIComponent(LT_PUB_URL)}`;
-
   try {
-    const res = await fetch(proxyUrl, { cache: 'no-store', signal: AbortSignal.timeout(15000) });
+    // Direct fetch – works when sheet is shared with "Anyone with the link"
+    const res = await fetch(LT_HTML_URL, { cache: 'no-store' });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const html = await res.text();
 
-    // Parse HTML table
+    // Parse the HTML table
     const parser = new DOMParser();
     const doc = parser.parseFromString(html, 'text/html');
-    const tables = doc.querySelectorAll('table');
-    if (!tables.length) throw new Error('No table found in published HTML');
+    const table = doc.querySelector('table');
+    if (!table) throw new Error('No table found in response');
 
-    // Find the largest table (data table)
-    let targetTable = null;
-    let maxRows = 0;
-    for (const tbl of tables) {
-      const rowCount = tbl.querySelectorAll('tr').length;
-      if (rowCount > maxRows) {
-        maxRows = rowCount;
-        targetTable = tbl;
-      }
-    }
-    if (!targetTable) throw new Error('Could not locate data table');
-
-    const rows = targetTable.querySelectorAll('tr');
-    if (rows.length < 2) throw new Error('Table has no data rows');
+    const rows = table.querySelectorAll('tr');
+    if (rows.length < 2) throw new Error('No data rows');
 
     // Column indices based on your sheet layout (0‑based)
     // 0: Symbol, 1: Company Name, 2: Price, 3: Strength %, 4: Status,
     // 5: % Change, 6: Volume, 7: Market Cap, 8: P/E, 9: EPS Dil TTM,
     // 10: 52W Low, 11: SMA200W, 12: Perf 5Y, 13: Date Added, 14: Notes
-    const dataRows = Array.from(rows).slice(1); // skip header row
+    const dataRows = Array.from(rows).slice(1);
     const parsed = [];
 
     for (const tr of dataRows) {
       const cells = Array.from(tr.querySelectorAll('td'));
       if (cells.length < 5) continue;
-
       const get = (idx) => idx < cells.length ? cells[idx].textContent.trim() : '';
 
       const symbol = get(0);
       if (!symbol) continue;
 
       const statusVal = get(4).toUpperCase();
-      if (statusVal !== 'PASS') continue; // only PASS rows
+      if (statusVal !== 'PASS') continue;
 
       const toNum = (val) => {
         if (!val || val === '—' || val === '#N/A') return null;
@@ -6804,13 +6791,12 @@ async function loadLtFromSheet() {
     const now = new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
     if (status) status.textContent = `✓ ${ltSheetData.length} PASS stocks · refreshed ${now}`;
   } catch (err) {
-    console.error('LT fetch error:', err);
-    if (status) status.textContent = '⚠ Failed to load data. Check that the sheet is published (File → Share → Publish to web).';
+    console.error('LT error:', err);
+    if (status) status.textContent = '⚠ Failed to load data. Make sure the sheet is shared (Anyone with link can view).';
     if (tbody) tbody.innerHTML = `<tr><td colspan="8" style="padding:40px;text-align:center;color:#f85149">
       Failed to load data. Make sure:<br>
-      1. The sheet is published (File → Share → Publish to web → Entire document → Publish).<br>
-      2. The published URL above is correct.<br>
-      3. The sheet contains columns at positions: Symbol, Company Name, Price, Strength %, Status, ...<br>
+      1. The sheet is shared (File → Share → Anyone with the link can view).<br>
+      2. The sheet contains columns at positions: Symbol, Company Name, Price, Strength %, Status, ...<br>
       If the problem persists, open the browser console (F12) and share the error.
     </td></tr>`;
   } finally {
@@ -6818,7 +6804,7 @@ async function loadLtFromSheet() {
   }
 }
 
-// ─── RENDER TABLE (unchanged) ────────────────────────────────────────────────
+// ─── RENDER TABLE (same as before – unchanged) ───────────────────────────────
 function renderLtTable() {
   const tbody = document.getElementById('ltBody');
   const badge = document.getElementById('ltResultBadge');
@@ -6875,7 +6861,7 @@ function renderLtTable() {
         <div style="font-weight:700;font-size:15px;color:#f0f6fc">${s.symbol}</div>
         <div style="font-size:11px;color:#8b949e;margin-top:3px;max-width:150px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${s.name || ''}</div>
         ${s.dateAdded ? `<div style="font-size:10px;color:#484f58;margin-top:4px">Added ${s.dateAdded}</div>` : ''}
-       </td>
+        </td>
       <td style="padding:14px 16px;vertical-align:top;white-space:nowrap">
         <div style="font-size:15px;font-weight:700;color:#f0f6fc">$${fmtN(s.price,2)}</div>
         <div style="font-size:12px;color:${chgC};margin-top:3px;font-weight:600">${chgSign}${fmtN(s.change,2)}%</div>
