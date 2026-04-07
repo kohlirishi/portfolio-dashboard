@@ -4828,33 +4828,84 @@ function clearAllData() {
   fetchPortfolioState();
 }
 
+// ─── TOAST NOTIFICATIONS ──────────────────────────────────────────────────────
+// Displays a temporary toast in the bottom-right corner.
+// type: 'info' | 'success' | 'error' | 'warning'
+function showNotification(message, type = 'info') {
+  const colors = { info: '#2196f3', success: '#10b981', error: '#ef4444', warning: '#f59e0b' };
+  const toast = document.createElement('div');
+  toast.style.cssText = [
+    'position:fixed', 'bottom:24px', 'right:24px',
+    'padding:12px 20px', 'border-radius:8px',
+    'color:#fff', 'font-weight:500', 'font-size:13px',
+    'z-index:9999', 'box-shadow:0 4px 12px rgba(0,0,0,0.4)',
+    'max-width:360px', 'line-height:1.4',
+    `background:${colors[type] || colors.info}`
+  ].join(';');
+  toast.textContent = message;
+  document.body.appendChild(toast);
+  setTimeout(() => {
+    toast.style.transition = 'opacity 0.3s';
+    toast.style.opacity = '0';
+    setTimeout(() => toast.remove(), 300);
+  }, 4000);
+}
+
 // ─── RUN NOW BUTTON (triggers backend screener via Web App POST) ───────────
+// Uses Content-Type: text/plain to bypass CORS preflight in Google Apps Script.
+// Waits for the backend to complete, then fetches fresh portfolio state and
+// re-renders all tables — no page reload needed.
+let _isScreenerRunning = false;
+
 async function runScreenerNow() {
-  const btn = document.getElementById('runNowBtn');
+  if (_isScreenerRunning) return; // prevent double-clicks
+  _isScreenerRunning = true;
+
+  const btn  = document.getElementById('runNowBtn');
   const stop = document.getElementById('stopBtn');
-  if (btn) { btn.disabled = true; btn.textContent = '⏳ Running…'; }
+  const originalHTML     = btn ? btn.innerHTML : '';
+  const originalDisabled = btn ? btn.disabled  : false;
+
+  if (btn)  { btn.disabled = true; btn.innerHTML = '⏳ Running Screener…'; }
   if (stop) stop.style.display = 'inline-block';
-  notify('Triggering screener run on backend…');
+
+  showNotification('Screener running in background. This may take 2–3 minutes…', 'info');
 
   try {
-    const payload = { path: 'screener', action: 'run' };
-    const res = await fetch(GS_SCRIPT_URL, {
-      method: 'POST', headers: { 'Content-Type': 'text/plain' },
-      body: JSON.stringify(payload)
+    // POST to backend — text/plain bypasses CORS preflight for Google Apps Script
+    const res = await fetch(PORTFOLIO_WEBAPP_URL, {
+      method:  'POST',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body:    JSON.stringify({ action: 'runManualScreener' }),
+      signal:  AbortSignal.timeout(240000) // 4-minute safety timeout
     });
+
     const json = await res.json().catch(() => ({}));
-    notify(json.message || '✓ Screener triggered. Refresh in ~30s to see results.');
-    setTimeout(fetchPortfolioState, 30000);
-  } catch {
-    notify('⚠ Could not reach backend. The screener runs automatically at 8:00 AM and 1:00 PM EST.');
+
+    if (json.success !== false) {
+      showNotification('✅ Screener complete! Refreshing data…', 'success');
+      // Fetch fresh state from Google Sheets and re-render all tables
+      await fetchPortfolioState();
+    } else {
+      showNotification(`❌ Screener failed: ${json.error || json.message || 'Unknown error'}`, 'error');
+    }
+
+  } catch (err) {
+    console.error('[RunNow] Screener trigger error:', err);
+    const msg = err.name === 'TimeoutError'
+      ? '⏱ Screener timed out (>4 min). Check backend logs.'
+      : '❌ Network error. Check console & retry.';
+    showNotification(msg, 'error');
   } finally {
-    if (btn) { btn.disabled = false; btn.textContent = '▶ Run Now'; }
+    // Always restore button so user can retry
+    if (btn)  { btn.innerHTML = originalHTML; btn.disabled = originalDisabled; }
     if (stop) stop.style.display = 'none';
+    _isScreenerRunning = false;
   }
 }
 
 function stopScreenerRun() {
-  notify('Screener runs server-side and cannot be stopped from the browser.');
+  showNotification('Screener runs server-side and cannot be stopped from the browser.', 'warning');
   const stop = document.getElementById('stopBtn');
   if (stop) stop.style.display = 'none';
 }
