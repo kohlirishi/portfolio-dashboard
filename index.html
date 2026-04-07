@@ -4473,9 +4473,34 @@ function _renderCapitalBar() {
 function _renderCards() {
   if (!portfolioState) return;
   const { trades = [], pendingEntries = [] } = portfolioState;
-  const live    = trades.filter(t => t.status === 'live' || t.status === 'partial').length;
-  const profits = trades.filter(t => t.exitReason === 'profit').length;
-  const losses  = trades.filter(t => t.exitReason === 'loss').length;
+
+  // Live positions deduplicated (same logic as _renderLive)
+  const liveTrades = trades
+    .filter(t => t.status === 'live' || t.status === 'partial')
+    .reduce((unique, trade) => {
+      const existingIndex = unique.findIndex(t => t.ticker === trade.ticker);
+      if (existingIndex === -1) {
+        unique.push(trade);
+      } else {
+        const existing = unique[existingIndex];
+        const existingTime = `${existing.buyDate || ''} ${existing.buyTime || ''}`;
+        const newTime = `${trade.buyDate || ''} ${trade.buyTime || ''}`;
+        if (newTime > existingTime) unique[existingIndex] = trade;
+      }
+      return unique;
+    }, []);
+  const live = liveTrades.length;
+
+  // Count VALID closed trades only (EXCLUDE $0 P&L entries)
+  const validClosed = trades.filter(t => {
+    if (t.status === 'live' || t.status === 'partial') return false;
+    const pnl    = parseFloat(t.pnl)    || 0;
+    const pnlPct = parseFloat(t.pnlPct) || 0;
+    return pnl !== 0 || pnlPct !== 0;
+  });
+
+  const profits = validClosed.filter(t => t.exitReason === 'profit').length;
+  const losses  = validClosed.filter(t => t.exitReason === 'loss').length;
   const total   = profits + losses;
   const wr      = total > 0 ? Math.round(profits / total * 100) + '%' : '—';
 
@@ -4484,7 +4509,7 @@ function _renderCards() {
   set('profitCount',     profits);
   set('lossCount',       losses);
   set('winRate',         wr);
-  set('totalTradesCount', trades.length);
+  set('totalTradesCount', live + validClosed.length); // live + valid closed only
 }
 
 // ─── PENDING ENTRIES ──────────────────────────────────────────────────────────
@@ -4518,7 +4543,22 @@ function _renderPending() {
 // ─── LIVE POSITIONS ───────────────────────────────────────────────────────────
 function _renderLive() {
   if (!portfolioState) return;
-  const live = (portfolioState.trades || []).filter(t => t.status === 'live' || t.status === 'partial');
+  // Filter live/partial trades and REMOVE DUPLICATES (keep most recent by buy date+time)
+  const live = (portfolioState.trades || [])
+    .filter(t => t.status === 'live' || t.status === 'partial')
+    .reduce((unique, trade) => {
+      const existingIndex = unique.findIndex(t => t.ticker === trade.ticker);
+      if (existingIndex === -1) {
+        unique.push(trade);
+      } else {
+        // Duplicate found - keep the MOST RECENT one (by buy date + time)
+        const existing = unique[existingIndex];
+        const existingTime = `${existing.buyDate || ''} ${existing.buyTime || ''}`;
+        const newTime = `${trade.buyDate || ''} ${trade.buyTime || ''}`;
+        if (newTime > existingTime) unique[existingIndex] = trade;
+      }
+      return unique;
+    }, []);
   const el = document.getElementById('liveBadge');
   if (el) el.textContent = live.length;
   const tbody = document.getElementById('liveBody');
@@ -4573,7 +4613,14 @@ function _renderLive() {
 // ─── CLOSED POSITIONS ─────────────────────────────────────────────────────────
 function _renderClosed() {
   if (!portfolioState) return;
-  const closed = (portfolioState.trades || []).filter(t => t.status !== 'live' && t.status !== 'partial')
+  // Filter closed trades and EXCLUDE $0 P&L entries (duplicate/manual closes with no gain/loss)
+  const closed = (portfolioState.trades || [])
+    .filter(t => {
+      if (t.status === 'live' || t.status === 'partial') return false;
+      const pnl    = parseFloat(t.pnl)    || 0;
+      const pnlPct = parseFloat(t.pnlPct) || 0;
+      return pnl !== 0 || pnlPct !== 0; // Exclude $0 P&L entries
+    })
     .sort((a, b) => new Date(b.sellDate||'') - new Date(a.sellDate||''));
 
   const el = document.getElementById('closedBadge');
@@ -4620,7 +4667,7 @@ function _renderClosed() {
 // ─── SCREENER RUN LOG ─────────────────────────────────────────────────────────
 function _renderRunLog() {
   if (!portfolioState) return;
-  const runs  = [...(portfolioState.screenerRuns || [])].reverse().slice(0, 30);
+  const runs  = [...(portfolioState.screenerRuns || [])].reverse().slice(0, 7); // Show only last 7 runs
   const tbody = document.getElementById('runLogBody');
   if (!tbody) return;
   if (!runs.length) {
