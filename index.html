@@ -3643,7 +3643,7 @@ async function loadAllRatings(){
   <div class="cap-stat">Available: <strong id="availCap">$10,000.00</strong></div>
   <div class="cap-stat">Realized P&amp;L: <strong id="totalPnl" class="neutral">$0.00</strong></div>
   <div class="cap-stat">Unrealized P&amp;L: <strong id="unrealPnl" class="neutral">$0.00</strong></div>
-  <div class="currency-note">All values in USD · TSX prices converted at live CAD-USD Rate · Paper trading simulation · $100/trade · 5% TP · 2% SL</div>
+  <div class="currency-note">All values in USD · TSX prices converted at live CAD-USD Rate · Paper trading simulation · $100/trade · 5% TP · 2% SL · <span id="stSyncStatus" style="color:#3fb950">Connecting…</span></div>
 </div>
 
 <!-- NOTIFICATION -->
@@ -3668,6 +3668,7 @@ async function loadAllRatings(){
       <div class="right">
         <span id="regimeTag" style="font-size:11px;color:#8b949e;font-weight:400"></span>
         <button id="runNowBtn" class="btn btn-green" onclick="runScreenerNow()">▶ Run Now</button>
+        <button class="btn btn-ghost" onclick="fetchPortfolioState()" title="Refresh data from Google Sheets">↻ Refresh</button>
         <button id="stopBtn" class="btn btn-ghost" onclick="stopScreenerRun()" style="display:none">⏹ Stop</button>
       </div>
     </div>
@@ -4211,1210 +4212,183 @@ function showLongTerm() {
 
 </script>
 <script>
-// ═══ SHORT TERM TRACKER JS ═══
+// ═══════════════════════════════════════════════════════════════════════════════
+// SHORT TERM TRADING PORTFOLIO — BACKEND-DRIVEN READ-ONLY DASHBOARD
+// All trading logic is executed server-side by the Google Apps Script Web App.
+// This frontend only fetches state and renders it. No client-side trading.
+// ═══════════════════════════════════════════════════════════════════════════════
 
-// ═══════════════════════════════════════════════════════════════════════
-// RULE VERSION — bump when strategy changes; triggers auto-exit on open positions
-// ═══════════════════════════════════════════════════════════════════════
-const RULE_VERSION = 'v4'; // bumped: screener logic upgraded (hard filters + enhanced scoring)
+// ─── WEB APP ENDPOINT (same as GS_SCRIPT_URL used by other sections) ─────────
+const PORTFOLIO_WEBAPP_URL = GS_SCRIPT_URL; // defined in the cloud layer above
 
+// ─── STATE ────────────────────────────────────────────────────────────────────
+let portfolioState    = null;   // latest data from backend
+let _stRefreshTimer   = null;   // auto-refresh interval handle
+let _stInited         = false;  // lazy-init guard
 
+// ─── MARKET CALENDAR (needed for auto-refresh scheduling) ────────────────────
+// These sets are declared in the Screener JS block and shared globally.
+// Reuse NYSE_HOLIDAYS / TSX_HOLIDAYS if already declared; otherwise define them.
+// (Safe to reference them since this script runs after the cloud layer script.)
 
-// ─── MARKET CALENDAR ─────────────────────────────────────────────────────────
-const NYSE_HOLIDAYS = new Set([
-  '2024-01-01','2024-01-15','2024-02-19','2024-03-29','2024-05-27','2024-06-19','2024-07-04','2024-09-02','2024-11-28','2024-12-25',
-  '2025-01-01','2025-01-20','2025-02-17','2025-04-18','2025-05-26','2025-06-19','2025-07-04','2025-09-01','2025-11-27','2025-12-25',
-  '2026-01-01','2026-01-19','2026-02-16','2026-04-03','2026-05-25','2026-06-19','2026-07-03','2026-09-07','2026-11-26','2026-12-25',
-]);
-const TSX_HOLIDAYS = new Set([
-  '2024-01-01','2024-02-19','2024-03-29','2024-05-20','2024-07-01','2024-08-05','2024-09-02','2024-10-14','2024-11-11','2024-12-25','2024-12-26',
-  '2025-01-01','2025-02-17','2025-04-18','2025-05-19','2025-07-01','2025-08-04','2025-09-01','2025-10-13','2025-11-11','2025-12-25','2025-12-26',
-  '2026-01-01','2026-02-16','2026-04-03','2026-05-18','2026-07-01','2026-08-03','2026-09-07','2026-10-12','2026-11-11','2026-12-25','2026-12-28',
-]);
+// ─── ET CLOCK HELPERS (shared with screener block, declared there) ─────────
+// nowET(), todayET(), timeET(), formatDate(), formatTimeEST() are in screener JS.
 
-// ─── SCREENER CONSTANTS (must match screener.html) ────────────────────────────
-const EMA_PERIOD          = 220;
-const MA_BUFFER           = 0.003;
-const ATH_THRESHOLD       = 0.05;
-const MAX_RECLAIM_BARS    = 60;
-const MAX_BELOW_BARS      = 10;
-const SWING_HIGH_MIN_BARS = 126;
-const SWING_HIGH_MAX_BARS = 378;
-const SWING_NEAR_MIN      = 0.01;
-const SWING_NEAR_MAX      = 0.05;
-const S2_ATH_MAX_DRAWDOWN = 0.15;
-const VOLUME_CONFIRM_RATIO = 1.4;
-const WEEKLY_EMA_PERIOD   = 44;
-const WEEKLY_TREND_PENALTY = 15;
-
-// ─── SCREENER QUALITY CONSTANTS (aligned with Screener page) ────────────────
-const ST_VOLUME_CONFIRM_RATIO = 1.2;  // aligned with screener (was 1.4 in old logic)
-const ST_EMA_EXTENSION_MAX    = 25;   // hard filter: reject if price > 25% above EMA
-const ST_PROXIMITY_52W_MAX    = 0.25; // hard filter: reject if > 25% below 52W high
-
-// ─── INVESTMENT CONSTANTS ─────────────────────────────────────────────────────
-const ATH_PROB_THRESHOLD   = 70;
-const SWING_PROB_THRESHOLD = 50;
-const TRADE_SIZE           = 100;  // USD per trade
-const TOTAL_CAPITAL        = 10000; // USD
-const PARTIAL_TARGET       = 0.03;
-const PROFIT_TARGET        = 0.05;
-const STOP_LOSS            = 0.02;
-const COOLDOWN_MS          = 48 * 60 * 60 * 1000; // 48h (Change 7)
-const DOUBLE_STOP_WINDOW_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
-const DOUBLE_STOP_PAUSE_MS  = 7 * 24 * 60 * 60 * 1000; // 1 week pause
-
-// ─── UNIVERSE ─────────────────────────────────────────────────────────────────
-const SP500_TICKERS = ["A","AAL","AAP","AAPL","ABBV","ABT","ACN","ADBE","ADI","ADM","ADP","ADSK","AEE","AEP","AES","AFL","AIG","AIZ","AJG","AKAM","ALB","ALGN","ALL","ALLE","AMAT","AMCR","AMD","AME","AMGN","AMP","AMT","AMZN","ANET","AON","AOS","APA","APD","APH","APTV","ARE","ATO","AVB","AVGO","AVY","AWK","AXON","AXP","AZO","BA","BAC","BALL","BAX","BBWI","BBY","BDX","BEN","BF-B","BG","BIIB","BK","BKNG","BKR","BLDR","BLK","BMY","BR","BRK-B","BRO","BSX","BWA","BX","BXP","C","CAG","CAH","CARR","CAT","CB","CBOE","CBRE","CCI","CCL","CDNS","CDW","CE","CEG","CF","CFG","CHD","CHRW","CHTR","CI","CINF","CL","CLX","CMA","CMCSA","CME","CMG","CMI","CMS","CNC","CNP","COF","COO","COP","COST","CPB","CPRT","CPT","CRL","CRM","CRWD","CSCO","CSGP","CSX","CTAS","CTRA","CTSH","CTVA","CVS","CVX","CZR","D","DAL","DAY","DD","DE","DECK","DG","DGX","DHI","DHR","DIS","DLR","DLTR","DOC","DOV","DOW","DPZ","DRI","DTE","DUK","DVA","DVN","DXCM","EA","EBAY","ECL","ED","EFX","EG","EIX","EL","ELV","EMN","EMR","ENPH","EOG","EPAM","EQIX","EQR","EQT","ES","ESS","ETN","ETR","ETSY","EVRG","EW","EXC","EXPD","EXPE","EXR","F","FANG","FAST","FCX","FDS","FDX","FE","FFIV","FICO","FIS","FITB","FMC","FOX","FOXA","FRT","FSLR","FTNT","FTV","GD","GDDY","GE","GEHC","GEN","GILD","GIS","GL","GLW","GM","GNRC","GOOGL","GOOG","GPC","GPN","GS","GWW","HAL","HAS","HBAN","HCA","HD","HIG","HII","HLT","HOLX","HON","HPE","HPQ","HRL","HSIC","HST","HSY","HUBB","HUM","HWM","IBM","ICE","IDXX","IEX","IFF","ILMN","INCY","INTC","INTU","INVH","IP","IQV","IR","IRM","ISRG","IT","ITW","IVZ","J","JBHT","JCI","JKHY","JNJ","JPM","KEY","KEYS","KHC","KIM","KLAC","KMB","KMI","KMX","KO","KR","L","LDOS","LEN","LH","LHX","LIN","LKQ","LLY","LMT","LNT","LOW","LRCX","LULU","LUV","LVS","LW","LYB","LYV","MA","MAA","MAR","MAS","MCD","MCHP","MCK","MCO","MDLZ","MDT","MET","META","MGM","MHK","MKC","MKTX","MLM","MNST","MO","MOH","MOS","MPC","MPWR","MRK","MRNA","MS","MSCI","MSFT","MSI","MTB","MTD","MU","NCLH","NDAQ","NEE","NEM","NFLX","NI","NKE","NOC","NOW","NRG","NSC","NTAP","NTRS","NUE","NVDA","NVR","NWS","NWSA","NXPI","O","ODFL","OKE","OMC","ON","ORCL","ORLY","OXY","PAYC","PAYX","PCAR","PCG","PEG","PEP","PFE","PFG","PG","PGR","PH","PHM","PKG","PLD","PM","PNC","PNR","PNW","PODD","POOL","PPG","PPL","PRU","PSA","PSX","PTC","PWR","PYPL","QCOM","QRVO","RCL","REG","REGN","RF","RJF","RL","RMD","ROK","ROL","ROP","ROST","RSG","RTX","RVTY","SBAC","SBUX","SCHW","SJM","SLB","SMCI","SNA","SNPS","SO","SPG","SPGI","SRE","STE","STLD","STT","STX","STZ","SWK","SWKS","SYF","SYK","SYY","T","TAP","TDG","TDY","TECH","TEL","TER","TFC","TFX","TGT","TJX","TMO","TMUS","TPR","TRGP","TRMB","TROW","TRV","TSCO","TSLA","TSN","TT","TTWO","TXN","TXT","TYL","UAL","UDR","UHS","ULTA","UNH","UNP","UPS","URI","USB","V","VFC","VICI","VLO","VLTO","VMC","VRSK","VRSN","VRTX","VTR","VTRS","VZ","WAB","WAT","WDAY","WBD","WDC","WELL","WFC","WHR","WM","WMB","WMT","WRB","WST","WTW","WY","WYNN","XEL","XOM","XYL","YUM","ZBH","ZBRA","ZTS"];
-const TSX_TICKERS = ["RY.TO","TD.TO","BN.TO","ENB.TO","CNR.TO","CP.TO","BMO.TO","BNS.TO","SHOP.TO","SU.TO","CNQ.TO","MFC.TO","TRP.TO","CM.TO","ATD.TO","WCN.TO","BAM.TO","SLF.TO","IFC.TO","TRI.TO","L.TO","POW.TO","GWO.TO","T.TO","BCE.TO","WPM.TO","ABX.TO","AEM.TO","NTR.TO","FTS.TO","DOL.TO","CSU.TO","QSR.TO","H.TO","GFL.TO","WSP.TO","MRU.TO","RCI-B.TO","IMO.TO","FFH.TO"];
-const TICKERS = [...SP500_TICKERS, ...TSX_TICKERS];
-const EXCHANGE_MAP = {};
-SP500_TICKERS.forEach(t => EXCHANGE_MAP[t] = 'US');
-TSX_TICKERS.forEach(t => EXCHANGE_MAP[t] = 'TSX');
-
-const COMPANY_NAMES = {
-  "A":"Agilent Technologies","AAL":"American Airlines","AAP":"Advance Auto Parts","AAPL":"Apple Inc.","ABBV":"AbbVie Inc.","ABT":"Abbott Laboratories","ACN":"Accenture plc","ADBE":"Adobe Inc.","ADI":"Analog Devices","ADM":"Archer-Daniels-Midland","ADP":"Automatic Data Processing","ADSK":"Autodesk Inc.","AEE":"Ameren Corp","AEP":"American Electric Power","AES":"AES Corp","AFL":"Aflac Inc.","AIG":"American International Group","AIZ":"Assurant Inc.","AJG":"Arthur J. Gallagher","AKAM":"Akamai Technologies","ALB":"Albemarle Corp","ALGN":"Align Technology","ALL":"Allstate Corp","ALLE":"Allegion plc","AMAT":"Applied Materials","AMCR":"Amcor plc","AMD":"Advanced Micro Devices","AME":"AMETEK Inc.","AMGN":"Amgen Inc.","AMP":"Ameriprise Financial","AMT":"American Tower Corp","AMZN":"Amazon.com Inc.","ANET":"Arista Networks","AON":"Aon plc","AOS":"A.O. Smith Corp","APA":"APA Corp","APD":"Air Products & Chemicals","APH":"Amphenol Corp","APTV":"Aptiv plc","ARE":"Alexandria Real Estate","ATO":"Atmos Energy","AVB":"AvalonBay Communities","AVGO":"Broadcom Inc.","AVY":"Avery Dennison","AWK":"American Water Works","AXON":"Axon Enterprise","AXP":"American Express","AZO":"AutoZone Inc.","BA":"Boeing Co.","BAC":"Bank of America","BALL":"Ball Corp","BAX":"Baxter International","BBWI":"Bath & Body Works","BBY":"Best Buy Co.","BDX":"Becton Dickinson","BEN":"Franklin Resources","BF-B":"Brown-Forman Corp","BG":"Bunge Global","BIIB":"Biogen Inc.","BK":"Bank of New York Mellon","BKNG":"Booking Holdings","BKR":"Baker Hughes","BLDR":"Builders FirstSource","BLK":"BlackRock Inc.","BMY":"Bristol-Myers Squibb","BR":"Broadridge Financial","BRK-B":"Berkshire Hathaway","BRO":"Brown & Brown","BSX":"Boston Scientific","BWA":"BorgWarner Inc.","BX":"Blackstone Inc.","BXP":"BXP Inc.","C":"Citigroup Inc.","CAG":"Conagra Brands","CAH":"Cardinal Health","CARR":"Carrier Global","CAT":"Caterpillar Inc.","CB":"Chubb Ltd.","CBOE":"Cboe Global Markets","CBRE":"CBRE Group","CCI":"Crown Castle Inc.","CCL":"Carnival Corp","CDNS":"Cadence Design Systems","CDW":"CDW Corp","CE":"Celanese Corp","CEG":"Constellation Energy","CF":"CF Industries","CFG":"Citizens Financial","CHD":"Church & Dwight","CHRW":"C.H. Robinson","CHTR":"Charter Communications","CI":"Cigna Group","CINF":"Cincinnati Financial","CL":"Colgate-Palmolive","CLX":"Clorox Co.","CMA":"Comerica Inc.","CMCSA":"Comcast Corp","CME":"CME Group","CMG":"Chipotle Mexican Grill","CMI":"Cummins Inc.","CMS":"CMS Energy","CNC":"Centene Corp","CNP":"CenterPoint Energy","COF":"Capital One Financial","COO":"Cooper Companies","COP":"ConocoPhillips","COST":"Costco Wholesale","CPB":"Campbell Soup","CPRT":"Copart Inc.","CPT":"Camden Property Trust","CRL":"Charles River Laboratories","CRM":"Salesforce Inc.","CRWD":"CrowdStrike Holdings","CSCO":"Cisco Systems","CSGP":"CoStar Group","CSX":"CSX Corp","CTAS":"Cintas Corp","CTRA":"Coterra Energy","CTSH":"Cognizant Technology","CTVA":"Corteva Inc.","CVS":"CVS Health","CVX":"Chevron Corp","CZR":"Caesars Entertainment","D":"Dominion Energy","DAL":"Delta Air Lines","DAY":"Dayforce Inc.","DD":"DuPont de Nemours","DE":"Deere & Company","DECK":"Deckers Outdoor","DG":"Dollar General","DGX":"Quest Diagnostics","DHI":"D.R. Horton","DHR":"Danaher Corp","DIS":"Walt Disney Co.","DLR":"Digital Realty Trust","DLTR":"Dollar Tree","DOC":"Healthpeak Properties","DOV":"Dover Corp","DOW":"Dow Inc.","DPZ":"Domino's Pizza","DRI":"Darden Restaurants","DTE":"DTE Energy","DUK":"Duke Energy","DVA":"DaVita Inc.","DVN":"Devon Energy","DXCM":"Dexcom Inc.","EA":"Electronic Arts","EBAY":"eBay Inc.","ECL":"Ecolab Inc.","ED":"Consolidated Edison","EFX":"Equifax Inc.","EG":"Everest Group","EIX":"Edison International","EL":"Estee Lauder Companies","ELV":"Elevance Health","EMN":"Eastman Chemical","EMR":"Emerson Electric","ENPH":"Enphase Energy","EOG":"EOG Resources","EPAM":"EPAM Systems","EQIX":"Equinix Inc.","EQR":"Equity Residential","EQT":"EQT Corp","ES":"Eversource Energy","ESS":"Essex Property Trust","ETN":"Eaton Corp","ETR":"Entergy Corp","ETSY":"Etsy Inc.","EVRG":"Evergy Inc.","EW":"Edwards Lifesciences","EXC":"Exelon Corp","EXPD":"Expeditors Intl","EXPE":"Expedia Group","EXR":"Extra Space Storage","F":"Ford Motor Co.","FANG":"Diamondback Energy","FAST":"Fastenal Co.","FCX":"Freeport-McMoRan","FDS":"FactSet Research Systems","FDX":"FedEx Corp","FE":"FirstEnergy Corp","FFIV":"F5 Inc.","FICO":"Fair Isaac Corp","FIS":"Fidelity National Info","FITB":"Fifth Third Bancorp","FMC":"FMC Corp","FOX":"Fox Corp","FOXA":"Fox Corp Class A","FRT":"Federal Realty Investment","FSLR":"First Solar Inc.","FTNT":"Fortinet Inc.","FTV":"Fortive Corp","GD":"General Dynamics","GDDY":"GoDaddy Inc.","GE":"GE Aerospace","GEHC":"GE HealthCare Technologies","GEN":"Gen Digital Inc.","GILD":"Gilead Sciences","GIS":"General Mills","GL":"Globe Life Inc.","GLW":"Corning Inc.","GM":"General Motors","GNRC":"Generac Holdings","GOOGL":"Alphabet Inc. Class A","GOOG":"Alphabet Inc. Class C","GPC":"Genuine Parts Co.","GPN":"Global Payments","GS":"Goldman Sachs","GWW":"W.W. Grainger","HAL":"Halliburton Co.","HAS":"Hasbro Inc.","HBAN":"Huntington Bancshares","HCA":"HCA Healthcare","HD":"Home Depot","HIG":"Hartford Financial","HII":"Huntington Ingalls","HLT":"Hilton Worldwide","HOLX":"Hologic Inc.","HON":"Honeywell International","HPE":"Hewlett Packard Enterprise","HPQ":"HP Inc.","HRL":"Hormel Foods","HSIC":"Henry Schein","HST":"Host Hotels & Resorts","HSY":"Hershey Co.","HUBB":"Hubbell Inc.","HUM":"Humana Inc.","HWM":"Howmet Aerospace","IBM":"IBM Corp","ICE":"Intercontinental Exchange","IDXX":"IDEXX Laboratories","IEX":"IDEX Corp","IFF":"International Flavors","ILMN":"Illumina Inc.","INCY":"Incyte Corp","INTC":"Intel Corp","INTU":"Intuit Inc.","INVH":"Invitation Homes","IP":"International Paper","IQV":"IQVIA Holdings","IR":"Ingersoll Rand","IRM":"Iron Mountain","ISRG":"Intuitive Surgical","IT":"Gartner Inc.","ITW":"Illinois Tool Works","IVZ":"Invesco Ltd.","J":"Jacobs Solutions","JBHT":"J.B. Hunt Transport","JCI":"Johnson Controls","JKHY":"Jack Henry & Associates","JNJ":"Johnson & Johnson","JPM":"JPMorgan Chase","KEY":"KeyCorp","KEYS":"Keysight Technologies","KHC":"Kraft Heinz Co.","KIM":"Kimco Realty","KLAC":"KLA Corp","KMB":"Kimberly-Clark","KMI":"Kinder Morgan","KMX":"CarMax Inc.","KO":"Coca-Cola Co.","KR":"Kroger Co.","L":"Loews Corp","LDOS":"Leidos Holdings","LEN":"Lennar Corp","LH":"Laboratory Corp","LHX":"L3Harris Technologies","LIN":"Linde plc","LKQ":"LKQ Corp","LLY":"Eli Lilly and Co.","LMT":"Lockheed Martin","LNT":"Alliant Energy","LOW":"Lowe's Companies","LRCX":"Lam Research","LULU":"Lululemon Athletica","LUV":"Southwest Airlines","LVS":"Las Vegas Sands","LW":"Lamb Weston Holdings","LYB":"LyondellBasell Industries","LYV":"Live Nation Entertainment","MA":"Mastercard Inc.","MAA":"Mid-America Apartment","MAR":"Marriott International","MAS":"Masco Corp","MCD":"McDonald's Corp","MCHP":"Microchip Technology","MCK":"McKesson Corp","MCO":"Moody's Corp","MDLZ":"Mondelez International","MDT":"Medtronic plc","MET":"MetLife Inc.","META":"Meta Platforms","MGM":"MGM Resorts","MHK":"Mohawk Industries","MKC":"McCormick & Company","MKTX":"MarketAxess Holdings","MLM":"Martin Marietta Materials","MNST":"Monster Beverage","MO":"Altria Group","MOH":"Molina Healthcare","MOS":"Mosaic Co.","MPC":"Marathon Petroleum","MPWR":"Monolithic Power Systems","MRK":"Merck & Co.","MRNA":"Moderna Inc.","MS":"Morgan Stanley","MSCI":"MSCI Inc.","MSFT":"Microsoft Corp","MSI":"Motorola Solutions","MTB":"M&T Bank Corp","MTD":"Mettler-Toledo International","MU":"Micron Technology","NCLH":"Norwegian Cruise Line","NDAQ":"Nasdaq Inc.","NEE":"NextEra Energy","NEM":"Newmont Corp","NFLX":"Netflix Inc.","NI":"NiSource Inc.","NKE":"Nike Inc.","NOC":"Northrop Grumman","NOW":"ServiceNow Inc.","NRG":"NRG Energy","NSC":"Norfolk Southern","NTAP":"NetApp Inc.","NTRS":"Northern Trust","NUE":"Nucor Corp","NVDA":"Nvidia Corp","NVR":"NVR Inc.","NWS":"News Corp","NWSA":"News Corp Class A","NXPI":"NXP Semiconductors","O":"Realty Income Corp","ODFL":"Old Dominion Freight Line","OKE":"ONEOK Inc.","OMC":"Omnicom Group","ON":"ON Semiconductor","ORCL":"Oracle Corp","ORLY":"O'Reilly Automotive","OXY":"Occidental Petroleum","PAYC":"Paycom Software","PAYX":"Paychex Inc.","PCAR":"PACCAR Inc.","PCG":"PG&E Corp","PEG":"Public Service Enterprise","PEP":"PepsiCo Inc.","PFE":"Pfizer Inc.","PFG":"Principal Financial","PG":"Procter & Gamble","PGR":"Progressive Corp","PH":"Parker-Hannifin","PHM":"PulteGroup Inc.","PKG":"Packaging Corp","PLD":"Prologis Inc.","PM":"Philip Morris International","PNC":"PNC Financial Services","PNR":"Pentair plc","PNW":"Pinnacle West Capital","PODD":"Insulet Corp","POOL":"Pool Corp","PPG":"PPG Industries","PPL":"PPL Corp","PRU":"Prudential Financial","PSA":"Public Storage","PSX":"Phillips 66","PTC":"PTC Inc.","PWR":"Quanta Services","PYPL":"PayPal Holdings","QCOM":"Qualcomm Inc.","QRVO":"Qorvo Inc.","RCL":"Royal Caribbean Cruises","REG":"Regency Centers","REGN":"Regeneron Pharmaceuticals","RF":"Regions Financial","RJF":"Raymond James Financial","RL":"Ralph Lauren Corp","RMD":"ResMed Inc.","ROK":"Rockwell Automation","ROL":"Rollins Inc.","ROP":"Roper Technologies","ROST":"Ross Stores","RSG":"Republic Services","RTX":"RTX Corp","RVTY":"Revvity Inc.","SBAC":"SBA Communications","SBUX":"Starbucks Corp","SCHW":"Charles Schwab Corp","SJM":"J.M. Smucker Co.","SLB":"SLB (Schlumberger)","SMCI":"Super Micro Computer","SNA":"Snap-on Inc.","SNPS":"Synopsys Inc.","SO":"Southern Company","SPG":"Simon Property Group","SPGI":"S&P Global Inc.","SRE":"Sempra","STE":"STERIS plc","STLD":"Steel Dynamics","STT":"State Street Corp","STX":"Seagate Technology","STZ":"Constellation Brands","SWK":"Stanley Black & Decker","SWKS":"Skyworks Solutions","SYF":"Synchrony Financial","SYK":"Stryker Corp","SYY":"Sysco Corp","T":"AT&T Inc.","TAP":"Molson Coors Beverage","TDG":"TransDigm Group","TDY":"Teledyne Technologies","TECH":"Bio-Techne Corp","TEL":"TE Connectivity","TER":"Teradyne Inc.","TFC":"Truist Financial","TFX":"Teleflex Inc.","TGT":"Target Corp","TJX":"TJX Companies","TMO":"Thermo Fisher Scientific","TMUS":"T-Mobile US","TPR":"Tapestry Inc.","TRGP":"Targa Resources","TRMB":"Trimble Inc.","TROW":"T. Rowe Price Group","TRV":"Travelers Companies","TSCO":"Tractor Supply Co.","TSLA":"Tesla Inc.","TSN":"Tyson Foods","TT":"Trane Technologies","TTWO":"Take-Two Interactive","TXN":"Texas Instruments","TXT":"Textron Inc.","TYL":"Tyler Technologies","UAL":"United Airlines Holdings","UDR":"UDR Inc.","UHS":"Universal Health Services","ULTA":"Ulta Beauty","UNH":"UnitedHealth Group","UNP":"Union Pacific Corp","UPS":"United Parcel Service","URI":"United Rentals","USB":"U.S. Bancorp","V":"Visa Inc.","VFC":"V.F. Corp","VICI":"VICI Properties","VLO":"Valero Energy","VLTO":"Veralto Corp","VMC":"Vulcan Materials","VRSK":"Verisk Analytics","VRSN":"VeriSign Inc.","VRTX":"Vertex Pharmaceuticals","VTR":"Ventas Inc.","VTRS":"Viatris Inc.","VZ":"Verizon Communications","WAB":"Wabtec Corp","WAT":"Waters Corp","WDAY":"Workday Inc.","WBD":"Warner Bros. Discovery","WDC":"Western Digital","WELL":"Welltower Inc.","WFC":"Wells Fargo & Co.","WHR":"Whirlpool Corp","WM":"Waste Management","WMB":"Williams Companies","WMT":"Walmart Inc.","WRB":"W.R. Berkley Corp","WST":"West Pharmaceutical Services","WTW":"Willis Towers Watson","WY":"Weyerhaeuser Co.","WYNN":"Wynn Resorts","XEL":"Xcel Energy","XOM":"Exxon Mobil Corp","XYL":"Xylem Inc.","YUM":"Yum! Brands","ZBH":"Zimmer Biomet Holdings","ZBRA":"Zebra Technologies","ZTS":"Zoetis Inc.",
-  "RY.TO":"Royal Bank of Canada","TD.TO":"Toronto-Dominion Bank","BN.TO":"Brookfield Corp","ENB.TO":"Enbridge Inc.","CNR.TO":"Canadian National Railway","CP.TO":"Canadian Pacific Kansas City","BMO.TO":"Bank of Montreal","BNS.TO":"Bank of Nova Scotia","SHOP.TO":"Shopify Inc.","SU.TO":"Suncor Energy","CNQ.TO":"Canadian Natural Resources","MFC.TO":"Manulife Financial","TRP.TO":"TC Energy Corp","CM.TO":"CIBC","ATD.TO":"Alimentation Couche-Tard","WCN.TO":"Waste Connections","BAM.TO":"Brookfield Asset Management","SLF.TO":"Sun Life Financial","IFC.TO":"Intact Financial","TRI.TO":"Thomson Reuters","L.TO":"Loblaw Companies","POW.TO":"Power Corp of Canada","GWO.TO":"Great-West Lifeco","T.TO":"TELUS Corp","BCE.TO":"BCE Inc.","WPM.TO":"Wheaton Precious Metals","ABX.TO":"Barrick Gold","AEM.TO":"Agnico Eagle Mines","NTR.TO":"Nutrien Ltd.","FTS.TO":"Fortis Inc.","DOL.TO":"Dollarama Inc.","CSU.TO":"Constellation Software","QSR.TO":"Restaurant Brands Intl","H.TO":"Hydro One","GFL.TO":"GFL Environmental","WSP.TO":"WSP Global","MRU.TO":"Metro Inc.","RCI-B.TO":"Rogers Communications","IMO.TO":"Imperial Oil","FFH.TO":"Fairfax Financial"
-};
-
-// ─── SCREENER LOGIC ───────────────────────────────────────────────────────────
-function calcEMA(prices, period) {
-  const k = 2 / (period + 1);
-  const ema = new Array(prices.length);
-  ema[0] = prices[0];
-  for (let i = 1; i < prices.length; i++) ema[i] = prices[i] * k + ema[i - 1] * (1 - k);
-  return ema;
-}
-
-function calcWeeklyEMA(ohlcv, period) {
-  const weeklyCloses = [];
-  let weekClose = null;
-  for (const d of ohlcv) {
-    const dt = new Date(d.date + 'T12:00:00Z');
-    weekClose = d.close;
-    if (dt.getDay() === 5) { weeklyCloses.push(weekClose); weekClose = null; }
-  }
-  if (weekClose !== null) weeklyCloses.push(weekClose);
-  if (weeklyCloses.length < period) return null;
-  return calcEMA(weeklyCloses, period);
-}
-
-function checkWeeklyTrend(ohlcv) {
-  const wema = calcWeeklyEMA(ohlcv, WEEKLY_EMA_PERIOD);
-  if (!wema) return true;
-  return ohlcv[ohlcv.length - 1].close > wema[wema.length - 1];
-}
-
-function findValidReclaim(c, mu, md) {
-  const n = c.length;
-  for (let i = n - 1; i >= 1; i--) {
-    if (c[i] > mu[i] && c[i - 1] <= mu[i - 1]) {
-      let belowIdx = -1;
-      for (let j = i - 1; j >= Math.max(0, i - MAX_RECLAIM_BARS); j--) {
-        if (c[j] < md[j]) { belowIdx = j; break; }
-      }
-      if (belowIdx === -1) continue;
-      let epStart = belowIdx;
-      for (let k = belowIdx - 1; k >= 0; k--) {
-        if (c[k] >= mu[k]) { epStart = k + 1; break; }
-        if (k === 0) epStart = 0;
-      }
-      let valid = true;
-      for (let k = i + 1; k < n; k++) { if (c[k] < md[k]) { valid = false; break; } }
-      if (!valid) continue;
-      return { reclaimIdx: i, belowEpStart: epStart };
-    }
-  }
-  return null;
-}
-
-function checkVolumeConfirmation(ohlcv, reclaimIdx) {
-  const volumes = ohlcv.map(d => d.volume || 0);
-  const reclaimVol = volumes[reclaimIdx];
-  if (!reclaimVol) return { volumeOk: true, volRatio: 1 };
-  const window = volumes.slice(Math.max(0, reclaimIdx - 20), reclaimIdx);
-  if (!window.length) return { volumeOk: true, volRatio: 1 };
-  const avgVol = window.reduce((s, v) => s + v, 0) / window.length;
-  if (!avgVol) return { volumeOk: true, volRatio: 1 };
-  const volRatio = reclaimVol / avgVol;
-  return { volumeOk: volRatio >= VOLUME_CONFIRM_RATIO, volRatio };
-}
-
-function findWeightedSwingHigh(ohlcv) {
-  const n = ohlcv.length;
-  const winStart = n - SWING_HIGH_MAX_BARS, winEnd = n - SWING_HIGH_MIN_BARS;
-  if (winStart < 0 || winEnd < 0 || winStart >= winEnd) return null;
-  let bestWeighted = -Infinity, bestRaw = -Infinity, bestIdx = -1;
-  for (let i = winStart; i < winEnd; i++) {
-    const barsFromEnd = n - 1 - i;
-    const weight = barsFromEnd <= 126 ? 1.0 : barsFromEnd <= 252 ? 0.85 : 0.70;
-    const weighted = ohlcv[i].high * weight;
-    if (weighted > bestWeighted) { bestWeighted = weighted; bestRaw = ohlcv[i].high; bestIdx = i; }
-  }
-  if (bestIdx === -1) return null;
-  return { swingHigh: bestRaw, swingDate: ohlcv[bestIdx].date };
-}
-
-function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
-
-// ─── QUALITY HELPERS (aligned with Screener page) ────────────────────────────
-function st_calcRelativeStrength(ohlcv, benchmarkOHLCV) {
-  const n = ohlcv.length;
-  const bn = benchmarkOHLCV ? benchmarkOHLCV.length : 0;
-  if (n < 22 || bn < 22) return { rsOk: true, rsValue: null };
-  const stockRet = (ohlcv[n-1].close - ohlcv[n-21].close) / ohlcv[n-21].close * 100;
-  const benchRet = (benchmarkOHLCV[bn-1].close - benchmarkOHLCV[bn-21].close) / benchmarkOHLCV[bn-21].close * 100;
-  const rsValue  = parseFloat((stockRet - benchRet).toFixed(2));
-  return { rsOk: rsValue > 0, rsValue };
-}
-
-function st_check52WHighProximity(ohlcv) {
-  const n = ohlcv.length;
-  const bars52w = Math.min(252, n);
-  const slice = ohlcv.slice(n - bars52w);
-  const high52w = Math.max(...slice.map(d => d.high));
-  const lastClose = ohlcv[n - 1].close;
-  const pctBelow52w = (high52w - lastClose) / high52w;
-  return { proximityOk: pctBelow52w <= ST_PROXIMITY_52W_MAX, pctBelow52w, high52w };
-}
-
-function st_checkTightStructure(ohlcv) {
-  const n = ohlcv.length;
-  if (n < 20) return { tight: false, atrRatio: null };
-  const recent   = ohlcv.slice(n - 10);
-  const earlier  = ohlcv.slice(n - 20, n - 10);
-  const avgRangeRecent  = recent.reduce((s, d) => s + (d.high - d.low), 0) / 10 / ohlcv[n-1].close * 100;
-  const avgRangeEarlier = earlier.reduce((s, d) => s + (d.high - d.low), 0) / 10 / ohlcv[n-10].close * 100;
-  const atrRatio = avgRangeEarlier > 0 ? parseFloat((avgRangeRecent / avgRangeEarlier).toFixed(2)) : null;
-  const tight = atrRatio !== null && atrRatio < 0.85;
-  return { tight, atrRatio };
-}
-
-// ─── COMPONENT-BASED SCORING (identical to Screener page) ────────────────────
-function st_computeScoreComponents(type, pctBelowATH, pctAboveEMA, barsSince, volRatio, momentum20, rsValue, tight) {
-  const bd = {};
-  // 1. Volume strength
-  if      (volRatio >= 1.5) bd.vol = +10;
-  else if (volRatio >= 1.2) bd.vol = +6;
-  else if (volRatio >= 1.0) bd.vol = +2;
-  else                       bd.vol = -5;
-  // 2. Relative strength vs index
-  if      (rsValue === null)  bd.rs = 0;
-  else if (rsValue > 5)       bd.rs = +10;
-  else if (rsValue > 2)       bd.rs = +5;
-  else if (rsValue >= 0)      bd.rs = +2;
-  else                        bd.rs = -10;
-  // 3. EMA distance
-  if      (pctAboveEMA <= 8)  bd.ema = +10;
-  else if (pctAboveEMA <= 15) bd.ema = +5;
-  else if (pctAboveEMA <= 20) bd.ema = -10;
-  else                         bd.ema = -20;
-  // 4. Structure
-  if (tight) {
-    bd.str = +10;
-  } else {
-    bd.str = (type === 'ath') ? 0 : -5;
-  }
-  // 5. Reclaim recency / age decay
-  if      (barsSince <= 20)  bd.age = +10;
-  else if (barsSince <= 40)  bd.age = +5;
-  else if (barsSince <= 60)  bd.age = 0;
-  else if (barsSince <= 100) bd.age = -10;
-  else                        bd.age = -20;
-  // 6. Distance to ATH
-  if      (pctBelowATH <= 1)   bd.ath = +10;
-  else if (pctBelowATH <= 5)   bd.ath = +5;
-  else if (pctBelowATH <= 10)  bd.ath = 0;
-  else if (pctBelowATH <= 20)  bd.ath = -5;
-  else                          bd.ath = -15;
-  // 7. Momentum (20d)
-  if      (momentum20 > 5)  bd.mom = +5;
-  else if (momentum20 >= 0) bd.mom = +2;
-  else                       bd.mom = -8;
-  return bd;
-}
-
-function st_scoreATHEnhanced(pctBelowATH, pctAboveEMA, barsSince, belowBars, volRatio, momentum20, weeklyTrendOk, rsValue, tight) {
-  const base = 60;
-  const bd = st_computeScoreComponents('ath', pctBelowATH, pctAboveEMA, barsSince, volRatio, momentum20, rsValue, tight);
-  let prob = base + bd.vol + bd.rs + bd.ema + bd.str + bd.age + bd.ath + bd.mom;
-  if (rsValue !== null && rsValue < -1) prob = Math.min(prob, 50);
-  return clamp(Math.round(prob), 40, 96);
-}
-
-function st_scoreSwingEnhanced(pctToResistance, pctAboveEMA, barsSince, belowBars, pctBelowATH, volRatio, momentum20, weeklyTrendOk, rsValue, tight) {
-  const base = 55;
-  const bd = st_computeScoreComponents('swing', pctBelowATH, pctAboveEMA, barsSince, volRatio, momentum20, rsValue, tight);
-  let prob = base + bd.vol + bd.rs + bd.ema + bd.str + bd.age + bd.ath + bd.mom;
-  if (rsValue !== null && rsValue < -1) prob = Math.min(prob, 50);
-  return clamp(Math.round(prob), 35, 90);
-}
-
-// Legacy wrappers kept for safety (not called by new runScreenOnOHLCV)
-function scoreATH(pctBelowATH, pctAboveEMA, barsSince, belowBars, volRatio, momentum20, weeklyTrendOk) {
-  let p = 88 - pctBelowATH * 4.5 - barsSince * 0.035 + clamp(pctAboveEMA * 0.3, -5, 6) - belowBars * 0.7;
-  p += volRatio >= VOLUME_CONFIRM_RATIO ? 4 : volRatio >= 1.0 ? 2 : 0;
-  p += clamp(momentum20 * 0.3, -4, 5);
-  if (!weeklyTrendOk) p -= WEEKLY_TREND_PENALTY;
-  return clamp(Math.round(p), 40, 96);
-}
-
-function scoreSwing(pctToRes, pctAboveEMA, barsSince, belowBars, pctBelowATH, volRatio, momentum20, weeklyTrendOk) {
-  let p = 78 - pctToRes * 5.5 - barsSince * 0.05 + clamp(pctAboveEMA * 0.3, -5, 5) - belowBars * 0.7 - pctBelowATH * 1.1;
-  p += volRatio >= VOLUME_CONFIRM_RATIO ? 4 : volRatio >= 1.0 ? 2 : 0;
-  p += clamp(momentum20 * 0.3, -4, 5);
-  if (!weeklyTrendOk) p -= WEEKLY_TREND_PENALTY;
-  return clamp(Math.round(p), 35, 90);
-}
-
-// Fetch with exponential backoff + allorigins fallback
-async function fetchWithBackoff(url, maxRetries = 3) {
-  const proxies = [
-    u => `https://corsproxy.io/?url=${encodeURIComponent(u)}`,
-    u => `https://api.allorigins.win/raw?url=${encodeURIComponent(u)}`,
-  ];
-  let lastErr;
-  for (let attempt = 0; attempt < maxRetries; attempt++) {
-    const proxy = attempt < 2 ? proxies[0] : proxies[1];
-    try {
-      const res = await fetch(proxy(url), { signal: AbortSignal.timeout(15000) });
-      if (res.status === 429) { await new Promise(r => setTimeout(r, Math.pow(2, attempt) * 1000)); lastErr = new Error('429'); continue; }
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      return await res.json();
-    } catch (e) {
-      lastErr = e;
-      if (attempt < maxRetries - 1) await new Promise(r => setTimeout(r, Math.pow(2, attempt) * 600));
-    }
-  }
-  throw lastErr;
-}
-
-async function fetchOHLCV(ticker) {
-  const url = `https://query2.finance.yahoo.com/v8/finance/chart/${ticker}?interval=1d&range=5y`;
-  const json = await fetchWithBackoff(url);
-  const result = json.chart?.result?.[0];
-  if (!result) throw new Error('No data');
-  const ts = result.timestamp, q = result.indicators.quote[0];
-  const ac = result.indicators.adjclose?.[0]?.adjclose || q.close;
-  return ts.map((t, i) => ({
-    date: new Date(t * 1000).toISOString().split('T')[0],
-    high: q.high[i], low: q.low[i], close: ac[i], volume: q.volume[i]
-  })).filter(d => d.close != null && d.high != null && d.close > 0);
-}
-
-async function fetchLatestPrice(ticker) {
-  const url = `https://query2.finance.yahoo.com/v8/finance/chart/${ticker}?interval=1d&range=5d`;
-  const json = await fetchWithBackoff(url);
-  const result = json.chart?.result?.[0];
-  const closes = result?.indicators?.adjclose?.[0]?.adjclose || result?.indicators?.quote?.[0]?.close;
-  if (!closes) return null;
-  for (let i = closes.length - 1; i >= 0; i--) { if (closes[i] != null) return closes[i]; }
-  return null;
-}
-
-// CAD/USD rate cache (Change 6)
-let cadUsdRate = null;
-async function fetchCadUsd() {
-  if (cadUsdRate) return cadUsdRate;
+// ─── MARKET OPEN CHECK (local, for refresh gating) ────────────────────────
+function _stMarketMightBeOpen() {
+  // Lightweight check: skip auto-refresh on weekends and outside 9:00–16:30 ET
   try {
-    const p = await fetchLatestPrice('CADUSD=X');
-    if (p) { cadUsdRate = p; document.getElementById('cadUsdDisplay').textContent = p.toFixed(4); }
-  } catch {}
-  return cadUsdRate || 0.74; // fallback
+    const et  = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/New_York' }));
+    const dow  = et.getDay();
+    const mins = et.getHours() * 60 + et.getMinutes();
+    if (dow === 0 || dow === 6) return false;
+    return mins >= 540 && mins < 990; // 9:00 AM – 4:30 PM ET
+  } catch { return true; } // err on side of fetching
 }
 
-function toUSD(priceCAD) {
-  return priceCAD * (cadUsdRate || 0.74);
-}
+// ─── FETCH PORTFOLIO STATE ─────────────────────────────────────────────────
+async function fetchPortfolioState() {
+  _setSyncBadge && _setSyncBadge('local');
+  const syncEl = document.getElementById('stSyncStatus');
+  if (syncEl) syncEl.textContent = '⏳ Syncing…';
 
-function runScreenOnOHLCV(ticker, ohlcv) {
-  // ── Step 1: EMA reclaim validation (unchanged) ────────────────────────────
-  const n = ohlcv.length;
-  if (n < EMA_PERIOD + 10) return null;
-  const closes = ohlcv.map(d => d.close);
-  const highs  = ohlcv.map(d => d.high);
-  const dates  = ohlcv.map(d => d.date);
-  const ema = calcEMA(closes, EMA_PERIOD);
-  const mu  = ema.map(e => e * (1 + MA_BUFFER));
-  const md  = ema.map(e => e * (1 - MA_BUFFER));
-  const rec = findValidReclaim(closes, mu, md);
-  if (!rec) return null;
-  const { reclaimIdx, belowEpStart } = rec;
-  const belowEpisodeBars = reclaimIdx - belowEpStart;
-  if (belowEpisodeBars > MAX_BELOW_BARS) return null;
-
-  // Common computed values
-  const lastClose    = closes[n - 1];
-  const reclaimClose = closes[reclaimIdx];
-  const currentATH   = Math.max(...highs);
-  const pctBelowATH  = (currentATH - lastClose) / currentATH;
-  const currentEMA   = ema[n - 1];
-  const pctAboveEMA  = (lastClose - currentEMA) / currentEMA * 100;
-  const barsSince    = n - 1 - reclaimIdx;
-  const { volRatio } = checkVolumeConfirmation(ohlcv, reclaimIdx);
-  const weeklyTrendOk = checkWeeklyTrend(ohlcv);
-  const momentum20   = n > 20 ? (closes[n-1] - closes[n-21]) / closes[n-21] * 100 : 0;
-
-  // ── Step 2: Hard Filters (aligned with Screener page) ────────────────────
-  // Filter 1: Volume multiple >= 0.8
-  if (volRatio < 0.8) return null;
-  // Filter 2: EMA distance <= 25%
-  if (pctAboveEMA > ST_EMA_EXTENSION_MAX) return null;
-  // Filter 3: Reclaim age <= 120 bars
-  if (barsSince > 120) return null;
-  // Filter 4: 52-week high proximity (not more than 25% below 52W high)
-  const { proximityOk } = st_check52WHighProximity(ohlcv);
-  if (!proximityOk) return null;
-
-  // ── Step 3: Quality metrics for scoring ──────────────────────────────────
-  const { tight } = st_checkTightStructure(ohlcv);
-  const exchange   = EXCHANGE_MAP[ticker] || 'US';
-  const benchKey   = exchange === 'TSX' ? 'XIU.TO' : 'SPY';
-  const benchOHLCV = stBenchmarkCache[benchKey] || null;
-  const { rsValue } = st_calcRelativeStrength(ohlcv, benchOHLCV);
-
-  // ── Step 4: Score using enhanced component-based system ──────────────────
-  if (pctBelowATH <= ATH_THRESHOLD) {
-    let prob = st_scoreATHEnhanced(
-      pctBelowATH * 100, pctAboveEMA, barsSince, belowEpisodeBars,
-      volRatio, momentum20, weeklyTrendOk, rsValue, tight
-    );
-    return { type: 'ath', prob: Math.round(prob), lastClose, reclaimClose, reclaimDate: dates[reclaimIdx] };
-  }
-  if (pctBelowATH <= S2_ATH_MAX_DRAWDOWN) {
-    if (lastClose >= currentATH * (1 - ATH_THRESHOLD)) return null;
-    const swing = findWeightedSwingHigh(ohlcv);
-    if (!swing) return null;
-    const pctToSwing = (swing.swingHigh - lastClose) / swing.swingHigh;
-    if (pctToSwing < SWING_NEAR_MIN || pctToSwing > SWING_NEAR_MAX) return null;
-    let prob = st_scoreSwingEnhanced(
-      pctToSwing * 100, pctAboveEMA, barsSince, belowEpisodeBars,
-      pctBelowATH * 100, volRatio, momentum20, weeklyTrendOk, rsValue, tight
-    );
-    return { type: 'swing', prob: Math.round(prob), lastClose, reclaimClose, reclaimDate: dates[reclaimIdx] };
-  }
-  return null;
-}
-
-// ─── STATE MANAGEMENT ─────────────────────────────────────────────────────────
-const STORAGE_KEY = 'ema_tracker_v3';
-
-function defaultState() {
-  return {
-    trades: [], pendingEntries: [], screenerRuns: [], notes: [],
-    totalCapital: TOTAL_CAPITAL,
-    autoTradePaused: false,
-    autoTradePauseUntil: null,
-    ruleVersion: RULE_VERSION,
-  };
-}
-
-// Migrate from older versions
-function migrate() {
   try {
-    // v2 → v3
-    const rawV2 = localStorage.getItem('ema_tracker_v2');
-    if (rawV2) {
-      const v2 = JSON.parse(rawV2);
-      if (v2) {
-        v2.pendingEntries = v2.pendingEntries || [];
-        v2.autoTradePaused = false;
-        v2.autoTradePauseUntil = null;
-        v2.ruleVersion = RULE_VERSION;
-        return v2;
-      }
-    }
-    // v1 → v3
-    const rawV1 = localStorage.getItem('ema_tracker_v1');
-    if (rawV1) {
-      const v1 = JSON.parse(rawV1);
-      if (v1) {
-        v1.trades = (v1.trades || []).map(t => ({
-          ...t,
-          sharesTotal: t.shares, sharesOpen: t.shares,
-          partialExitDone: false, partialExitPrice: null, partialExitDate: null,
-          partialExitTime: null, partialExitPnl: null,
-          partialTarget: +(t.buyPrice * 1.03).toFixed(4),
-          finalTarget:   +(t.buyPrice * 1.05).toFixed(4),
-          highestPrice: t.currentPrice || t.buyPrice,
-          trailingStop: +((t.currentPrice || t.buyPrice) * 0.98).toFixed(4),
-        }));
-        v1.pendingEntries = [];
-        v1.autoTradePaused = false;
-        v1.autoTradePauseUntil = null;
-        v1.ruleVersion = RULE_VERSION;
-        return v1;
-      }
-    }
-  } catch {}
-  return null;
-}
+    const url = `${PORTFOLIO_WEBAPP_URL}?path=tracker&t=${Date.now()}`;
+    const res = await fetch(url, {
+      method: 'GET',
+      cache: 'no-store',
+      signal: AbortSignal.timeout(20000),
+    });
 
-// STATE starts from localStorage as a fast first render, but initShortTerm
-// always overwrites it with the definitive Sheets version before showing data
-let STATE = (() => {
-  try {
-    const v3 = JSON.parse(localStorage.getItem(STORAGE_KEY));
-    if (v3) {
-      v3.totalCapital = TOTAL_CAPITAL;
-      return v3;
-    }
-    return migrate() || defaultState();
-  } catch { return defaultState(); }
-})();
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const json = await res.json();
 
-// ─── PROTECT LIVE POSITIONS SAFEGUARD ────────────────────────────────────────
-// Ensures no live/partial trade is ever silently removed.
-// Must be called before every saveState() and renderAll().
-function protectLivePositions() {
-  // Never remove a live or partial trade unless it was properly closed
-  STATE.trades = STATE.trades.filter(t => {
-    if (t.status === 'live' || t.status === 'partial') return true; // always keep open
-    return true; // always keep closed trades (needed for history)
-  });
-}
+    if (json.error) throw new Error(json.error);
+    if (!json.data)  throw new Error('No data in response');
 
-function saveState() {
-  protectLivePositions();          // BUG 4: safeguard before every save
-  STATE.lastUpdated = Date.now();  // BUG 3: timestamp for cloud sync comparison
-  try { localStorage.setItem(STORAGE_KEY, JSON.stringify(STATE)); } catch {}
-  cloudWrite('tracker', STATE);
-}
+    portfolioState = json.data;
+    portfolioState.totalCapital = portfolioState.totalCapital || 10000;
 
-async function loadStateFromCloud() {
-  return cloudRead('tracker', null);
-}
+    _renderAll();
+    _setSyncBadge && _setSyncBadge('synced');
+    if (syncEl) syncEl.textContent = '✓ Synced ' + new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
 
-// ─── TIME HELPERS ─────────────────────────────────────────────────────────────
-// ─── RELIABLE ET TIMEZONE HELPERS ────────────────────────────────────────────
-// Replaces the buggy toLocaleString() pattern which fails in non-US locales/timezones
-// (e.g. IST users got wrong getDay() results causing weekend trades to slip through)
-function _getETparts() {
-  const fmt = new Intl.DateTimeFormat('en-US', {
-    timeZone: 'America/New_York',
-    year: 'numeric', month: '2-digit', day: '2-digit',
-    hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false
-  });
-  const parts = {};
-  fmt.formatToParts(new Date()).forEach(p => { if (p.type !== 'literal') parts[p.type] = parseInt(p.value, 10); });
-  // hour12:false returns 24 for midnight in some browsers — normalise to 0
-  if (parts.hour === 24) parts.hour = 0;
-  return parts; // { year, month, day, hour, minute, second, weekday? }
-}
-function nowET() {
-  const p = _getETparts();
-  // Construct a Date whose LOCAL fields match ET fields (safe for getDay/getHours/etc)
-  return new Date(p.year, p.month - 1, p.day, p.hour, p.minute, p.second);
-}
-function todayET() { const et = nowET(); return `${et.getFullYear()}-${String(et.getMonth()+1).padStart(2,'0')}-${String(et.getDate()).padStart(2,'0')}`; }
-function timeET() { const et = nowET(); return `${String(et.getHours()).padStart(2,'0')}:${String(et.getMinutes()).padStart(2,'0')}`; }
-function formatTimeEST(t) {
-  if (!t || t === '—') return t;
-  const parts = t.split(':');
-  if (parts.length < 2) return t;
-  let h = parseInt(parts[0], 10), m = parts[1];
-  const ampm = h >= 12 ? 'PM' : 'AM';
-  h = h % 12 || 12;
-  return `${String(h).padStart(2,'0')}:${m} ${ampm} EST`;
-}
-function isWeekdayET() { const d = nowET().getDay(); return d >= 1 && d <= 5; }
-function isMarketOpen() {
-  if (!isWeekdayET()) return false;
-  const today = todayET();
-  if (NYSE_HOLIDAYS.has(today)) return false;
-  const et = nowET(), mins = et.getHours() * 60 + et.getMinutes();
-  return mins >= 570 && mins < 960;
-}
-function isTSXOpen() {
-  if (!isWeekdayET()) return false;
-  const today = todayET();
-  if (TSX_HOLIDAYS.has(today)) return false;
-  const et = nowET(), mins = et.getHours() * 60 + et.getMinutes();
-  return mins >= 570 && mins < 960;
-}
-function shouldSkipTodayUS()  { return NYSE_HOLIDAYS.has(todayET()); }
-function shouldSkipTodayTSX() { return TSX_HOLIDAYS.has(todayET()); }
+    // Persist to localStorage as offline cache
+    try { localStorage.setItem('st_portfolio_cache', JSON.stringify(portfolioState)); } catch {}
 
-// ─── DATE FORMAT HELPER ───────────────────────────────────────────────────────
-const MONTH_NAMES = ['January','February','March','April','May','June','July','August','September','October','November','December'];
-function formatDate(dateStr) {
-  // Input: YYYY-MM-DD  Output: 02-April-2026
-  if (!dateStr || dateStr === '—') return '—';
-  const parts = dateStr.split('-');
-  if (parts.length !== 3) return dateStr;
-  const [y, m, d] = parts;
-  return `${d}-${MONTH_NAMES[parseInt(m,10)-1]}-${y}`;
-}
+  } catch (err) {
+    console.error('[ST Portfolio] fetch error:', err);
+    _setSyncBadge && _setSyncBadge('error');
+    if (syncEl) syncEl.textContent = '⚠ Sync failed – ' + err.message;
 
-// ─── CAD/USD + CAPITAL ────────────────────────────────────────────────────────
-function toUSDprice(price, ticker) {
-  if (EXCHANGE_MAP[ticker] === 'TSX') return price * (cadUsdRate || 0.74);
-  return price;
-}
-
-function deployedCapital() {
-  return STATE.trades
-    .filter(t => t.status === 'live' || t.status === 'partial')
-    .reduce((s, t) => s + (t.partialExitDone ? t.invested / 2 : t.invested), 0);
-}
-function availableCapital() { return STATE.totalCapital - deployedCapital(); }
-function realizedPnL() {
-  let total = 0;
-  for (const t of STATE.trades) {
-    if (t.status !== 'live' && t.status !== 'partial') total += t.pnl || 0;
-    else if (t.partialExitDone && t.partialExitPnl != null) total += t.partialExitPnl;
-  }
-  return total;
-}
-function unrealizedPnL() {
-  let total = 0;
-  for (const t of STATE.trades.filter(x => x.status === 'live' || x.status === 'partial')) {
-    const cp = t.currentPrice || t.buyPrice;
-    const openPnl = (cp - t.buyPrice) * (t.sharesOpen || t.sharesTotal || 0);
-    total += openPnl;
-  }
-  return total;
-}
-
-// ─── REGIME CACHE ─────────────────────────────────────────────────────────────
-let regimeCache = null;
-let stBenchmarkCache = {}; // { 'SPY': ohlcvArray, 'XIU.TO': ohlcvArray } — used for RS scoring
-async function checkRegime() {
-  if (regimeCache) return regimeCache;
-  const r = { spyAbove: true, xiuAbove: true };
-  try { const d = await fetchOHLCV('SPY'); stBenchmarkCache['SPY'] = d; if (d.length >= EMA_PERIOD) { const c = d.map(x=>x.close), ema = calcEMA(c, EMA_PERIOD); r.spyAbove = c[c.length-1] > ema[ema.length-1]; } } catch {}
-  try { const d = await fetchOHLCV('XIU.TO'); stBenchmarkCache['XIU.TO'] = d; if (d.length >= EMA_PERIOD) { const c = d.map(x=>x.close), ema = calcEMA(c, EMA_PERIOD); r.xiuAbove = c[c.length-1] > ema[ema.length-1]; } } catch {}
-  regimeCache = r;
-  updateRegimeBanner(r);
-  return r;
-}
-function updateRegimeBanner(r) {
-  const b = document.getElementById('regimeBanner'), d = document.getElementById('regimeCautionDetail');
-  const t = document.getElementById('regimeTag');
-  if (!r.spyAbove && !r.xiuAbove) {
-    b.style.display = 'flex'; d.textContent = 'Both SPY & XIU.TO below 220 EMA — all auto-entries suppressed.';
-    if (t) t.textContent = '⚠ Both Regime Caution';
-  } else if (!r.spyAbove) {
-    b.style.display = 'flex'; d.textContent = 'SPY below 220 EMA — US auto-entries suppressed.';
-    if (t) t.textContent = '⚠ US Regime Caution';
-  } else if (!r.xiuAbove) {
-    b.style.display = 'flex'; d.textContent = 'XIU.TO below 220 EMA — CA auto-entries suppressed.';
-    if (t) t.textContent = '⚠ CA Regime Caution';
-  } else {
-    b.style.display = 'none';
-    if (t) t.textContent = '';
-  }
-}
-
-// ─── TRADE LOGIC ─────────────────────────────────────────────────────────────
-function isAlreadyHolding(ticker) {
-  return STATE.trades.some(t => t.ticker === ticker && (t.status === 'live' || t.status === 'partial'));
-}
-function isAlreadyPending(ticker) {
-  return STATE.pendingEntries.some(p => p.ticker === ticker);
-}
-function deduplicateLiveTrades() {
-  const seen = new Set();
-  const toClose = [];
-  for (const t of STATE.trades) {
-    if (t.status !== 'live' && t.status !== 'partial') continue;
-    if (seen.has(t.ticker)) {
-      toClose.push(t.id);
-    } else {
-      seen.add(t.ticker);
-    }
-  }
-  if (toClose.length === 0) return;
-  for (const id of toClose) {
-    const t = STATE.trades.find(x => x.id === id);
-    if (!t) continue;
-    t.status = 'closedmanual';
-    t.sellDate = todayET();
-    t.sellTime = timeET();
-    t.sellPrice = t.buyPrice;
-    t.exitReason = 'duplicate';
-    t.pnl = '0.00';
-    t.pnlPct = '0.00';
-    t.currentPrice = t.buyPrice;
-  }
-  saveState();
-  renderAll();
-  notify(`Cleaned up ${toClose.length} duplicate live position${toClose.length > 1 ? 's' : ''}. Closed at buy price with zero P&L.`);
-}
-function isInCooldown(ticker) {
-  // 48h cooldown after stop loss (Change 7)
-  const now = Date.now();
-  return STATE.trades.some(t => {
-    if (t.ticker !== ticker || t.exitReason !== 'loss') return false;
-    if (!t.sellDate || !t.sellTime) return false;
-    const sellMs = new Date(`${t.sellDate}T${t.sellTime}:00`).getTime();
-    return (now - sellMs) < COOLDOWN_MS;
-  });
-}
-function isAutoTradePaused() {
-  if (!STATE.autoTradePaused) return false;
-  if (STATE.autoTradePauseUntil && Date.now() > STATE.autoTradePauseUntil) {
-    STATE.autoTradePaused = false; STATE.autoTradePauseUntil = null; saveState();
-    return false;
-  }
-  return true;
-}
-
-// Check for double-stop within 7 days (Change 7) and auto-pause
-function checkDoubleStop() {
-  const now = Date.now();
-  const recentLosses = STATE.trades.filter(t => {
-    if (t.exitReason !== 'loss' || !t.sellDate || !t.sellTime) return false;
-    const sellMs = new Date(`${t.sellDate}T${t.sellTime}:00`).getTime();
-    return (now - sellMs) < DOUBLE_STOP_WINDOW_MS;
-  });
-  if (recentLosses.length >= 2 && !STATE.autoTradePaused) {
-    STATE.autoTradePaused = true;
-    STATE.autoTradePauseUntil = now + DOUBLE_STOP_PAUSE_MS;
-    saveState();
-    notify('⏸ Auto-Trade Paused: 2 stop losses in 7 days. Resumes in 1 week.');
-    // Add Rule Change Exit note
-    STATE.notes.unshift({ ticker: 'System', signalType: 'General', outcome: 'Rule Change Exit',
-      text: `Auto-trade paused: 2 stop losses within 7 days (${recentLosses.map(t=>t.ticker).join(', ')}). Resumes ${formatDate(new Date(STATE.autoTradePauseUntil).toISOString().split('T')[0])}.`,
-      ts: todayET(), stopTriggerTs: todayET() });
-  }
-  updatePauseBanner();
-}
-
-function updatePauseBanner() {
-  const b = document.getElementById('pauseBanner'), r = document.getElementById('pauseResumeDate');
-  if (STATE.autoTradePaused && STATE.autoTradePauseUntil) {
-    b.style.display = 'flex';
-    r.textContent = formatDate(new Date(STATE.autoTradePauseUntil).toISOString().split('T')[0]);
-  } else {
-    b.style.display = 'none';
-  }
-}
-
-// Create pending entry (entry timing: wait for next-session confirmation) (Change 5)
-function createPendingEntry(ticker, type, prob, reclaimClose, runTime) {
-  if (isAlreadyHolding(ticker) || isInCooldown(ticker)) return null;
-  if (availableCapital() < TRADE_SIZE) return null;
-  if (isAutoTradePaused()) return null;
-
-  // UPSERT: if a pending entry already exists for this ticker, UPDATE it with
-  // fresh data from the latest screener run instead of skipping it.
-  // This ensures prob, reclaimClose and runTime always reflect the newest signal.
-  const existingIdx = STATE.pendingEntries.findIndex(p => p.ticker === ticker);
-  if (existingIdx !== -1) {
-    const existing = STATE.pendingEntries[existingIdx];
-    existing.prob        = prob;
-    existing.reclaimClose = reclaimClose;
-    existing.runTime     = runTime;
-    existing.signalDate  = todayET();
-    existing.type        = type;
-    return 'updated';
-  }
-
-  // New entry — only block if already holding (not already pending, since we upsert above)
-  STATE.pendingEntries.push({
-    id: `p_${Date.now()}_${Math.random().toString(36).slice(2,5)}`,
-    ticker, type, prob, reclaimClose, runTime,
-    signalDate: todayET(), exchange: EXCHANGE_MAP[ticker] || 'US',
-  });
-  return true;
-}
-
-// Confirm pending entries: if today's close > reclaimClose → create trade
-async function confirmPendingEntries() {
-  if (!STATE.pendingEntries.length) return;
-  let changed = false;
-  const toRemove = [];
-  for (const p of STATE.pendingEntries) {
-    try {
-      // ── Market-hours guard: only confirm during live market session ──────
-      // Never convert a pending entry to a live trade outside market hours
-      // (weekends, holidays, pre-market, after-hours)
-      const exchange = EXCHANGE_MAP[p.ticker] || 'US';
-      const marketOpen = exchange === 'TSX' ? isTSXOpen() : isMarketOpen();
-      if (!marketOpen) continue; // skip — market is closed, check again next tick
-
-      const price = await fetchLatestPrice(p.ticker);
-      if (!price) continue;
-      // Confirm: price still above reclaim close (next-session close confirmation)
-      if (price > p.reclaimClose) {
-        const priceUSD = exchange === 'TSX' ? toUSD(price) : price;
-        if (isAlreadyHolding(p.ticker)) { toRemove.push(p.id); continue; }
-        const trade = createTrade(p.ticker, p.type, p.prob, priceUSD, p.runTime);
-        if (trade) {
-          notify(`✅ Entry confirmed: ${p.ticker} at $${priceUSD.toFixed(2)} USD (next-session close above reclaim)`);
-          changed = true;
-        }
-        toRemove.push(p.id);
-      }
-      // If signal is more than 2 trading sessions old (2 calendar days), cancel
-      const signalAge = (Date.now() - new Date(p.signalDate).getTime()) / (24*60*60*1000);
-      if (signalAge > 2) { toRemove.push(p.id); changed = true; }
-    } catch {}
-  }
-  STATE.pendingEntries = STATE.pendingEntries.filter(p => !toRemove.includes(p.id));
-  if (changed) { protectLivePositions(); saveState(); renderAll(); }
-}
-
-function createTrade(ticker, type, prob, priceUSD, runTime) {
-  if (isAlreadyHolding(ticker)) return null;
-  if (isInCooldown(ticker)) return null;
-  if (availableCapital() < TRADE_SIZE) return null;
-  if (isAutoTradePaused()) return null;
-  const shares = TRADE_SIZE / priceUSD;
-  const trade = {
-    id: `t_${Date.now()}_${Math.random().toString(36).slice(2,5)}`,
-    ticker, exchange: EXCHANGE_MAP[ticker] || 'US', type, prob,
-    screenerRunDate: todayET(), screenerRunTime: runTime,
-    status: 'live',
-    buyDate: todayET(), buyTime: timeET(),
-    buyPrice: +priceUSD.toFixed(4),
-    sharesTotal: +shares.toFixed(6), sharesOpen: +shares.toFixed(6),
-    invested: TRADE_SIZE,
-    partialExitDone: false, partialExitPrice: null,
-    partialExitDate: null, partialExitTime: null, partialExitPnl: null,
-    partialTarget: +(priceUSD * (1 + PARTIAL_TARGET)).toFixed(4),
-    finalTarget:   +(priceUSD * (1 + PROFIT_TARGET)).toFixed(4),
-    highestPrice:  +priceUSD.toFixed(4),
-    trailingStop:  +(priceUSD * (1 - STOP_LOSS)).toFixed(4),
-    currentPrice:  +priceUSD.toFixed(4),
-    pnl: null, pnlPct: null, sellDate: null, sellTime: null, sellPrice: null, exitReason: null,
-    ruleVersion: RULE_VERSION,
-  };
-  STATE.trades.push(trade);
-  return trade;
-}
-
-function closeTrade(trade, price, reason) {
-  trade.status     = reason === 'profit' ? 'sold_profit' : reason === 'loss' ? 'sold_loss' : 'closed_manual';
-  trade.sellDate   = todayET(); trade.sellTime = timeET();
-  trade.sellPrice  = +price.toFixed(4);
-  trade.exitReason = reason;
-  trade.currentPrice = +price.toFixed(4);
-  const remainderPnl = (price - trade.buyPrice) * (trade.sharesOpen || trade.sharesTotal);
-  const partialPnl   = trade.partialExitPnl || 0;
-  trade.pnl    = +(partialPnl + remainderPnl).toFixed(2);
-  trade.pnlPct = +(trade.pnl / trade.invested * 100).toFixed(2);
-  // Check for double-stop after loss
-  if (reason === 'loss') checkDoubleStop();
-}
-
-function manualClose(tradeId) {
-  const t = STATE.trades.find(x => x.id === tradeId);
-  if (!t || (t.status !== 'live' && t.status !== 'partial')) return;
-  const price = t.currentPrice || t.buyPrice;
-  closeTrade(t, price, 'manual');
-  saveState(); renderAll();
-  notify(`Manually closed ${t.ticker} at $${price.toFixed(2)}`);
-}
-
-function cancelPending(id) {
-  STATE.pendingEntries = STATE.pendingEntries.filter(p => p.id !== id);
-  saveState(); renderAll();
-}
-
-// ─── RULE VERSIONING (Change 15) ─────────────────────────────────────────────
-function checkRuleVersion() {
-  if (!STATE.ruleVersion || STATE.ruleVersion !== RULE_VERSION) {
-    // Auto-revalidate open positions — flag for review (don't auto-sell)
-    const openTrades = STATE.trades.filter(t => t.status === 'live' || t.status === 'partial');
-    for (const t of openTrades) {
-      if (t.ruleVersion && t.ruleVersion !== RULE_VERSION) {
-        t.ruleVersionMismatch = true;
-      }
-    }
-    // Purge ALL pending entries — they were generated by old screener logic
-    // and may no longer pass the updated hard filters / scoring
-    const purgedCount = STATE.pendingEntries.length;
-    STATE.pendingEntries = [];
-    STATE.ruleVersion = RULE_VERSION;
-    saveState();
-    document.getElementById('ruleBanner').style.display = 'flex';
-    if (purgedCount > 0) {
-      notify(`⚙ Rule version updated to ${RULE_VERSION}: ${purgedCount} pending entr${purgedCount === 1 ? 'y' : 'ies'} cleared (generated by old logic). Re-run screener to get fresh signals.`);
-    }
-  }
-  document.getElementById('ruleVersionLabel').textContent = RULE_VERSION;
-}
-
-// ─── POSITION MONITOR ─────────────────────────────────────────────────────────
-let monitorBusy = false;
-async function monitorPositions() {
-  if (monitorBusy || !isMarketOpen()) return;
-  const live = STATE.trades.filter(t => t.status === 'live' || t.status === 'partial');
-  if (!live.length) return;
-  monitorBusy = true;
-  let changed = false;
-  try {
-    // Refresh CAD/USD first
-    await fetchCadUsd();
-    for (const trade of live) {
+    // Fall back to cached data if available
+    if (!portfolioState) {
       try {
-        let price = await fetchLatestPrice(trade.ticker);
-        if (price == null) continue;
-        // Convert TSX to USD
-        if (trade.exchange === 'TSX') price = toUSD(price);
-        trade.currentPrice = price;
-
-        if (price > (trade.highestPrice || trade.buyPrice)) {
-          trade.highestPrice = price;
-          const rawStop = price * (1 - STOP_LOSS);
-          const floor = trade.partialExitDone ? trade.buyPrice : 0;
-          trade.trailingStop = +(Math.max(rawStop, floor)).toFixed(4);
+        const cached = localStorage.getItem('st_portfolio_cache');
+        if (cached) {
+          portfolioState = JSON.parse(cached);
+          _renderAll();
+          if (syncEl) syncEl.textContent += ' (showing cached data)';
         }
-
-        const chgFromBuy = (price - trade.buyPrice) / trade.buyPrice * 100;
-
-        if (!trade.partialExitDone && chgFromBuy >= PARTIAL_TARGET * 100) {
-          const halfShares = trade.sharesTotal / 2;
-          trade.partialExitDone  = true;
-          trade.partialExitPrice = +price.toFixed(4);
-          trade.partialExitDate  = todayET();
-          trade.partialExitTime  = timeET();
-          trade.partialExitPnl   = +((price - trade.buyPrice) * halfShares).toFixed(2);
-          trade.sharesOpen       = halfShares;
-          trade.status           = 'partial';
-          trade.trailingStop     = Math.max(trade.trailingStop, trade.buyPrice);
-          notify(`⚡ Partial: ${trade.ticker} +${chgFromBuy.toFixed(2)}% — sold 50% @ $${price.toFixed(2)} (+$${trade.partialExitPnl.toFixed(2)}) · Stop → breakeven`);
-          changed = true;
-        }
-
-        if (price <= trade.trailingStop) {
-          const wasPartial = trade.partialExitDone;
-          closeTrade(trade, price, 'loss');
-          const tp = trade.pnl >= 0 ? '+$' + trade.pnl.toFixed(2) : '-$' + Math.abs(trade.pnl).toFixed(2);
-          notify(`🛑 Stop: ${trade.ticker} @ $${price.toFixed(2)} · Total P&L ${tp}${wasPartial ? ' (partial gains kept)' : ''}`);
-          changed = true;
-        } else if (chgFromBuy >= PROFIT_TARGET * 100) {
-          closeTrade(trade, price, 'profit');
-          notify(`✅ Profit: ${trade.ticker} +${chgFromBuy.toFixed(2)}% · P&L ${trade.pnl >= 0 ? '+$' : '-$'}${Math.abs(trade.pnl).toFixed(2)}`);
-          changed = true;
-        } else { changed = true; }
       } catch {}
     }
-    if (changed) { protectLivePositions(); saveState(); renderAll(); }
-  } finally { monitorBusy = false; }
-}
-
-// ─── SCREENER RUNNER ──────────────────────────────────────────────────────────
-const SCHED_TIMES = ['08:00', '13:00'];
-let screenerRunning = false, screenerStop = false;
-
-function hasRunToday(t) { return STATE.screenerRuns.some(r => r.date === todayET() && r.time === t); }
-
-function checkSchedule() {
-  if (!isWeekdayET()) return;
-  if (shouldSkipTodayUS() && shouldSkipTodayTSX()) return; // both markets holiday
-  const et = timeET();
-  const [eh, em] = et.split(':').map(Number);
-  const currentEtMins = eh * 60 + em;
-  for (const t of SCHED_TIMES) {
-    const ts = t.replace(':', '');
-    const scheduledTimeMins = Number(ts.slice(0, 2)) * 60 + Number(ts.slice(2, 4));
-    if (currentEtMins >= scheduledTimeMins && currentEtMins <= scheduledTimeMins + 5 && !hasRunToday(t)) { runScreener(t); return; }
   }
 }
 
-async function runScreenerNow() { regimeCache = null; stBenchmarkCache = {}; await runScreener(null); }
-function stopScreenerRun() { screenerStop = true; }
-
-// ─── PURGE INVALID TRADES ────────────────────────────────────────────────────
-// Closes any live/partial trade whose buyDate falls on a weekend or market holiday.
-// These were incorrectly entered (e.g. confirmPendingEntries ran on a weekend).
-// Called at the start of every screener run (manual or scheduled).
-function _isNonTradingDate(dateStr) {
-  // Returns true if dateStr (YYYY-MM-DD) is a weekend or market holiday
-  if (!dateStr) return false;
-  const d = new Date(dateStr + 'T12:00:00Z');
-  const dow = d.getUTCDay(); // 0=Sun, 6=Sat
-  return dow === 0 || dow === 6 || NYSE_HOLIDAYS.has(dateStr) || TSX_HOLIDAYS.has(dateStr);
+// ─── AUTO-REFRESH ─────────────────────────────────────────────────────────────
+function _startAutoRefresh() {
+  _stopAutoRefresh();
+  fetchPortfolioState(); // immediate
+  _stRefreshTimer = setInterval(() => {
+    if (_stMarketMightBeOpen()) fetchPortfolioState();
+  }, 60 * 1000); // every 60s during market hours
 }
 
-function purgeInvalidWeekendTrades() {
-  // 1. Close any LIVE/PARTIAL trades whose buyDate is a non-trading day
-  const live = STATE.trades.filter(t => t.status === 'live' || t.status === 'partial');
-  let purgedTrades = 0;
-  for (const t of live) {
-    if (_isNonTradingDate(t.buyDate)) {
-      t.status     = 'closed_manual';
-      t.sellDate   = todayET();
-      t.sellTime   = timeET();
-      t.sellPrice  = t.buyPrice;
-      t.exitReason = 'invalid_entry';
-      t.pnl        = 0;
-      t.pnlPct     = 0;
-      t.currentPrice = t.buyPrice;
-      purgedTrades++;
-    }
-  }
-
-  // NOTE: Pending entries are intentionally NOT purged by signalDate.
-  // Signals generated on weekends/after-hours are valid — they should
-  // remain in pending and confirm on the next market open (e.g. Monday).
-
-  if (purgedTrades > 0) {
-    saveState();
-    notify(`🗑 Removed ${purgedTrades} invalid trade${purgedTrades > 1 ? 's' : ''} entered on a non-trading day. Data synced to Google Sheets.`);
-    renderAll();
-  }
-  return purgedTrades;
+function _stopAutoRefresh() {
+  if (_stRefreshTimer) { clearInterval(_stRefreshTimer); _stRefreshTimer = null; }
 }
 
-async function runScreener(scheduledTime) {
-  if (screenerRunning) return;
-  screenerRunning = true; screenerStop = false;
-  const runTime = scheduledTime || timeET().slice(0, 5);
-  // BUG 2: Determine if this is an intraday run (market is already open)
-  // 8 AM run → pre-market, use pendingEntries flow
-  // 1 PM run (and manual runs during market hours) → intraday, go straight to live
-  const _etNow = nowET();
-  const _etMins = _etNow.getHours() * 60 + _etNow.getMinutes();
-  const isIntradayRun = (_etMins >= 570 && _etMins < 960) && isWeekdayET() && !NYSE_HOLIDAYS.has(todayET());
+// ─── INIT (called lazily when user navigates to this tab) ──────────────────
+async function initShortTerm() {
+  if (_stInited) return;
+  _stInited = true;
+  try { cloudInit(); } catch {}
+  _startAutoRefresh();
+  restoreSectionStates();
+  updateClock();
+  if (!window._stClockInterval) window._stClockInterval = setInterval(updateClock, 1000);
+}
 
-  // ── Step 0: Purge any trades that were incorrectly entered on weekends/holidays
-  purgeInvalidWeekendTrades();
+// Stop refresh when leaving the tab (called by showMain etc.)
+window.addEventListener('beforeunload', _stopAutoRefresh);
 
-  // Fetch CAD/USD rate first
-  await fetchCadUsd();
-
-  // Regime check
-  const regime = await checkRegime();
-
-  let athCount = 0, swingCount = 0, tradedCount = 0, pendingCount = 0, skippedCount = 0, screened = 0;
-  const qualifiedThisRun = new Set(); // track tickers that qualify in this run
-
-  document.getElementById('screenerProgressWrap').style.display = 'block';
-  document.getElementById('runNowBtn').disabled = true;
-  document.getElementById('stopBtn').style.display = 'inline-block';
-
-  // Determine which tickers to run based on market calendar
-  const skipUS  = shouldSkipTodayUS();
-  const skipTSX = shouldSkipTodayTSX();
-  let tickersToRun = TICKERS;
-  if (skipUS && !skipTSX) tickersToRun = TSX_TICKERS;
-  else if (!skipUS && skipTSX) tickersToRun = SP500_TICKERS;
-
+// ─── CLOCK & MARKET BADGE ─────────────────────────────────────────────────────
+function updateClock() {
   try {
-    const BATCH = 4;
-    const enteredThisRun = new Set();
-    for (let i = 0; i < tickersToRun.length && !screenerStop; i += BATCH) {
-      const batch = tickersToRun.slice(i, i + BATCH);
-      const pct = Math.round(i / tickersToRun.length * 100);
-      document.getElementById('screenerFill').style.width = pct + '%';
-      document.getElementById('screenerPct').textContent = pct + '%';
-      document.getElementById('screenerTicker').textContent = batch[0];
-
-      await Promise.all(batch.map(async (ticker) => {
-        if (screenerStop) return;
-        try {
-          const ohlcv = await fetchOHLCV(ticker);
-          screened++;
-          const res = runScreenOnOHLCV(ticker, ohlcv);
-          if (!res) return;
-
-          const threshold = res.type === 'ath' ? ATH_PROB_THRESHOLD : SWING_PROB_THRESHOLD;
-          if (res.prob < threshold) return;
-          if (res.type === 'ath') athCount++; else swingCount++;
-          qualifiedThisRun.add(ticker); // mark as qualifying in this run
-
-          // Regime suppression check
-          const exchange = EXCHANGE_MAP[ticker] || 'US';
-          const regimeOk = (exchange === 'US' ? regime.spyAbove : regime.xiuAbove);
-          if (!regimeOk) { skippedCount++; return; }
-
-          if (isAutoTradePaused()) { skippedCount++; return; }
-
-          // Price in USD
-          let priceUSD = res.lastClose;
-          if (exchange === 'TSX') priceUSD = toUSD(res.lastClose);
-
-          if (isIntradayRun) {
-            // BUG 2: Intraday run — go straight to live, skip pendingEntries entirely
-            if (!isAlreadyHolding(ticker) && !isInCooldown(ticker) &&
-                availableCapital() >= TRADE_SIZE && !isAutoTradePaused()) {
-              if (enteredThisRun.has(ticker)) return;
-              const trade = createTrade(ticker, res.type, res.prob, priceUSD, runTime);
-              if (trade) { enteredThisRun.add(ticker); tradedCount++; notify(`📈 Intraday entry: ${ticker} added directly to Live Positions`); }
-              else skippedCount++;
-            } else { skippedCount++; }
-          } else {
-            // Pre-market run — queue as pending entry (next-session confirmation)
-            const added = createPendingEntry(ticker, res.type, res.prob, res.reclaimClose, runTime);
-            if (added) pendingCount++;
-            else if (added === null) skippedCount++;
-          }
-        } catch {}
-      }));
-
-      await new Promise(r => setTimeout(r, 250));
-    }
-
-    // BUG 2: Only clean up pendingEntries on pre-market runs.
-    // Intraday runs must never touch pendingEntries or existing live positions.
-    if (!isIntradayRun) {
-      STATE.pendingEntries = STATE.pendingEntries.filter(p =>
-        qualifiedThisRun.has(p.ticker) || isAlreadyHolding(p.ticker)
-      );
-    }
-
-    // BUG 4: Protect live positions before saving
-    protectLivePositions();
-
-    STATE.screenerRuns.push({
-      date: todayET(), time: runTime,
-      athCount, swingCount, tradedCount, pendingCount, skippedCount, totalScreened: screened,
-      regimeUS: regime.spyAbove ? '✓' : '⚠', regimeTSX: regime.xiuAbove ? '✓' : '⚠',
-    });
-    saveState(); renderAll();
-    notify(`Screener done (${formatTimeEST(runTime)}): ${athCount} ATH · ${swingCount} Swing · ${pendingCount} pending · ${skippedCount} skipped`);
-  } finally {
-    screenerRunning = false; screenerStop = false;
-    document.getElementById('screenerProgressWrap').style.display = 'none';
-    document.getElementById('screenerFill').style.width = '0%';
-    document.getElementById('runNowBtn').disabled = false;
-    document.getElementById('stopBtn').style.display = 'none';
-  }
+    const et  = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/New_York' }));
+    const hh  = String(et.getHours()).padStart(2, '0');
+    const mm  = String(et.getMinutes()).padStart(2, '0');
+    const ss  = String(et.getSeconds()).padStart(2, '0');
+    const el  = document.getElementById('etTime');
+    if (el) el.textContent = `${hh}:${mm}:${ss} EST`;
+    const badge = document.getElementById('marketStatus');
+    if (!badge) return;
+    const dow  = et.getDay();
+    const mins = et.getHours() * 60 + et.getMinutes();
+    const isOpen = dow >= 1 && dow <= 5 && mins >= 570 && mins < 960;
+    badge.textContent = isOpen ? '● Market Open' : '○ Market Closed';
+    badge.className   = 'market-badge ' + (isOpen ? 'open' : 'closed');
+  } catch {}
 }
 
-// ─── NOTES ────────────────────────────────────────────────────────────────────
-function addNote() {
-  const text       = document.getElementById('noteInput').value.trim();
-  const ticker     = (document.getElementById('noteTicker').value.trim().toUpperCase() || 'General');
-  const signalType = document.getElementById('noteSignalType').value;
-  const outcome    = document.getElementById('noteOutcome').value;
-  const stopTs     = document.getElementById('noteStopTs').value || todayET();
-  if (!text) return;
-  STATE.notes.push({ ticker, signalType, outcome, text, ts: todayET(), stopTriggerTs: stopTs });
-  document.getElementById('noteInput').value = '';
-  document.getElementById('noteTicker').value = '';
-  document.getElementById('noteOutcome').value = '';
-  saveState(); renderNotes();
-}
-
-function deleteNote(i) { STATE.notes.splice(i, 1); saveState(); renderNotes(); }
-function escHtml(s) { return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
-
-// ─── RENDER ───────────────────────────────────────────────────────────────────
-
-// ─── SORTING STATE ────────────────────────────────────────────────────────────
-const SORT_STATE = {
-  live:   { col: 'pnlPct', dir: 'desc' },   // default: Unrealized P&L % desc
-  closed: { col: 'pnlPct', dir: 'desc' },   // default: Realized P&L % desc
-};
-
-const AUTO_SORT = {
-  live:   { enabled: true,  timer: null, nextAt: null }, // ON by default
-  closed: { enabled: true,  timer: null, nextAt: null }, // ON by default
-};
-
-const AUTO_SORT_INTERVAL_MS = 30 * 60 * 1000; // 30 minutes
-
-function sortPositions(arr, col, dir, panel) {
-  return [...arr].sort((a, b) => {
-    let va, vb;
-    if (panel === 'live') {
-      const cpA = a.currentPrice || a.buyPrice, sharesA = a.sharesOpen || a.sharesTotal || 0;
-      const cpB = b.currentPrice || b.buyPrice, sharesB = b.sharesOpen || b.sharesTotal || 0;
-      const pnlA = (cpA - a.buyPrice) * sharesA + (a.partialExitPnl || 0);
-      const pnlB = (cpB - b.buyPrice) * sharesB + (b.partialExitPnl || 0);
-      const pctA = (cpA - a.buyPrice) / a.buyPrice * 100;
-      const pctB = (cpB - b.buyPrice) / b.buyPrice * 100;
-      if (col === 'pnlUSD') { va = pnlA; vb = pnlB; }
-      else if (col === 'pnlPct') { va = pctA; vb = pctB; }
-      else if (col === 'buyDate') { va = new Date(a.buyDate||'').getTime(); vb = new Date(b.buyDate||'').getTime(); }
-      else { va = b.prob; vb = a.prob; }
-    } else {
-      if (col === 'pnlUSD') { va = a.pnl||0; vb = b.pnl||0; }
-      else if (col === 'pnlPct') { va = a.pnlPct||0; vb = b.pnlPct||0; }
-      else if (col === 'buyDate') { va = new Date(a.buyDate||'').getTime(); vb = new Date(b.buyDate||'').getTime(); }
-      else if (col === 'sellDate') { va = new Date(a.sellDate||'').getTime(); vb = new Date(b.sellDate||'').getTime(); }
-      else { va = a.pnlPct||0; vb = b.pnlPct||0; }
-    }
-    return dir === 'desc' ? vb - va : va - vb;
-  });
-}
-
-function sortLive(col) {
-  if (SORT_STATE.live.col === col) {
-    SORT_STATE.live.dir = SORT_STATE.live.dir === 'desc' ? 'asc' : 'desc';
-  } else {
-    SORT_STATE.live.col = col;
-    SORT_STATE.live.dir = 'desc';
-  }
-  renderLive();
-}
-
-function sortClosed(col) {
-  if (SORT_STATE.closed.col === col) {
-    SORT_STATE.closed.dir = SORT_STATE.closed.dir === 'desc' ? 'asc' : 'desc';
-  } else {
-    SORT_STATE.closed.col = col;
-    SORT_STATE.closed.dir = 'desc';
-  }
-  renderClosed();
-}
-
-function updateSortHeaders(panel) {
-  const s = SORT_STATE[panel];
-  const cols = panel === 'live'
-    ? ['pnlPct', 'pnlUSD', 'buyDate']
-    : ['pnlPct', 'pnlUSD', 'buyDate', 'sellDate'];
-  for (const col of cols) {
-    const el = document.getElementById(`${panel}Sort-${col}`);
-    if (!el) continue;
-    const icon = el.querySelector('.sort-icon');
-    const isActive = s.col === col;
-    el.classList.toggle('sort-active', isActive);
-    if (icon) icon.textContent = isActive ? (s.dir === 'desc' ? '↓' : '↑') : '↕';
-  }
-}
-
-function toggleAutoSort(panel) {
-  const toggle = document.getElementById(`${panel}AutoSortToggle`);
-  const state  = AUTO_SORT[panel];
-  state.enabled = toggle.checked;
-  if (state.enabled) {
-    SORT_STATE[panel].col = 'pnlPct';
-    SORT_STATE[panel].dir = 'desc';
-    panel === 'live' ? renderLive() : renderClosed();
-    scheduleAutoSort(panel);
-  } else {
-    clearTimeout(state.timer);
-    state.timer = null;
-    state.nextAt = null;
-    updateAutoSortLabel(panel);
-  }
-}
-
-function scheduleAutoSort(panel) {
-  const state = AUTO_SORT[panel];
-  clearTimeout(state.timer);
-  state.nextAt = Date.now() + AUTO_SORT_INTERVAL_MS;
-  updateAutoSortLabel(panel);
-  state.timer = setTimeout(() => {
-    if (!state.enabled) return;
-    SORT_STATE[panel].col = 'pnlPct';
-    SORT_STATE[panel].dir = 'desc';
-    panel === 'live' ? renderLive() : renderClosed();
-    scheduleAutoSort(panel);
-  }, AUTO_SORT_INTERVAL_MS);
-}
-
-function updateAutoSortLabel(panel) {
-  const el = document.getElementById(`${panel}AutoSortNext`);
+// ─── NOTIFICATION ─────────────────────────────────────────────────────────────
+let _notifTimer = null;
+function notify(msg) {
+  const el = document.getElementById('notification');
   if (!el) return;
-  const state = AUTO_SORT[panel];
-  if (!state.enabled || !state.nextAt) { el.textContent = ''; return; }
-  const mins = Math.round((state.nextAt - Date.now()) / 60000);
-  el.textContent = `· next in ${mins}m`;
+  el.textContent = msg; el.style.display = 'block';
+  clearTimeout(_notifTimer);
+  _notifTimer = setTimeout(() => { el.style.display = 'none'; }, 7000);
 }
 
-setInterval(() => {
-  updateAutoSortLabel('live');
-  updateAutoSortLabel('closed');
-}, 60000);
+// ─── HELPERS ──────────────────────────────────────────────────────────────────
+function _fmtUSD(n) {
+  const v = parseFloat(n) || 0;
+  return v.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
 
-// ─── SECTION MINIMIZE ────────────────────────────────────────────────────────
+function _fmtDate(s) {
+  if (!s || s === '—') return '—';
+  const parts = s.split('-');
+  if (parts.length !== 3) return s;
+  const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  return `${parts[2]}-${months[parseInt(parts[1],10)-1]}-${parts[0]}`;
+}
+
+function _fmtTime(t) {
+  if (!t) return '';
+  const p = t.split(':');
+  if (p.length < 2) return t;
+  let h = parseInt(p[0], 10);
+  const ampm = h >= 12 ? 'PM' : 'AM';
+  h = h % 12 || 12;
+  return `${String(h).padStart(2,'0')}:${p[1]} ${ampm} EST`;
+}
+
+function _pBadge(prob) {
+  const cls = prob >= 70 ? 'prob-green' : 'prob-yellow';
+  return `<span class="prob-badge ${cls}">${Math.round(prob)}%</span>`;
+}
+
+function _typeBadge(type) {
+  return (type||'').toLowerCase() === 'ath'
+    ? '<span class="badge-ath">ATH</span>'
+    : '<span class="badge-swing">Swing</span>';
+}
+
+function _flagIcon(exch) { return exch === 'TSX' ? '🇨🇦' : '🇺🇸'; }
+
+// ─── SECTION MINIMIZE/EXPAND ──────────────────────────────────────────────────
 function toggleSection(bodyId, btnId) {
   const body = document.getElementById(bodyId);
   const btn  = document.getElementById(btnId);
@@ -5422,7 +4396,6 @@ function toggleSection(bodyId, btnId) {
   const isMin = body.classList.toggle('minimized');
   btn.textContent = isMin ? '+' : '−';
   btn.title = isMin ? 'Expand' : 'Minimize';
-  // persist state
   try { localStorage.setItem('st_sec_' + bodyId, isMin ? '1' : '0'); } catch {}
 }
 
@@ -5439,269 +4412,293 @@ function restoreSectionStates() {
   });
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-function renderAll() {
-  protectLivePositions(); // BUG 4: ensure live positions are never silently removed
-  renderCapitalBar();
-  renderCards();
-  renderPending();
-  renderLive();
-  renderClosed();
-  renderRunLog();
-  renderScheduleInfo();
-  updatePauseBanner();
+// ─── MASTER RENDER ────────────────────────────────────────────────────────────
+function _renderAll() {
+  _renderCapitalBar();
+  _renderCards();
+  _renderPending();
+  _renderLive();
+  _renderClosed();
+  _renderRunLog();
+  _renderScheduleInfo();
+  _renderPauseBanner();
+  _renderNotes();
 }
 
-function fmtUSD(n) {
-  return n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+// ─── CAPITAL BAR ──────────────────────────────────────────────────────────────
+function _renderCapitalBar() {
+  if (!portfolioState) return;
+  const { trades = [], totalCapital = 10000 } = portfolioState;
+  const live = trades.filter(t => t.status === 'live' || t.status === 'partial');
+
+  let deployed = 0, unrealized = 0;
+  live.forEach(t => {
+    const inv      = parseFloat(t.invested) || 0;
+    const partial  = t.partialExitDone === true || t.partialExitDone === 'true';
+    const openInv  = partial ? inv / 2 : inv;
+    const cp       = parseFloat(t.currentPrice) || 0;
+    const shares   = parseFloat(t.sharesOpen)   || 0;
+    deployed   += openInv;
+    unrealized += (cp * shares) - openInv + (parseFloat(t.partialExitPnl) || 0);
+  });
+
+  let realized = 0;
+  trades.forEach(t => {
+    if (t.status !== 'live' && t.status !== 'partial') realized += parseFloat(t.pnl) || 0;
+    else if ((t.partialExitDone === true || t.partialExitDone === 'true') && t.partialExitPnl != null)
+      realized += parseFloat(t.partialExitPnl) || 0;
+  });
+
+  const avail = totalCapital - deployed;
+
+  const set = (id, val) => { const el = document.getElementById(id); if (el) el.textContent = val; };
+  const setClass = (id, val) => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.textContent = (val >= 0 ? '+$' : '-$') + _fmtUSD(Math.abs(val));
+    el.className   = val > 0 ? 'positive' : val < 0 ? 'negative' : 'neutral';
+  };
+
+  set('deployedCap', '$' + _fmtUSD(deployed));
+  set('availCap',    '$' + _fmtUSD(avail));
+  setClass('totalPnl',  realized);
+  setClass('unrealPnl', unrealized);
+
+  // CAD-USD: try to read from portfolioState or show last known
+  const cad = portfolioState.cadUsdRate;
+  if (cad) { const el = document.getElementById('cadUsdDisplay'); if (el) el.textContent = parseFloat(cad).toFixed(4); }
 }
 
-function renderCapitalBar() {
-  const deployed = deployedCapital();
-  const pnl = realizedPnL();
-  const unreal = unrealizedPnL();
-  document.getElementById('deployedCap').textContent = '$' + fmtUSD(deployed);
-  document.getElementById('availCap').textContent    = '$' + fmtUSD(availableCapital());
-  const pnlEl = document.getElementById('totalPnl');
-  pnlEl.textContent = (pnl >= 0 ? '+$' : '-$') + fmtUSD(Math.abs(pnl));
-  pnlEl.className   = pnl > 0 ? 'positive' : pnl < 0 ? 'negative' : 'neutral';
-  const urEl = document.getElementById('unrealPnl');
-  urEl.textContent  = (unreal >= 0 ? '+$' : '-$') + fmtUSD(Math.abs(unreal));
-  urEl.className    = unreal > 0 ? 'positive' : unreal < 0 ? 'negative' : 'neutral';
-  if (cadUsdRate) document.getElementById('cadUsdDisplay').textContent = cadUsdRate.toFixed(4);
-}
-
-function renderCards() {
-  const live    = STATE.trades.filter(t => t.status === 'live' || t.status === 'partial').length;
-  const profits = STATE.trades.filter(t => t.exitReason === 'profit').length;
-  const losses  = STATE.trades.filter(t => t.exitReason === 'loss').length;
+// ─── SUMMARY CARDS ────────────────────────────────────────────────────────────
+function _renderCards() {
+  if (!portfolioState) return;
+  const { trades = [], pendingEntries = [] } = portfolioState;
+  const live    = trades.filter(t => t.status === 'live' || t.status === 'partial').length;
+  const profits = trades.filter(t => t.exitReason === 'profit').length;
+  const losses  = trades.filter(t => t.exitReason === 'loss').length;
   const total   = profits + losses;
   const wr      = total > 0 ? Math.round(profits / total * 100) + '%' : '—';
-  document.getElementById('openCount').textContent       = live + (STATE.pendingEntries.length ? ` (+${STATE.pendingEntries.length}⏳)` : '');
-  document.getElementById('profitCount').textContent     = profits;
-  document.getElementById('lossCount').textContent       = losses;
-  document.getElementById('winRate').textContent         = wr;
-  document.getElementById('totalTradesCount').textContent = STATE.trades.length;
+
+  const set = (id, val) => { const el = document.getElementById(id); if (el) el.textContent = val; };
+  set('openCount',       live + (pendingEntries.length ? ` (+${pendingEntries.length}⏳)` : ''));
+  set('profitCount',     profits);
+  set('lossCount',       losses);
+  set('winRate',         wr);
+  set('totalTradesCount', trades.length);
 }
 
-function pBadge(prob) { const c = prob >= 70 ? 'prob-green' : 'prob-yellow'; return `<span class="prob-badge ${c}">${prob}%</span>`; }
-function typeBadge(type) { return type === 'ath' ? '<span class="badge-ath">ATH</span>' : '<span class="badge-swing">Swing</span>'; }
-function flagIcon(exch) { return exch === 'TSX' ? '🇨🇦' : '🇺🇸'; }
-
-function renderPending() {
+// ─── PENDING ENTRIES ──────────────────────────────────────────────────────────
+function _renderPending() {
+  if (!portfolioState) return;
+  const pends = portfolioState.pendingEntries || [];
+  const el = document.getElementById('pendingBadge');
+  if (el) el.textContent = pends.length;
   const tbody = document.getElementById('pendingBody');
-  const pends = STATE.pendingEntries;
-  document.getElementById('pendingBadge').textContent = pends.length;
-  if (!pends.length) { tbody.innerHTML = '<tr><td colspan="7" class="empty">No pending entries</td></tr>'; return; }
-  tbody.innerHTML = pends.map(p => `<tr>
-    <td><div class="ticker-cell">${flagIcon(p.exchange)} ${p.ticker}</div><div class="ticker-name">${escHtml(COMPANY_NAMES[p.ticker]||'')}</div></td>
-    <td>${typeBadge(p.type)}</td>
-    <td>${pBadge(p.prob)}</td>
-    <td>${formatDate(p.signalDate)}<br><small style="color:#8b949e">${p.runTime ? formatTimeEST(p.runTime) : '—'}</small></td>
-    <td>$${(p.reclaimClose||0).toFixed(2)}</td>
-    <td style="color:#58a6ff;font-size:12px">Next session close above $${(p.reclaimClose||0).toFixed(2)}</td>
-    <td><span class="badge-pending">⏳ Pending</span> <button class="btn-close" onclick="cancelPending('${p.id}')" style="margin-left:4px">✕ Cancel</button></td>
-  </tr>`).join('');
-}
+  if (!tbody) return;
 
-function renderLive() {
-  const tbody = document.getElementById('liveBody');
-  const live  = STATE.trades.filter(t => t.status === 'live' || t.status === 'partial');
-  document.getElementById('liveBadge').textContent = live.length;
-  if (!live.length) { tbody.innerHTML = '<tr><td colspan="12" class="empty">No live positions</td></tr>'; return; }
+  if (!pends.length) {
+    tbody.innerHTML = '<tr><td colspan="7" class="empty">No pending entries</td></tr>';
+    return;
+  }
 
-  // Apply sort
-  const sorted = sortPositions(live, SORT_STATE.live.col, SORT_STATE.live.dir, 'live');
-  updateSortHeaders('live');
-
-  tbody.innerHTML = sorted.map(t => {
-    const cp = t.currentPrice || t.buyPrice;
-    const sharesOpen = t.sharesOpen || t.sharesTotal || 0;
-    const openPnl = (cp - t.buyPrice) * sharesOpen;
-    const totalUnreal = openPnl + (t.partialExitPnl || 0);
-    const chg = (cp - t.buyPrice) / t.buyPrice * 100;
-    const cls = totalUnreal >= 0 ? 'positive' : 'negative';
-    const trailStop = t.trailingStop || +(t.buyPrice * (1 - STOP_LOSS)).toFixed(2);
-    const partialTag = t.partialExitDone
-      ? `<div style="font-size:10px;color:#e3b341;margin-top:2px">⚡ 50% @ $${(t.partialExitPrice||0).toFixed(2)} (+$${(t.partialExitPnl||0).toFixed(2)})</div>` : '';
-    const targets = t.partialExitDone
-      ? `<span style="color:#3fb950">Exit @ $${t.finalTarget.toFixed(2)}</span>`
-      : `<span style="color:#e3b341">50%→$${t.partialTarget.toFixed(2)}</span> / <span style="color:#3fb950">$${t.finalTarget.toFixed(2)}</span>`;
-    const rvFlag = t.ruleVersionMismatch ? ' <span style="color:#d4a017;font-size:10px">⚙ Rule changed</span>' : '';
+  tbody.innerHTML = pends.map(p => {
+    const name = (window.COMPANY_NAMES && COMPANY_NAMES[p.ticker]) || '';
     return `<tr>
-      <td><div class="ticker-cell">${flagIcon(t.exchange)} ${t.ticker}${rvFlag}</div><div class="ticker-name">${escHtml(COMPANY_NAMES[t.ticker]||'')}</div>${partialTag}</td>
-      <td>${typeBadge(t.type)}</td>
-      <td>${pBadge(t.prob)}</td>
-      <td style="white-space:nowrap"><div>${formatDate(t.buyDate)}</div><small style="color:#8b949e">${formatTimeEST(t.buyTime)}</small></td>
-      <td>$${t.buyPrice.toFixed(2)}</td>
-      <td>$${cp.toFixed(2)}<br><small style="color:#8b949e">${chg>=0?'+':''}${chg.toFixed(2)}%</small></td>
-      <td>$${t.invested}</td>
-      <td class="${cls}">${totalUnreal>=0?'+':''}\$${totalUnreal.toFixed(2)}</td>
-      <td class="${cls}">${chg>=0?'+':''}${chg.toFixed(2)}%</td>
-      <td style="font-size:12px">${targets}</td>
-      <td style="color:#f85149">$${trailStop.toFixed(2)}<br><small style="color:#8b949e">−2% trail</small></td>
-      <td style="padding-left:16px;padding-right:28px;min-width:100px;text-align:left"><button class="btn-close" onclick="manualClose('${t.id}')">Close</button></td>
+      <td><div class="ticker-cell">${_flagIcon(p.exchange||'US')} ${p.ticker}</div><div class="ticker-name">${name}</div></td>
+      <td>${_typeBadge(p.type)}</td>
+      <td>${_pBadge(p.prob)}</td>
+      <td>${_fmtDate(p.signalDate)}<br><small style="color:#8b949e">${p.runTime ? _fmtTime(p.runTime) : '—'}</small></td>
+      <td>$${_fmtUSD(p.reclaimClose)}</td>
+      <td style="color:#58a6ff;font-size:12px">Next session close above $${_fmtUSD(p.reclaimClose)}</td>
+      <td><span class="badge-pending">⏳ Pending</span></td>
     </tr>`;
   }).join('');
 }
 
-// ─── PROB BRACKET HELPERS ────────────────────────────────────────────────────
-function getProbBracket(type, prob) {
-  if (type === 'ath') {
-    if (prob >= 90) return '90-100%';
-    if (prob >= 80) return '80-90%';
-    return '70-80%';
-  } else {
-    if (prob >= 70) return '70-100%';
-    return '50-70%';
-  }
-}
+// ─── LIVE POSITIONS ───────────────────────────────────────────────────────────
+function _renderLive() {
+  if (!portfolioState) return;
+  const live = (portfolioState.trades || []).filter(t => t.status === 'live' || t.status === 'partial');
+  const el = document.getElementById('liveBadge');
+  if (el) el.textContent = live.length;
+  const tbody = document.getElementById('liveBody');
+  if (!tbody) return;
 
-function buildProbBreakdownHTML(closed) {
-  // ATH brackets: 70-80%, 80-90%, 90-100%
-  // Swing brackets: 50-70%, 70-100%
-  const athBrackets  = { '70-80%': {w:0,l:0}, '80-90%': {w:0,l:0}, '90-100%': {w:0,l:0} };
-  const swingBrackets = { '50-70%': {w:0,l:0}, '70-100%': {w:0,l:0} };
-
-  for (const t of closed) {
-    if (t.exitReason !== 'profit' && t.exitReason !== 'loss') continue;
-    const isWin = t.exitReason === 'profit';
-    const bracket = getProbBracket(t.type, t.prob);
-    if (t.type === 'ath' && athBrackets[bracket]) {
-      isWin ? athBrackets[bracket].w++ : athBrackets[bracket].l++;
-    } else if (t.type === 'swing' && swingBrackets[bracket]) {
-      isWin ? swingBrackets[bracket].w++ : swingBrackets[bracket].l++;
-    }
-  }
-
-  function bracketCell(label, data, color) {
-    const total = data.w + data.l;
-    const wr = total > 0 ? Math.round(data.w / total * 100) : null;
-    const wrText = wr !== null ? `<span style="color:${wr>=60?'#3fb950':wr>=40?'#e3b341':'#f85149'};font-weight:700">${wr}% WR</span>` : '<span style="color:#484f58">No trades</span>';
-    return `<div style="background:#0d1117;border:1px solid #30363d;border-radius:6px;padding:10px 14px;min-width:130px">
-      <div style="font-size:11px;color:#8b949e;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:6px">${label}</div>
-      <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
-        <span style="color:#3fb950;font-size:13px;font-weight:700">✓ ${data.w} W</span>
-        <span style="color:#f85149;font-size:13px;font-weight:700">✗ ${data.l} L</span>
-        ${wrText}
-      </div>
-    </div>`;
-  }
-
-  const hasATH   = Object.values(athBrackets).some(b => b.w + b.l > 0);
-  const hasSwing = Object.values(swingBrackets).some(b => b.w + b.l > 0);
-  if (!hasATH && !hasSwing) return '';
-
-  let html = `<div style="padding:12px 16px;background:#161b22;border-bottom:1px solid #30363d">
-    <div style="font-size:12px;font-weight:700;color:#f0f6fc;margin-bottom:10px">📊 Win Rate by Probability Bracket</div>`;
-
-  if (hasATH) {
-    html += `<div style="font-size:11px;color:#3fb950;font-weight:600;margin-bottom:6px;text-transform:uppercase;letter-spacing:0.5px">ATH Setups</div>
-    <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:12px">
-      ${bracketCell('70–80%', athBrackets['70-80%'], '#e3b341')}
-      ${bracketCell('80–90%', athBrackets['80-90%'], '#58a6ff')}
-      ${bracketCell('90–100%', athBrackets['90-100%'], '#3fb950')}
-    </div>`;
-  }
-  if (hasSwing) {
-    html += `<div style="font-size:11px;color:#58a6ff;font-weight:600;margin-bottom:6px;text-transform:uppercase;letter-spacing:0.5px">Swing Setups</div>
-    <div style="display:flex;gap:10px;flex-wrap:wrap">
-      ${bracketCell('50–70%', swingBrackets['50-70%'], '#e3b341')}
-      ${bracketCell('70–100%', swingBrackets['70-100%'], '#3fb950')}
-    </div>`;
-  }
-  html += `</div>`;
-  return html;
-}
-
-function renderClosed() {
-  const tbody   = document.getElementById('closedBody');
-  const panelEl = document.getElementById('closedProbBreakdown');
-  const closed  = STATE.trades.filter(t => t.status !== 'live' && t.status !== 'partial');
-
-  // Only show trades with actual P&L -- filter out $0 / 0.00% entries (e.g. manual same-day cancels)
-  const meaningful = closed.filter(t => Math.abs(t.pnl || 0) > 0.001 || Math.abs(t.pnlPct || 0) > 0.001);
-
-  // Badge shows meaningful count; tooltip explains if some are hidden
-  const badge = document.getElementById('closedBadge');
-  badge.textContent = meaningful.length;
-  if (closed.length > meaningful.length) {
-    badge.title = `${closed.length - meaningful.length} zero-P&L entries hidden`;
-  }
-
-  // Prob breakdown uses only meaningful trades
-  if (panelEl) panelEl.innerHTML = buildProbBreakdownHTML(meaningful);
-
-  if (!meaningful.length) {
-    tbody.innerHTML = '<tr><td colspan="11" class="empty">No closed trades with P&amp;L yet</td></tr>';
+  if (!live.length) {
+    tbody.innerHTML = '<tr><td colspan="12" class="empty">No live positions</td></tr>';
     return;
   }
 
-  // Apply sort
-  const sorted = sortPositions(meaningful, SORT_STATE.closed.col, SORT_STATE.closed.dir, 'closed');
-  updateSortHeaders('closed');
+  tbody.innerHTML = live.map(t => {
+    const name      = (window.COMPANY_NAMES && COMPANY_NAMES[t.ticker]) || '';
+    const cp        = parseFloat(t.currentPrice) || 0;
+    const bp        = parseFloat(t.buyPrice)     || 0;
+    const shares    = parseFloat(t.sharesOpen)   || 0;
+    const inv       = parseFloat(t.invested)     || 0;
+    const partial   = t.partialExitDone === true || t.partialExitDone === 'true';
+    const partPnl   = parseFloat(t.partialExitPnl) || 0;
+    const openPnl   = (cp * shares) - (partial ? inv/2 : inv);
+    const totalUnreal = openPnl + partPnl;
+    const chg       = bp > 0 ? (cp - bp) / bp * 100 : 0;
+    const cls       = totalUnreal >= 0 ? 'positive' : 'negative';
+    const trail     = parseFloat(t.trailingStop) || 0;
+    const pt        = parseFloat(t.partialTarget) || 0;
+    const ft        = parseFloat(t.finalTarget)   || 0;
+    const partTag   = partial
+      ? `<div style="font-size:10px;color:#e3b341;margin-top:2px">⚡ 50% @ $${_fmtUSD(t.partialExitPrice)} (+$${_fmtUSD(partPnl)})</div>`
+      : '';
+    const targets   = partial
+      ? `<span style="color:#3fb950">Exit @ $${ft.toFixed(2)}</span>`
+      : `<span style="color:#e3b341">50%→$${pt.toFixed(2)}</span> / <span style="color:#3fb950">$${ft.toFixed(2)}</span>`;
 
-  tbody.innerHTML = sorted.map(t => {
-    const cls = (t.pnl||0) >= 0 ? 'positive' : 'negative';
-    let reasonBadge = '';
-    if (t.exitReason === 'profit')    reasonBadge = '<span class="badge-profit">✓ Profit</span>';
-    else if (t.exitReason === 'loss') reasonBadge = '<span class="badge-loss">✗ Stop Loss</span>';
-    else                               reasonBadge = '<span class="badge-manual">Manual</span>';
-    const partialNote = t.partialExitDone
-      ? `<br><small style="color:#e3b341">⚡ 50% @ $${(t.partialExitPrice||0).toFixed(2)} (+$${(t.partialExitPnl||0).toFixed(2)})</small>` : '';
     return `<tr>
-      <td><div class="ticker-cell">${flagIcon(t.exchange)} ${t.ticker}</div><div class="ticker-name">${escHtml(COMPANY_NAMES[t.ticker]||'')}</div></td>
-      <td>${typeBadge(t.type)}</td><td>${pBadge(t.prob)}</td>
-      <td style="white-space:nowrap">${formatDate(t.buyDate)}</td><td style="white-space:nowrap">${formatDate(t.sellDate||'—')}</td>
-      <td>$${t.buyPrice.toFixed(2)}</td>
-      <td>$${(t.sellPrice||0).toFixed(2)}${partialNote}</td>
-      <td>$${t.invested}</td>
-      <td class="${cls}">${(t.pnl||0)>=0?'+':''}\$${(t.pnl||0).toFixed(2)}</td>
-      <td class="${cls}">${(t.pnlPct||0)>=0?'+':''}${(t.pnlPct||0).toFixed(2)}%</td>
+      <td><div class="ticker-cell">${_flagIcon(t.exchange||'US')} ${t.ticker}</div><div class="ticker-name">${name}</div>${partTag}</td>
+      <td>${_typeBadge(t.type)}</td>
+      <td>${_pBadge(t.prob)}</td>
+      <td style="white-space:nowrap"><div>${_fmtDate(t.buyDate)}</div><small style="color:#8b949e">${_fmtTime(t.buyTime)}</small></td>
+      <td>$${bp.toFixed(2)}</td>
+      <td>$${cp.toFixed(2)}<br><small style="color:#8b949e">${chg>=0?'+':''}${chg.toFixed(2)}%</small></td>
+      <td>$${_fmtUSD(inv)}</td>
+      <td class="${cls}">${totalUnreal>=0?'+':'-'}$${_fmtUSD(Math.abs(totalUnreal))}</td>
+      <td class="${cls}">${chg>=0?'+':''}${chg.toFixed(2)}%</td>
+      <td style="font-size:12px">${targets}</td>
+      <td style="color:#f85149">$${trail.toFixed(2)}<br><small style="color:#8b949e">−2% trail</small></td>
+      <td style="padding-left:16px;padding-right:28px;min-width:100px;text-align:left">
+        <span class="badge-pending" style="background:#21262d;color:#8b949e;border:1px solid #30363d;">Read-only</span>
+      </td>
+    </tr>`;
+  }).join('');
+}
+
+// ─── CLOSED POSITIONS ─────────────────────────────────────────────────────────
+function _renderClosed() {
+  if (!portfolioState) return;
+  const closed = (portfolioState.trades || []).filter(t => t.status !== 'live' && t.status !== 'partial')
+    .sort((a, b) => new Date(b.sellDate||'') - new Date(a.sellDate||''));
+
+  const el = document.getElementById('closedBadge');
+  if (el) el.textContent = closed.length;
+
+  const panelEl = document.getElementById('closedProbBreakdown');
+  if (panelEl) panelEl.innerHTML = '';
+
+  const tbody = document.getElementById('closedBody');
+  if (!tbody) return;
+
+  if (!closed.length) {
+    tbody.innerHTML = '<tr><td colspan="11" class="empty">No closed trades yet</td></tr>';
+    return;
+  }
+
+  tbody.innerHTML = closed.map(t => {
+    const pnl    = parseFloat(t.pnl)    || 0;
+    const pnlPct = parseFloat(t.pnlPct) || 0;
+    const cls    = pnl >= 0 ? 'positive' : 'negative';
+    let reasonBadge = '';
+    if (t.exitReason === 'profit')      reasonBadge = '<span class="badge-profit">✓ Profit</span>';
+    else if (t.exitReason === 'loss')   reasonBadge = '<span class="badge-loss">✗ Stop Loss</span>';
+    else                                reasonBadge = '<span class="badge-manual">Manual</span>';
+    const partNote = (t.partialExitDone===true || t.partialExitDone==='true')
+      ? `<br><small style="color:#e3b341">⚡ 50% @ $${_fmtUSD(t.partialExitPrice)} (+$${_fmtUSD(t.partialExitPnl)})</small>` : '';
+    const name = (window.COMPANY_NAMES && COMPANY_NAMES[t.ticker]) || '';
+    return `<tr>
+      <td><div class="ticker-cell">${_flagIcon(t.exchange||'US')} ${t.ticker}</div><div class="ticker-name">${name}</div></td>
+      <td>${_typeBadge(t.type)}</td>
+      <td>${_pBadge(t.prob)}</td>
+      <td style="white-space:nowrap">${_fmtDate(t.buyDate)}</td>
+      <td style="white-space:nowrap">${_fmtDate(t.sellDate||'—')}</td>
+      <td>$${parseFloat(t.buyPrice||0).toFixed(2)}</td>
+      <td>$${parseFloat(t.sellPrice||0).toFixed(2)}${partNote}</td>
+      <td>$${_fmtUSD(t.invested)}</td>
+      <td class="${cls}">${pnl>=0?'+':'-'}$${_fmtUSD(Math.abs(pnl))}</td>
+      <td class="${cls}">${pnlPct>=0?'+':''}${pnlPct.toFixed(2)}%</td>
       <td>${reasonBadge}</td>
     </tr>`;
   }).join('');
 }
 
-function renderRunLog() {
+// ─── SCREENER RUN LOG ─────────────────────────────────────────────────────────
+function _renderRunLog() {
+  if (!portfolioState) return;
+  const runs  = [...(portfolioState.screenerRuns || [])].reverse().slice(0, 30);
   const tbody = document.getElementById('runLogBody');
-  const runs  = [...STATE.screenerRuns]
-    .sort((a, b) => {
-      const ka = (a.date || '') + ' ' + (a.time || '');
-      const kb = (b.date || '') + ' ' + (b.time || '');
-      return kb.localeCompare(ka); // descending: latest first
-    })
-    .slice(0, 7);
-  if (!runs.length) { tbody.innerHTML = '<tr><td colspan="9" class="empty">No runs yet</td></tr>'; return; }
+  if (!tbody) return;
+  if (!runs.length) {
+    tbody.innerHTML = '<tr><td colspan="9" class="empty">No runs yet</td></tr>';
+    return;
+  }
   tbody.innerHTML = runs.map(r => `<tr>
-    <td>${formatDate(r.date)}</td><td>${formatTimeEST(r.time)}</td>
+    <td>${_fmtDate(r.date)}</td>
+    <td>${_fmtTime(r.time)}</td>
     <td>${r.athCount||0}</td><td>${r.swingCount||0}</td>
     <td><span class="badge-profit">${r.tradedCount||0}</span></td>
     <td><span class="badge-pending">${r.pendingCount||0}</span></td>
     <td><span style="color:#8b949e">${r.skippedCount||0}</span></td>
     <td style="font-size:11px">US: ${r.regimeUS||'—'} CA: ${r.regimeTSX||'—'}</td>
-    <td>${r.totalScreened||0} / ${TICKERS.length}</td>
+    <td>${r.totalScreened||0}</td>
   </tr>`).join('');
 }
 
-function renderNotes() {
-  const el = document.getElementById('notesList');
+// ─── SCHEDULE INFO ────────────────────────────────────────────────────────────
+function _renderScheduleInfo() {
+  if (!portfolioState) return;
+  const runs = portfolioState.screenerRuns || [];
+  const last = runs[runs.length - 1];
+  if (last) {
+    const el = document.getElementById('lastRunInfo');
+    if (el) el.innerHTML = `Last run: <strong>${_fmtDate(last.date)} ${_fmtTime(last.time)}</strong> (${last.tradedCount||0} trades, ${last.pendingCount||0} pending)`;
+  }
+  const nextEl = document.getElementById('nextRunInfo');
+  if (nextEl) {
+    try {
+      const et   = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/New_York' }));
+      const dow  = et.getDay();
+      const hhmm = `${String(et.getHours()).padStart(2,'0')}:${String(et.getMinutes()).padStart(2,'0')}`;
+      if (dow === 0 || dow === 6) { nextEl.innerHTML = `Next: <strong>Monday 8:00 AM EST</strong>`; return; }
+      for (const t of ['08:00','13:00']) {
+        if (hhmm < t) { nextEl.innerHTML = `Next: <strong>today ${_fmtTime(t)}</strong>`; return; }
+      }
+      nextEl.innerHTML = `Next: <strong>tomorrow 8:00 AM EST</strong>`;
+    } catch {}
+  }
+}
+
+// ─── AUTO-TRADE PAUSE BANNER ──────────────────────────────────────────────────
+function _renderPauseBanner() {
+  if (!portfolioState) return;
+  const b = document.getElementById('pauseBanner');
+  const r = document.getElementById('pauseResumeDate');
+  if (!b) return;
+  if (portfolioState.autoTradePaused) {
+    b.style.display = 'flex';
+    if (r && portfolioState.autoTradePauseUntil) {
+      const d = new Date(portfolioState.autoTradePauseUntil).toISOString().split('T')[0];
+      r.textContent = d;
+    }
+  } else {
+    b.style.display = 'none';
+  }
+}
+
+// ─── NOTES (read-only display; adding notes still writes via GS_SCRIPT_URL) ──
+function _renderNotes() {
+  if (!portfolioState) return;
+  const notes = portfolioState.notes || [];
+  const el    = document.getElementById('notesList');
   const sumEl = document.getElementById('notesSummary');
 
-  // Outcome summary counts (Change 8)
   const outcomeCounts = {};
-  for (const n of STATE.notes) { const o = n.outcome||''; outcomeCounts[o] = (outcomeCounts[o]||0) + 1; }
+  notes.forEach(n => { const o = n.outcome||''; outcomeCounts[o] = (outcomeCounts[o]||0) + 1; });
   const colors = { 'Win':'#3fb950','Loss':'#f85149','Fakeout':'#d2a8ff','Missed Entry':'#e3b341','Re-entry':'#58a6ff','Rule Change Exit':'#8b949e' };
-  sumEl.innerHTML = Object.entries(outcomeCounts).filter(([k])=>k).map(([o,c]) =>
+  if (sumEl) sumEl.innerHTML = Object.entries(outcomeCounts).filter(([k])=>k).map(([o,c]) =>
     `<div class="ns-count"><span class="ns-dot" style="background:${colors[o]||'#8b949e'}"></span> ${o}: <strong>${c}</strong></div>`
   ).join('') || '<span style="color:#484f58">No notes yet</span>';
 
-  if (!STATE.notes.length) {
-    el.innerHTML = '<p class="empty-notes">No notes yet. Tag each note with a ticker + signal type + outcome to track patterns over time.</p>';
-    return;
-  }
-  el.innerHTML = STATE.notes.map((n, i) => {
-    const text       = typeof n === 'object' ? n.text : String(n);
+  if (!el) return;
+  if (!notes.length) { el.innerHTML = '<p class="empty-notes">No notes yet.</p>'; return; }
+
+  function escHtml(s) { return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+  el.innerHTML = notes.map((n, i) => {
     const ticker     = n.ticker     || 'General';
     const signalType = n.signalType || 'General';
     const outcome    = n.outcome    || '';
@@ -5709,12 +4706,11 @@ function renderNotes() {
     const stopTs     = n.stopTriggerTs || '';
     const tickerBadge = ticker !== 'General'
       ? `<span style="background:#1a2a3a;color:#58a6ff;border:1px solid #1f6feb;padding:1px 7px;border-radius:4px;font-size:11px;font-weight:700">${escHtml(ticker)}</span>` : '';
-    const sigBadge = signalType === 'ATH' ? `<span class="badge-ath">${signalType}</span>`
-      : signalType === 'Swing' ? `<span class="badge-swing">${signalType}</span>`
+    const sigBadge = signalType==='ATH' ? `<span class="badge-ath">${signalType}</span>`
+      : signalType==='Swing' ? `<span class="badge-swing">${signalType}</span>`
       : `<span class="badge" style="font-size:11px">General</span>`;
-    const outcomeBadge = outcome
-      ? `<span class="outcome-${outcome.toLowerCase().replace(/ /g,'-').replace('entry','').trim()||'rule'}">${outcome}</span>` : '';
-    const meta = [stopTs ? `🛑 Stop: ${formatDate(stopTs)}` : '', ts ? `Added: ${formatDate(ts)}` : ''].filter(Boolean).join(' · ');
+    const outcomeBadge = outcome ? `<span class="outcome-${outcome.toLowerCase().replace(/ /g,'-').replace('entry','').trim()||'rule'}">${outcome}</span>` : '';
+    const meta = [stopTs ? `🛑 Stop: ${_fmtDate(stopTs)}` : '', ts ? `Added: ${_fmtDate(ts)}` : ''].filter(Boolean).join(' · ');
     return `<div class="note-item">
       <span class="note-num">${i+1}.</span>
       <div style="flex:1">
@@ -5722,146 +4718,98 @@ function renderNotes() {
           ${tickerBadge}${sigBadge}${outcomeBadge}
           <small style="color:#484f58;font-size:11px">${meta}</small>
         </div>
-        <span class="note-text">${escHtml(text)}</span>
+        <span class="note-text">${escHtml(n.text||'')}</span>
       </div>
-      <button class="note-del" onclick="deleteNote(${i})">✓ Done</button>
+      <button class="note-del" onclick="addNoteDelete(${i})">✓ Done</button>
     </div>`;
   }).join('');
 }
 
-function renderScheduleInfo() {
-  const runs = STATE.screenerRuns, last = runs[runs.length - 1];
-  if (last) {
-    document.getElementById('lastRunInfo').innerHTML = `Last run: <strong>${formatDate(last.date)} ${formatTimeEST(last.time)}</strong> (${last.tradedCount||0} trades, ${last.pendingCount||0} pending)`;
+// ─── ADD NOTE (still writes through backend) ──────────────────────────────────
+async function addNote() {
+  const text       = document.getElementById('noteInput')?.value?.trim();
+  const ticker     = (document.getElementById('noteTicker')?.value?.trim().toUpperCase() || 'General');
+  const signalType = document.getElementById('noteSignalType')?.value || 'General';
+  const outcome    = document.getElementById('noteOutcome')?.value    || '';
+  const stopTs     = document.getElementById('noteStopTs')?.value     || '';
+  if (!text) return;
+
+  // Optimistic local add
+  if (portfolioState) {
+    if (!portfolioState.notes) portfolioState.notes = [];
+    portfolioState.notes.push({ ticker, signalType, outcome, text,
+      ts: new Date().toISOString().split('T')[0], stopTriggerTs: stopTs });
+    _renderNotes();
   }
-  if (!isWeekdayET()) { document.getElementById('nextRunInfo').innerHTML = `Next: <strong>Monday 8:00 AM EST</strong>`; return; }
-  if (shouldSkipTodayUS() && shouldSkipTodayTSX()) { document.getElementById('nextRunInfo').innerHTML = `Next: <strong>tomorrow</strong> (holiday today)`; return; }
-  const et = timeET();
-  for (const t of SCHED_TIMES) {
-    if (et < t && !hasRunToday(t)) { document.getElementById('nextRunInfo').innerHTML = `Next: <strong>today ${t} EST</strong>`; return; }
-  }
-  document.getElementById('nextRunInfo').innerHTML = `Next: <strong>tomorrow 8:00 AM EST</strong>`;
-}
 
-// ─── CLOCK + MARKET STATUS ────────────────────────────────────────────────────
-function updateClock() {
-  const et = nowET();
-  const time = et.toLocaleTimeString('en-US', { hour:'2-digit', minute:'2-digit', second:'2-digit' });
-  const timeEl = document.getElementById('etTime');
-  if (timeEl) timeEl.textContent = time + ' EST';
-  const badge = document.getElementById('marketStatus');
-  if (badge) {
-    if (isMarketOpen()) { badge.textContent = '● Market Open'; badge.className = 'market-badge open'; }
-    else { badge.textContent = '○ Market Closed'; badge.className = 'market-badge closed'; }
-  }
-}
-
-// ─── NOTIFICATION ────────────────────────────────────────────────────────────
-let notifTimer = null;
-function notify(msg) {
-  const el = document.getElementById('notification');
-  el.textContent = msg; el.style.display = 'block';
-  clearTimeout(notifTimer);
-  notifTimer = setTimeout(() => el.style.display = 'none', 7000);
-}
-
-// ─── DATA MANAGEMENT ─────────────────────────────────────────────────────────
-function clearAllData() {
-  if (!confirm('Clear ALL trade data, run history, and notes? This cannot be undone.')) return;
-  STATE = defaultState(); saveState(); renderAll(); renderNotes();
-  notify('All data cleared.');
-}
-
-// ─── MAIN TICK ────────────────────────────────────────────────────────────────
-function tick() {
-  updateClock();
-  if (!screenerRunning) {
-    if (cloudStateLoaded) checkSchedule();
-    monitorPositions();
-    confirmPendingEntries();
-  }
-  renderScheduleInfo();
-}
-
-// ─── INIT ─────────────────────────────────────────────────────────────────────
-document.addEventListener('DOMContentLoaded', () => {
-  // Only run the clock and basic setup on page load
-  // Full cloud load happens in initShortTerm() when user opens Short Term page
-  updateClock();
-  checkRuleVersion();
-  renderAll();
-  renderNotes();
-  restoreSectionStates();
-  // Kick off auto-sort timer since live auto-sort is enabled by default
-  if (AUTO_SORT.live.enabled) scheduleAutoSort('live');
-  if (AUTO_SORT.closed.enabled) scheduleAutoSort('closed');
-  fetchCadUsd();
-  tick();
-  setInterval(tick, 60 * 1000);
-});
-
-
-let cloudStateLoaded = false;
-let _stInited = false;
-async function initShortTerm() {
-  if(_stInited) return;
-  _stInited = true;
+  // Persist to backend via POST
   try {
-    cloudInit();
-
-    // Show loading state while fetching from Sheets
-    const syncBadge = document.getElementById('syncBadge');
-    if (syncBadge) { syncBadge.textContent = '⏳ Loading from Sheets…'; syncBadge.className = 'sync-badge local'; }
-
-    // Render from localStorage first for instant display
-    renderAll(); renderNotes(); restoreSectionStates();
-    if (AUTO_SORT.live.enabled) scheduleAutoSort('live');
-    if (AUTO_SORT.closed.enabled) scheduleAutoSort('closed');
-
-    // Then fetch from Sheets -- ALWAYS overwrite with cloud data (source of truth)
-    const cloudState = await loadStateFromCloud();
-    if (cloudState && cloudState.trades !== undefined) {
-      cloudState.totalCapital = TOTAL_CAPITAL;
-      STATE = cloudState;
-      try { localStorage.setItem(STORAGE_KEY, JSON.stringify(STATE)); } catch {}
-    }
-
-    deduplicateLiveTrades();
-
-    // Re-render with definitive cloud data
-    renderAll(); renderNotes();
-
-    // Poll every 15s for updates from other devices
-    // Always apply cloud data -- no stale comparison that can block updates
-    cloudListen('tracker', remote => {
-      if (!remote || remote.trades === undefined) return;
-      remote.totalCapital = TOTAL_CAPITAL;
-      // BUG 3: Use timestamp comparison instead of count-based check
-      // Count-based check fails when trade/pending counts happen to sum to the same value
-      const remoteLastUpdated = remote.lastUpdated || 0;
-      const localLastUpdated  = STATE.lastUpdated  || 0;
-      if (remoteLastUpdated <= localLastUpdated) return; // remote is not newer — ignore
-      // BUG 4: Protect live positions before applying remote state
-      // Never let a remote snapshot wipe out live positions that exist locally
-      const localLive = (STATE.trades||[]).filter(t => t.status==='live'||t.status==='partial');
-      STATE = remote;
-      // Merge: if remote is missing any live position that exists locally, keep it
-      for (const lt of localLive) {
-        const inRemote = (STATE.trades||[]).find(t => t.id === lt.id);
-        if (!inRemote) STATE.trades.push(lt);
-      }
-      try { localStorage.setItem(STORAGE_KEY, JSON.stringify(STATE)); } catch {}
-      renderAll(); renderNotes();
+    const payload = { path: 'tracker/notes', action: 'add',
+      data: { ticker, signalType, outcome, text,
+        ts: new Date().toISOString().split('T')[0], stopTriggerTs: stopTs } };
+    await fetch(GS_SCRIPT_URL, {
+      method: 'POST', headers: { 'Content-Type': 'text/plain' },
+      body: JSON.stringify(payload), mode: 'no-cors'
     });
+  } catch {}
 
-    checkRuleVersion();
-    fetchCadUsd();
-    tick();
-    if(!window._stTickInterval) {
-      window._stTickInterval = setInterval(tick, 60*1000);
-    }
-    cloudStateLoaded = true;
-  } catch(e) { console.error('initShortTerm error:', e); }
+  // Clear inputs
+  ['noteInput','noteTicker','noteStopTs'].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
+  const sel = document.getElementById('noteOutcome'); if (sel) sel.value = '';
+}
+
+async function addNoteDelete(i) {
+  if (!portfolioState?.notes) return;
+  portfolioState.notes.splice(i, 1);
+  _renderNotes();
+  try {
+    const payload = { path: 'tracker/notes', action: 'delete', data: { index: i } };
+    await fetch(GS_SCRIPT_URL, {
+      method: 'POST', headers: { 'Content-Type': 'text/plain' },
+      body: JSON.stringify(payload), mode: 'no-cors'
+    });
+  } catch {}
+}
+
+// ─── CLEAR ALL DATA ───────────────────────────────────────────────────────────
+function clearAllData() {
+  if (!confirm('This will clear all local cached data. The backend data in Google Sheets will NOT be affected. Continue?')) return;
+  try { localStorage.removeItem('st_portfolio_cache'); } catch {}
+  portfolioState = null;
+  _renderAll();
+  notify('Local cache cleared. Fetching fresh data…');
+  fetchPortfolioState();
+}
+
+// ─── RUN NOW BUTTON (triggers backend screener via Web App POST) ───────────
+async function runScreenerNow() {
+  const btn = document.getElementById('runNowBtn');
+  const stop = document.getElementById('stopBtn');
+  if (btn) { btn.disabled = true; btn.textContent = '⏳ Running…'; }
+  if (stop) stop.style.display = 'inline-block';
+  notify('Triggering screener run on backend…');
+
+  try {
+    const payload = { path: 'screener', action: 'run' };
+    const res = await fetch(GS_SCRIPT_URL, {
+      method: 'POST', headers: { 'Content-Type': 'text/plain' },
+      body: JSON.stringify(payload)
+    });
+    const json = await res.json().catch(() => ({}));
+    notify(json.message || '✓ Screener triggered. Refresh in ~30s to see results.');
+    setTimeout(fetchPortfolioState, 30000);
+  } catch {
+    notify('⚠ Could not reach backend. The screener runs automatically at 8:00 AM and 1:00 PM EST.');
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = '▶ Run Now'; }
+    if (stop) stop.style.display = 'none';
+  }
+}
+
+function stopScreenerRun() {
+  notify('Screener runs server-side and cannot be stopped from the browser.');
+  const stop = document.getElementById('stopBtn');
+  if (stop) stop.style.display = 'none';
 }
 
 </script>
