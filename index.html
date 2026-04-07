@@ -6978,5 +6978,117 @@ async function initLongTerm() {
 
 </script>
 <div id="syncBadge" class="local">🟡 Local Only</div>
+
+<script>
+// ═══════════════════════════════════════════════════════════════════════════════
+//  AUTO-RELOAD SCHEDULER
+//  Reloads the page every night at 2:00 AM and 6:00 PM local time so the
+//  laptop running 24/7 always picks up the latest GitHub deployment.
+//  Shows a live countdown badge in the bottom-left corner.
+// ═══════════════════════════════════════════════════════════════════════════════
+
+(function() {
+  const RELOAD_HOURS = [2, 18]; // 2:00 AM and 6:00 PM local time
+
+  // ── Badge UI ──────────────────────────────────────────────────────────────
+  const badge = document.createElement('div');
+  badge.id = 'autoReloadBadge';
+  badge.style.cssText = [
+    'position:fixed', 'bottom:16px', 'left:16px', 'z-index:9998',
+    'background:#0d1520', 'border:1px solid #1e3250',
+    'border-radius:20px', 'padding:5px 12px',
+    'font-family:Inter,sans-serif', 'font-size:11px',
+    'color:#4a6a8a', 'pointer-events:none',
+    'display:flex', 'align-items:center', 'gap:6px',
+    'transition:opacity .3s'
+  ].join(';');
+  badge.innerHTML = '<span style="width:6px;height:6px;border-radius:50%;background:#1e3250;flex-shrink:0;display:inline-block"></span><span id="arLabel">Auto-reload: —</span>';
+  document.body.appendChild(badge);
+
+  // ── Calculate ms until next reload target ────────────────────────────────
+  function msUntilNext() {
+    const now = new Date();
+    let nearest = Infinity;
+    for (const h of RELOAD_HOURS) {
+      const target = new Date(now);
+      target.setHours(h, 0, 0, 0);
+      if (target <= now) target.setDate(target.getDate() + 1);
+      const diff = target - now;
+      if (diff < nearest) nearest = diff;
+    }
+    return nearest;
+  }
+
+  // ── Format countdown label ────────────────────────────────────────────────
+  function fmtCountdown(ms) {
+    const totalSec = Math.floor(ms / 1000);
+    const h = Math.floor(totalSec / 3600);
+    const m = Math.floor((totalSec % 3600) / 60);
+    const s = totalSec % 60;
+    if (h > 0) return `${h}h ${m}m`;
+    if (m > 0) return `${m}m ${s}s`;
+    return `${s}s`;
+  }
+
+  // ── Next reload time label ────────────────────────────────────────────────
+  function nextTimeLabel() {
+    const now = new Date();
+    let nearest = null, nearestDiff = Infinity;
+    for (const h of RELOAD_HOURS) {
+      const t = new Date(now);
+      t.setHours(h, 0, 0, 0);
+      if (t <= now) t.setDate(t.getDate() + 1);
+      const diff = t - now;
+      if (diff < nearestDiff) { nearestDiff = diff; nearest = t; }
+    }
+    return nearest ? nearest.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'}) : '';
+  }
+
+  // ── Tick: update badge countdown every second ─────────────────────────────
+  let reloadTimer = null;
+
+  function scheduleNext() {
+    if (reloadTimer) clearTimeout(reloadTimer);
+    const ms = msUntilNext();
+    reloadTimer = setTimeout(() => {
+      console.log('[AutoReload] Reloading page to pick up latest GitHub deployment…');
+      window.location.reload(true);
+    }, ms);
+    return ms;
+  }
+
+  function tick() {
+    const ms = msUntilNext();
+    const label = document.getElementById('arLabel');
+    if (label) {
+      label.textContent = `Auto-reload ${nextTimeLabel()} · ${fmtCountdown(ms)}`;
+    }
+    // Pulse dot green when < 60 seconds away
+    const dot = badge.querySelector('span');
+    if (ms < 60000) {
+      dot.style.background = '#10d07a';
+      dot.style.boxShadow  = '0 0 6px rgba(16,208,122,.5)';
+      badge.style.borderColor = '#10d07a44';
+    } else {
+      dot.style.background = '#1e3250';
+      dot.style.boxShadow  = 'none';
+      badge.style.borderColor = '#1e3250';
+    }
+  }
+
+  // ── Init ─────────────────────────────────────────────────────────────────
+  scheduleNext();
+  tick();
+  setInterval(tick, 1000);
+
+  // Recalculate after screen wake (handles laptop sleep drift)
+  document.addEventListener('visibilitychange', () => {
+    if (!document.hidden) { scheduleNext(); tick(); }
+  });
+
+  console.log(`[AutoReload] Scheduled. Next reload: ${nextTimeLabel()} (${Math.round(msUntilNext()/60000)} min away)`);
+})();
+</script>
+
 </body>
 </html>
