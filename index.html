@@ -4016,25 +4016,32 @@ async function loadAllRatings(){
   <!-- HOW IT WORKS -->
   <div style="background:#161b22;border:1px solid #30363d;border-radius:8px;padding:16px 20px;margin-bottom:20px">
     <div style="font-size:14px;font-weight:700;color:#58a6ff;margin-bottom:10px">ℹ How Long-Term Scoring Works</div>
-    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:10px;font-size:12px;color:#8b949e;line-height:1.7">
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:14px;font-size:12px;color:#8b949e;line-height:1.8">
       <div>
-        <strong style="color:#c9d1d9">Technical Filters (auto-applied):</strong><br>
-        ✓ Price &gt; EMA(50) Daily &nbsp;·&nbsp; ✓ 52W Low &gt; SMA(200) Weekly<br>
-        ✓ Price &gt; SMA(50) Weekly &nbsp;·&nbsp; ✓ Price &gt; SMA(200) Weekly<br>
-        ✓ SMA(50) Weekly &gt; SMA(200) Weekly <span style="color:#484f58">(Golden Cross)</span>
+        <strong style="color:#c9d1d9">Pass/Fail Filters (hard rules):</strong><br>
+        ✓ Market Cap &gt; $100B<br>
+        ✓ P/E between 0 and 60<br>
+        ✓ Price &gt; SMA(50) Weekly<br>
+        ✓ Price &gt; SMA(200) Weekly <span style="color:#484f58">(Golden Cross)</span><br>
+        ✓ SMA(50)W &gt; SMA(200)W<br>
+        ✓ 52W Low &gt; SMA(200)W<br>
+        ✓ 5Y Performance &gt; 100%
       </div>
       <div>
-        <strong style="color:#c9d1d9">Fundamental Filters:</strong><br>
-        Market Cap &gt; $100B · P/E 0–60 · 5Y Perf &gt; 100%<br>
-        ROE &gt; 10% · EPS Growth &gt; 10% · FCF &gt; 0 · Gross Margin &gt; 10%
+        <strong style="color:#c9d1d9">Strength % Score (weighted):</strong><br>
+        P/E score (20%) · Market Cap score (10%)<br>
+        EPS score (20%) · SMA50/200 trend gap (20%)<br>
+        52W Low resilience (15%) · 5Y Perf (15%)<br>
+        <span style="color:#484f58;font-size:11px">Lower P/E · Higher MCap · Higher EPS · Wider golden cross gap = higher score</span>
       </div>
       <div>
-        <strong style="color:#c9d1d9">Strength % Score:</strong><br>
+        <strong style="color:#c9d1d9">Grade Scale:</strong><br>
         <span style="color:#3fb950">●</span> 80–100% = Grade A &nbsp;
         <span style="color:#d4a017">●</span> 60–79% = Grade B<br>
         <span style="color:#f0883e">●</span> 40–59% = Grade C &nbsp;
         <span style="color:#f85149">●</span> &lt;40% = Grade D<br>
-        <span style="color:#484f58">Data sourced from Google Sheet · Updated daily</span>
+        <strong style="color:#c9d1d9">Notes column:</strong> Auto-updated when any metric changes ≥5%
+        <span style="color:#484f58;font-size:11px;display:block">e.g. "Strength +6% (73→79) on 06-April-2026"</span>
       </div>
     </div>
   </div>
@@ -4049,19 +4056,20 @@ async function loadAllRatings(){
 
   <!-- RESULTS TABLE -->
   <div style="background:#161b22;border:1px solid #30363d;border-radius:8px;overflow:hidden;overflow-x:auto">
-    <table id="ltTable" style="width:100%;border-collapse:collapse;min-width:860px">
+    <table id="ltTable" style="width:100%;border-collapse:collapse;min-width:960px">
       <thead>
         <tr style="background:#21262d">
           <th style="padding:11px 16px;text-align:left;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:#8b949e;border-bottom:1px solid #30363d;white-space:nowrap">Stock</th>
           <th style="padding:11px 16px;text-align:left;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:#8b949e;border-bottom:1px solid #30363d;white-space:nowrap">Price &amp; Volume</th>
-          <th style="padding:11px 16px;text-align:left;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:#8b949e;border-bottom:1px solid #30363d;white-space:nowrap">Strength</th>
+          <th id="ltStrengthHeader" onclick="toggleLtSort()" style="padding:11px 16px;text-align:left;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:#58a6ff;border-bottom:1px solid #30363d;white-space:nowrap;cursor:pointer;user-select:none" title="Click to toggle sort direction">Strength <span id="ltSortIcon">↓</span></th>
           <th style="padding:11px 16px;text-align:left;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:#8b949e;border-bottom:1px solid #30363d;white-space:nowrap">Technical Checks</th>
           <th style="padding:11px 16px;text-align:left;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:#8b949e;border-bottom:1px solid #30363d;white-space:nowrap">Fundamentals</th>
+          <th style="padding:11px 16px;text-align:left;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:#8b949e;border-bottom:1px solid #30363d;white-space:nowrap">Date Added</th>
           <th style="padding:11px 16px;text-align:left;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:#8b949e;border-bottom:1px solid #30363d;white-space:nowrap">Notes</th>
         </tr>
       </thead>
       <tbody id="ltBody">
-        <tr><td colspan="6" style="padding:40px;text-align:center;color:#484f58;font-size:14px">Click ↻ Refresh Data to load from Google Sheet</td></tr>
+        <tr><td colspan="7" style="padding:40px;text-align:center;color:#484f58;font-size:14px">Click ↻ Refresh Data to load from Google Sheet</td></tr>
       </tbody>
     </table>
   </div>
@@ -6719,7 +6727,7 @@ async function loadLtFromSheet() {
 
   if (btn) { btn.disabled = true; btn.textContent = '⏳ Loading…'; }
   if (status) status.textContent = 'Fetching from Google Sheet…';
-  if (tbody) tbody.innerHTML = `<tr><td colspan="8" style="padding:40px;text-align:center;color:#8b949e">Loading data…</td></tr>`;
+  if (tbody) tbody.innerHTML = `<tr><td colspan="7" style="padding:40px;text-align:center;color:#8b949e">Loading data…</td></tr>`;
 
   try {
     // Direct fetch – works when sheet is shared with "Anyone with the link"
@@ -6781,7 +6789,7 @@ async function loadLtFromSheet() {
 
     if (parsed.length === 0) {
       if (status) status.textContent = '⚠ No rows with Status = "PASS" found.';
-      if (tbody) tbody.innerHTML = `<tr><td colspan="8" style="padding:40px;text-align:center;color:#d4a017">No PASS rows. Make sure column E (Status) contains "PASS" (uppercase).</td></tr>`;
+      if (tbody) tbody.innerHTML = `<tr><td colspan="7" style="padding:40px;text-align:center;color:#d4a017">No PASS rows. Make sure column E (Status) contains "PASS" (uppercase).</td></tr>`;
       return;
     }
 
@@ -6793,7 +6801,7 @@ async function loadLtFromSheet() {
   } catch (err) {
     console.error('LT error:', err);
     if (status) status.textContent = '⚠ Failed to load data. Make sure the sheet is shared (Anyone with link can view).';
-    if (tbody) tbody.innerHTML = `<tr><td colspan="8" style="padding:40px;text-align:center;color:#f85149">
+    if (tbody) tbody.innerHTML = `<tr><td colspan="7" style="padding:40px;text-align:center;color:#f85149">
       Failed to load data. Make sure:<br>
       1. The sheet is shared (File → Share → Anyone with the link can view).<br>
       2. The sheet contains columns at positions: Symbol, Company Name, Price, Strength %, Status, ...<br>
@@ -6805,6 +6813,16 @@ async function loadLtFromSheet() {
 }
 
 // ─── RENDER TABLE (same as before – unchanged) ───────────────────────────────
+let ltSortDir = 'desc'; // 'desc' = high to low, 'asc' = low to high
+
+function toggleLtSort() {
+  ltSortDir = ltSortDir === 'desc' ? 'asc' : 'desc';
+  const icon = document.getElementById('ltSortIcon');
+  if (icon) icon.textContent = ltSortDir === 'desc' ? '↓' : '↑';
+  ltSheetData.sort((a, b) => ltSortDir === 'desc' ? b.strength - a.strength : a.strength - b.strength);
+  renderLtTable();
+}
+
 function renderLtTable() {
   const tbody = document.getElementById('ltBody');
   const badge = document.getElementById('ltResultBadge');
@@ -6812,7 +6830,7 @@ function renderLtTable() {
   if (badge) badge.textContent = ltSheetData.length;
 
   if (!ltSheetData.length) {
-    tbody.innerHTML = `<tr><td colspan="6" style="padding:40px;text-align:center;color:#484f58">No PASS stocks found in sheet</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="7" style="padding:40px;text-align:center;color:#484f58">No PASS stocks found in sheet</td></tr>`;
     return;
   }
 
@@ -6851,22 +6869,22 @@ function renderLtTable() {
         color:${pass ? '#3fb950' : '#f85149'};
         border:1px solid ${pass ? 'rgba(63,185,80,.3)' : 'rgba(248,81,73,.2)'}">${pass ? '✓' : '✗'} ${label}</span>`;
 
-    const chgC = s.change >= 0 ? '#3fb950' : '#f85149';
+    const chgC    = s.change >= 0 ? '#3fb950' : '#f85149';
     const chgSign = s.change >= 0 ? '+' : '';
-    const rowBorderC = s.strength>=80?'#3fb950':s.strength>=70?'#d4a017':'transparent';
+    // Only green border for Grade A (≥80%) -- no yellow border to avoid confusion
+    const rowBorderC = s.strength >= 80 ? '#3fb950' : 'transparent';
 
     return `<tr style="border-bottom:1px solid #21262d;border-left:3px solid ${rowBorderC};transition:background .15s"
       onmouseover="this.style.background='#1c2128'" onmouseout="this.style.background=''">
       <td style="padding:14px 16px;vertical-align:top;min-width:140px">
         <div style="font-weight:700;font-size:15px;color:#f0f6fc">${s.symbol}</div>
         <div style="font-size:11px;color:#8b949e;margin-top:3px;max-width:150px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${s.name || ''}</div>
-        ${s.dateAdded ? `<div style="font-size:10px;color:#484f58;margin-top:4px">Added ${s.dateAdded}</div>` : ''}
-        </td>
+      </td>
       <td style="padding:14px 16px;vertical-align:top;white-space:nowrap">
         <div style="font-size:15px;font-weight:700;color:#f0f6fc">$${fmtN(s.price,2)}</div>
         <div style="font-size:12px;color:${chgC};margin-top:3px;font-weight:600">${chgSign}${fmtN(s.change,2)}%</div>
         <div style="font-size:11px;color:#484f58;margin-top:2px">Vol: ${fmtVol(s.volume)}</div>
-        </td>
+      </td>
       <td style="padding:14px 16px;vertical-align:top;min-width:130px">
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:5px">
           <span style="font-size:18px;font-weight:700;color:${barC}">${s.strength}%</span>
@@ -6876,7 +6894,7 @@ function renderLtTable() {
           <div style="height:100%;width:${Math.min(s.strength,100)}%;background:${barC};border-radius:3px;transition:width .4s"></div>
         </div>
         <div style="font-size:10px;color:#484f58;margin-top:5px">Strength Score</div>
-        </td>
+      </td>
       <td style="padding:14px 16px;vertical-align:top">
         <div style="display:flex;flex-wrap:wrap;gap:0;max-width:220px">
           ${chk(aboveSMA200, 'Price > SMA200W')}
@@ -6886,7 +6904,7 @@ function renderLtTable() {
           <span style="color:#c9d1d9">SMA200W:</span> $${fmtN(s.sma200w,2)}<br>
           <span style="color:#c9d1d9">52W Low:</span> $${fmtN(s.w52low,2)}
         </div>
-        </td>
+      </td>
       <td style="padding:14px 16px;vertical-align:top">
         <div style="display:flex;flex-wrap:wrap;gap:0;max-width:220px">
           ${chk(goodMCap,  'MCap>$100B')}
@@ -6900,11 +6918,14 @@ function renderLtTable() {
           <span style="color:#c9d1d9">EPS:</span> ${fmtN(s.eps,2)} &nbsp;
           <span style="color:#c9d1d9">5Y Perf:</span> <span style="color:${s.perf5y>=100?'#3fb950':'#d4a017'}">${fmtN(s.perf5y,1)}%</span>
         </div>
-        </td>
-      <td style="padding:14px 16px;vertical-align:top;max-width:160px">
+      </td>
+      <td style="padding:14px 16px;vertical-align:top;white-space:nowrap">
+        <div style="font-size:12px;color:#8b949e">${s.dateAdded || '—'}</div>
+      </td>
+      <td style="padding:14px 16px;vertical-align:top;max-width:200px">
         <div style="font-size:12px;color:#8b949e;line-height:1.6">${s.notes || '—'}</div>
-        </td>
-      </tr>`;
+      </td>
+    </tr>`;
   }).join('');
 }
 
