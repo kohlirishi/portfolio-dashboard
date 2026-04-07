@@ -6857,11 +6857,15 @@ async function loadLtFromSheet() {
         pe: toNum(get(8)) || 0,
         eps: toNum(get(9)) || 0,
         w52low: toNum(get(10)) || 0,
-        sma200w: toNum(get(12)) || 0,    // ✅ SMA200W from column M (index 12)
-        perf5y: toNum(get(13)) || 0,     // ✅ Perf 5Y % from column N (index 13)
-        dateAdded: get(14),              // ✅ Date Added from column O (index 14)
-        notes: get(15),                  // ✅ Notes from column P (index 15)
-        exchange: get(16),               // ✅ Exchange from column Q (index 16)
+        sma50w: toNum(get(11)) || 0,      // SMA50W from column L (index 11)
+        sma200w: toNum(get(12)) || 0,     // SMA200W from column M (index 12)
+        perf5y: toNum(get(13)) || 0,      // Perf 5Y % from column N (index 13)
+        dateAdded: get(14),               // Date Added from column O (index 14)
+        notes: get(15),                   // Notes from column P (index 15)
+        exchange: get(16),                // Exchange from column Q (index 16)
+        w52high: toNum(get(17)) || 0,     // 52W High from column R (index 17)
+        distFromHigh: toNum(get(18)) || 0,// Dist from 52W High % from column S (index 18)
+        beta: toNum(get(19)) || 0,        // Beta from column T (index 19)
       });
     }
 
@@ -6991,12 +6995,22 @@ function renderLtTable() {
                 : { label:'D', color:'#f85149', bg:'rgba(248,81,73,.12)', border:'#6e1a1a' };
     const barC = grade.label==='A'?'#3fb950':grade.label==='B'?'#d4a017':grade.label==='C'?'#f0883e':'#f85149';
 
-    const aboveSMA200 = s.price > 0 && s.sma200w > 0 && s.price > s.sma200w;
-    const above52wLow = s.price > 0 && s.w52low > 0 && s.price > s.w52low;
-    const goodPE      = s.pe > 0 && s.pe <= 60;
-    const goodPerf    = s.perf5y >= 100;
-    const goodEPS     = s.eps > 0;
-    const goodMCap    = s.marketCap >= 1e11;
+    const aboveSMA200  = s.price > 0 && s.sma200w > 0 && s.price > s.sma200w;
+    const aboveSMA50   = s.price > 0 && s.sma50w  > 0 && s.price > s.sma50w;
+    const above52wLow  = s.price > 0 && s.w52low  > 0 && s.price > s.w52low;
+    const goldenCross  = s.sma50w > 0 && s.sma200w > 0 && s.sma50w > s.sma200w;
+    const goodPE       = s.pe > 0 && s.pe <= 60;
+    const goodPerf     = s.perf5y >= 100;
+    const goodEPS      = s.eps > 0;
+    const goodMCap     = s.marketCap >= 1e11;
+
+    // Distance from 52W high -- colour code by proximity
+    const distH = s.distFromHigh; // negative % means price is below high
+    const distHColor = distH >= -5 ? '#3fb950' : distH >= -15 ? '#d4a017' : '#8b949e';
+    const distHSign  = distH >= 0 ? '+' : '';
+
+    // Beta risk indicator
+    const betaColor = s.beta > 0 && s.beta <= 1.2 ? '#3fb950' : s.beta <= 1.8 ? '#d4a017' : '#f85149';
 
     const chk = (pass, label) =>
       `<span style="display:inline-flex;align-items:center;gap:3px;padding:2px 7px;border-radius:4px;font-size:10px;font-weight:600;margin:2px;
@@ -7006,7 +7020,6 @@ function renderLtTable() {
 
     const chgC    = s.change >= 0 ? '#3fb950' : '#f85149';
     const chgSign = s.change >= 0 ? '+' : '';
-    // Only green border for Grade A (≥80%) -- no yellow border to avoid confusion
     const rowBorderC = s.strength >= 80 ? '#3fb950' : 'transparent';
 
     return `<tr style="border-bottom:1px solid #21262d;border-left:3px solid ${rowBorderC};transition:background .15s"
@@ -7035,13 +7048,18 @@ function renderLtTable() {
         <div style="font-size:10px;color:#484f58;margin-top:5px">Strength Score</div>
       </td>
       <td style="padding:14px 16px;vertical-align:top">
-        <div style="display:flex;flex-wrap:wrap;gap:0;max-width:220px">
+        <div style="display:flex;flex-wrap:wrap;gap:0;max-width:240px">
           ${chk(aboveSMA200, 'Price > SMA200W')}
+          ${chk(aboveSMA50,  'Price > SMA50W')}
           ${chk(above52wLow, 'Above 52W Low')}
+          ${chk(goldenCross, 'Golden Cross')}
         </div>
-        <div style="font-size:11px;color:#8b949e;margin-top:6px;line-height:1.8">
+        <div style="font-size:11px;color:#8b949e;margin-top:6px;line-height:1.9">
+          <span style="color:#c9d1d9">SMA50W:</span> $${fmtN(s.sma50w,2)} &nbsp;
           <span style="color:#c9d1d9">SMA200W:</span> $${fmtN(s.sma200w,2)}<br>
-          <span style="color:#c9d1d9">52W Low:</span> $${fmtN(s.w52low,2)}
+          <span style="color:#c9d1d9">52W Low:</span> $${fmtN(s.w52low,2)} &nbsp;
+          <span style="color:#c9d1d9">52W High:</span> $${fmtN(s.w52high,2)}<br>
+          <span style="color:#c9d1d9">Dist from High:</span> <span style="color:${distHColor}">${distH ? distHSign + fmtN(distH,1) + '%' : 'N/A'}</span>
         </div>
       </td>
       <td style="padding:14px 16px;vertical-align:top">
@@ -7051,11 +7069,13 @@ function renderLtTable() {
           ${chk(goodPerf,  '5Y Perf>100%')}
           ${chk(goodEPS,   'EPS>0')}
         </div>
-        <div style="font-size:11px;color:#8b949e;margin-top:6px;line-height:1.8">
+        <div style="font-size:11px;color:#8b949e;margin-top:6px;line-height:1.9">
           <span style="color:#c9d1d9">MCap:</span> ${fmtMCap(s.marketCap)} &nbsp;
           <span style="color:#c9d1d9">P/E:</span> ${fmtN(s.pe,1)}<br>
           <span style="color:#c9d1d9">EPS:</span> ${fmtN(s.eps,2)} &nbsp;
-          <span style="color:#c9d1d9">5Y Perf:</span> <span style="color:${s.perf5y>=100?'#3fb950':'#d4a017'}">${fmtN(s.perf5y,1)}%</span>
+          <span style="color:#c9d1d9">5Y Perf:</span> <span style="color:${s.perf5y>=100?'#3fb950':'#d4a017'}">${fmtN(s.perf5y,1)}%</span><br>
+          <span style="color:#c9d1d9">Beta:</span> <span style="color:${betaColor}">${s.beta ? fmtN(s.beta,2) : 'N/A'}</span>
+          <span style="color:#484f58;font-size:10px">&nbsp;${s.beta <= 1 ? '(low risk)' : s.beta <= 1.5 ? '(moderate)' : s.beta > 0 ? '(high risk)' : ''}</span>
         </div>
       </td>
       <td style="padding:14px 16px;vertical-align:top;white-space:nowrap">
