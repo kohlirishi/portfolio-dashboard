@@ -4047,7 +4047,7 @@ async function loadAllRatings(){
   <div style="display:flex;align-items:center;gap:12px;margin-bottom:14px;flex-wrap:wrap">
     <div style="font-size:17px;font-weight:700;color:#f0f6fc">📊 Screening Results</div>
     <span id="ltResultBadge" style="background:#21262d;border:1px solid #3fb950;color:#3fb950;border-radius:12px;padding:2px 10px;font-size:12px;font-weight:700">0</span>
-    <span id="ltSortSubtitle" style="font-size:12px;color:#484f58">PASS only · sorted by Strength % (high to low) · from Google Sheet tab: testScreener</span>
+    <span id="ltSortSubtitle" style="font-size:12px;color:#484f58">PASS only · Strength ≥ 60% · sorted by Strength % (high to low) · from Google Sheet tab: testScreener</span>
     <span id="ltLoadStatus" style="font-size:12px;color:#8b949e;margin-left:auto"></span>
   </div>
 
@@ -6062,7 +6062,7 @@ function updateLtSortSubtitle() {
   if (ltActiveSortCol === 'date') {
     el.textContent = 'PASS only · sorted by Date Added (' + (ltDateSortDir === 'desc' ? 'newest first' : 'oldest first') + ') · from Google Sheet tab: testScreener';
   } else {
-    el.textContent = 'PASS only · sorted by Strength % (' + (ltSortDir === 'desc' ? 'high to low' : 'low to high') + ') · from Google Sheet tab: testScreener';
+    el.textContent = 'PASS only · Strength ≥ 60% · sorted by Strength % (' + (ltSortDir === 'desc' ? 'high to low' : 'low to high') + ') · from Google Sheet tab: testScreener';
   }
 }
 
@@ -6116,10 +6116,13 @@ function renderLtTable() {
   const tbody = document.getElementById('ltBody');
   const badge = document.getElementById('ltResultBadge');
   if (!tbody) return;
-  if (badge) badge.textContent = ltSheetData.length;
 
-  if (!ltSheetData.length) {
-    tbody.innerHTML = `<tr><td colspan="7" style="padding:40px;text-align:center;color:#484f58">No PASS stocks found in sheet</td></tr>`;
+  // Only show stocks with Strength >= 60%
+  const filtered = ltSheetData.filter(s => s.strength >= 60);
+  if (badge) badge.textContent = filtered.length;
+
+  if (!filtered.length) {
+    tbody.innerHTML = `<tr><td colspan="7" style="padding:40px;text-align:center;color:#484f58">No stocks with Strength ≥ 60% found</td></tr>`;
     return;
   }
 
@@ -6138,7 +6141,7 @@ function renderLtTable() {
   };
   const fmtN = (v, d=2) => (v && v !== 0) ? v.toFixed(d) : 'N/A';
 
-  tbody.innerHTML = ltSheetData.map(s => {
+  tbody.innerHTML = filtered.map(s => {
     const grade = s.strength >= 80 ? { label:'A', color:'#3fb950', bg:'rgba(63,185,80,.12)', border:'#238636' }
                 : s.strength >= 60 ? { label:'B', color:'#d4a017', bg:'rgba(212,160,23,.12)', border:'#9e6a03' }
                 : s.strength >= 40 ? { label:'C', color:'#f0883e', bg:'rgba(240,136,62,.12)', border:'#bd561d' }
