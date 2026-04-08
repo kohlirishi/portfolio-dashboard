@@ -4688,9 +4688,19 @@ function _renderClosed() {
 }
 
 // ─── SCREENER RUN LOG ─────────────────────────────────────────────────────────
+// ─── SHARED: sort screener runs newest-first ─────────────────────────────────
+function _sortedRuns() {
+  return [...(portfolioState.screenerRuns || [])].sort((a, b) => {
+    // Sort by date desc, then time desc (both are "YYYY-MM-DD" and "HH:MM" strings)
+    const da = (a.date || '') + ' ' + (a.time || '');
+    const db = (b.date || '') + ' ' + (b.time || '');
+    return db.localeCompare(da);
+  });
+}
+
 function _renderRunLog() {
   if (!portfolioState) return;
-  const runs  = [...(portfolioState.screenerRuns || [])].reverse().slice(0, 7); // Show only last 7 runs
+  const runs  = _sortedRuns().slice(0, 7); // newest first, max 7
   const tbody = document.getElementById('runLogBody');
   if (!tbody) return;
   if (!runs.length) {
@@ -4712,8 +4722,8 @@ function _renderRunLog() {
 // ─── SCHEDULE INFO ────────────────────────────────────────────────────────────
 function _renderScheduleInfo() {
   if (!portfolioState) return;
-  const runs = portfolioState.screenerRuns || [];
-  const last = runs[runs.length - 1];
+  const sorted = _sortedRuns();
+  const last = sorted[0]; // newest run is first after sort
   if (last) {
     const el = document.getElementById('lastRunInfo');
     if (el) el.innerHTML = `Last run: <strong>${_fmtDate(last.date)} ${_fmtTime(last.time)}</strong> (${last.tradedCount||0} trades, ${last.pendingCount||0} pending)`;
