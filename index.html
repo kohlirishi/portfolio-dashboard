@@ -3731,7 +3731,8 @@ async function loadAllRatings(){
     <div class="table-wrap">
       <table>
         <thead><tr>
-          <th>Ticker</th><th>Type</th><th>Prob</th>
+          <th>Ticker</th><th>Type</th>
+          <th class="sortable" onclick="sortLive('prob')" id="liveSort-prob">Prob <span class="sort-icon">↕</span></th>
           <th class="sortable" onclick="sortLive('buyDate')" id="liveSort-buyDate" style="white-space:nowrap">Buy Date <span class="sort-icon">↕</span></th>
           <th>Buy Price (USD)</th><th>Current (USD)</th>
           <th>Invested</th>
@@ -4563,6 +4564,33 @@ function _renderPending() {
   }).join('');
 }
 
+// ─── LIVE POSITIONS SORT ──────────────────────────────────────────────────────
+let _liveSortCol = null;   // 'prob' | 'buyDate' | 'pnlUSD' | 'pnlPct' | null
+let _liveSortDir = 'desc'; // 'asc' | 'desc'
+
+function sortLive(col) {
+  if (_liveSortCol === col) {
+    _liveSortDir = _liveSortDir === 'desc' ? 'asc' : 'desc';
+  } else {
+    _liveSortCol = col;
+    _liveSortDir = 'desc'; // default: highest first
+  }
+  // Update header icons
+  ['prob','buyDate','pnlUSD','pnlPct'].forEach(c => {
+    const th = document.getElementById('liveSort-' + c);
+    if (!th) return;
+    const icon = th.querySelector('.sort-icon');
+    if (c === _liveSortCol) {
+      th.classList.add('sort-active');
+      if (icon) icon.textContent = _liveSortDir === 'desc' ? '↓' : '↑';
+    } else {
+      th.classList.remove('sort-active');
+      if (icon) icon.textContent = '↕';
+    }
+  });
+  _renderLive();
+}
+
 // ─── LIVE POSITIONS ───────────────────────────────────────────────────────────
 function _renderLive() {
   if (!portfolioState) return;
@@ -4590,6 +4618,40 @@ function _renderLive() {
   if (!live.length) {
     tbody.innerHTML = '<tr><td colspan="12" class="empty">No live positions</td></tr>';
     return;
+  }
+
+  // Apply sort if a column is selected
+  if (_liveSortCol) {
+    live.sort((a, b) => {
+      let va, vb;
+      if (_liveSortCol === 'prob') {
+        va = parseFloat(a.prob) || 0;
+        vb = parseFloat(b.prob) || 0;
+      } else if (_liveSortCol === 'buyDate') {
+        va = new Date(a.buyDate || 0).getTime();
+        vb = new Date(b.buyDate || 0).getTime();
+      } else if (_liveSortCol === 'pnlUSD' || _liveSortCol === 'pnlPct') {
+        // Calculate unrealized P&L inline for sorting
+        const calc = t => {
+          const cp = parseFloat(t.currentPrice) || 0;
+          const shares = parseFloat(t.sharesOpen) || 0;
+          const inv = parseFloat(t.invested) || 0;
+          const partial = t.partialExitDone === true || t.partialExitDone === 'true';
+          const partPnl = parseFloat(t.partialExitPnl) || 0;
+          const openPnl = (cp * shares) - (partial ? inv / 2 : inv);
+          return openPnl + partPnl;
+        };
+        if (_liveSortCol === 'pnlUSD') {
+          va = calc(a); vb = calc(b);
+        } else {
+          const bp_a = parseFloat(a.buyPrice) || 0;
+          const bp_b = parseFloat(b.buyPrice) || 0;
+          va = bp_a > 0 ? (parseFloat(a.currentPrice) - bp_a) / bp_a * 100 : 0;
+          vb = bp_b > 0 ? (parseFloat(b.currentPrice) - bp_b) / bp_b * 100 : 0;
+        }
+      }
+      return _liveSortDir === 'desc' ? vb - va : va - vb;
+    });
   }
 
   tbody.innerHTML = live.map(t => {
