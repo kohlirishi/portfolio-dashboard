@@ -56,6 +56,15 @@ header{background:var(--surface);border-bottom:1px solid var(--border);padding:1
 .h-btn{display:flex;align-items:center;gap:7px;padding:8px 16px;background:var(--surface2);border:1px solid var(--border);color:var(--text2);font-size:13px;font-weight:500;border-radius:7px;transition:all .15s}
 .h-btn:hover,.h-btn.active{border-color:var(--blue);color:var(--blue);background:rgba(61,159,255,.08)}
 .h-btn svg{width:14px;height:14px;flex-shrink:0}
+.h-more-wrap{position:relative}
+.h-more-dropdown{display:none;position:absolute;top:calc(100% + 6px);right:0;min-width:220px;background:var(--surface2);border:1px solid var(--border);border-radius:8px;box-shadow:0 8px 24px rgba(0,0,0,.35);z-index:200;overflow:hidden}
+.h-more-dropdown.open{display:block}
+.h-more-item{display:flex;align-items:center;gap:9px;width:100%;padding:10px 14px;background:none;border:none;color:var(--text2);font-size:13px;font-weight:500;cursor:pointer;text-align:left;transition:background .12s,color .12s}
+.h-more-item:hover{background:rgba(61,159,255,.08);color:var(--blue)}
+.h-more-item.active{color:var(--blue)}
+.h-more-item svg{width:14px;height:14px;flex-shrink:0;opacity:.7}
+.h-more-chevron{transition:transform .2s}
+.h-more-wrap.open .h-more-chevron{transform:rotate(180deg)}
 .refresh-wrap{display:flex;align-items:center;gap:8px;padding:8px 14px;background:var(--surface2);border:1px solid var(--border);border-radius:7px}
 .refresh-dot{width:7px;height:7px;border-radius:50%;background:var(--green);animation:pulse 2s ease-in-out infinite}
 @keyframes pulse{0%,100%{opacity:1;box-shadow:0 0 0 0 rgba(16,208,122,.4)}50%{opacity:.7;box-shadow:0 0 0 5px rgba(16,208,122,0)}}
@@ -1027,14 +1036,24 @@ table.div-ht tfoot td{padding:10px 14px;font-size:13px;font-weight:700;backgroun
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
       Short Term Trading Portfolio
     </button>
-    <button class="h-btn" id="btn-screener-nav" onclick="showScreener()">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-      Short Term Trading Screener
-    </button>
-    <button class="h-btn" id="btn-longterm-nav" onclick="showLongTerm()">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></svg>
-      Long Term Screener
-    </button>
+    <!-- More dropdown -->
+    <div class="h-more-wrap" id="h-more-wrap">
+      <button class="h-btn" id="btn-more-nav" onclick="toggleMoreMenu(event)">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/></svg>
+        More
+        <svg class="h-more-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" width="12" height="12"><polyline points="6 9 12 15 18 9"/></svg>
+      </button>
+      <div class="h-more-dropdown" id="h-more-dropdown">
+        <button class="h-more-item" id="btn-screener-nav" onclick="showScreener(); closeMoreMenu()">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+          Short Term Trading Screener
+        </button>
+        <button class="h-more-item" id="btn-longterm-nav" onclick="showLongTerm(); closeMoreMenu()">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></svg>
+          Long Term Screener
+        </button>
+      </div>
+    </div>
 
   </div>
 </header>
@@ -4155,6 +4174,24 @@ function _setSyncBadge(state) {
   else { el.textContent = '🟡 Local Only'; el.className = 'sync-badge local'; }
 }
 
+// ── More dropdown ─────────────────────────────────────────────────────────────
+function toggleMoreMenu(e) {
+  e.stopPropagation();
+  const wrap = document.getElementById('h-more-wrap');
+  const dd   = document.getElementById('h-more-dropdown');
+  const open = dd.classList.contains('open');
+  if(open) { wrap.classList.remove('open'); dd.classList.remove('open'); }
+  else      { wrap.classList.add('open');   dd.classList.add('open'); }
+}
+function closeMoreMenu() {
+  document.getElementById('h-more-wrap')?.classList.remove('open');
+  document.getElementById('h-more-dropdown')?.classList.remove('open');
+}
+document.addEventListener('click', function(e) {
+  const wrap = document.getElementById('h-more-wrap');
+  if(wrap && !wrap.contains(e.target)) closeMoreMenu();
+});
+
 // ── Sub-page navigation ───────────────────────────────────────────────────────
 function _hideSubPages() {
   ['pg-short','pg-screener','pg-longterm'].forEach(id => {
@@ -4165,6 +4202,10 @@ function _hideSubPages() {
     const el = document.getElementById(id);
     if(el) el.classList.remove('active');
   });
+  document.getElementById('btn-more-nav')?.classList.remove('active');
+  document.getElementById('h-more-wrap')?.classList.remove('open');
+  const dd = document.getElementById('h-more-dropdown');
+  if(dd) dd.classList.remove('open');
 }
 
 function showShortTerm() {
@@ -4193,6 +4234,7 @@ function showScreener() {
   const pg = document.getElementById('pg-screener');
   pg.style.display = 'block';
   document.getElementById('btn-screener-nav').classList.add('active');
+  document.getElementById('btn-more-nav')?.classList.add('active');
   window.scrollTo(0,0);
   if(typeof initScreener === 'function') initScreener();
 }
@@ -4208,6 +4250,7 @@ function showLongTerm() {
   const pg = document.getElementById('pg-longterm');
   pg.style.display = 'block';
   document.getElementById('btn-longterm-nav').classList.add('active');
+  document.getElementById('btn-more-nav')?.classList.add('active');
   window.scrollTo(0,0);
   if(typeof initLongTerm === 'function') initLongTerm();
 }
