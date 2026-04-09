@@ -521,8 +521,11 @@ table.div-ht tfoot td{padding:10px 14px;font-size:13px;font-weight:700;backgroun
 #pg-short tr:last-child td { border-bottom: none; }
 #pg-short tr:hover td { background: #1a2840; }
 #pg-short .empty { text-align: center; color: #4a6a8a; padding: 24px; }
-#pg-short .ticker-cell { font-weight: 600; color: #e2ecf7; font-size: 14px; }
+#pg-short .ticker-cell { font-weight: 600; color: #e2ecf7; font-size: 14px; display:flex; align-items:center; gap:4px; }
 #pg-short .ticker-name { font-size: 11px; color: #8aaccc; margin-top: 2px; }
+#pg-short .reason-tip { display:inline-flex; align-items:center; justify-content:center; width:15px; height:15px; border-radius:50%; background:rgba(88,166,255,.12); border:1px solid rgba(88,166,255,.25); color:#58a6ff; font-size:9px; font-weight:700; cursor:default; position:relative; flex-shrink:0; font-style:normal; line-height:1; }
+#pg-short .reason-tip .reason-pop { display:none; position:absolute; left:0; top:20px; z-index:200; background:#0a1220; border:1px solid #1e3250; border-radius:8px; padding:10px 13px; min-width:270px; max-width:360px; font-size:11.5px; color:#c9d8e8; line-height:1.55; white-space:normal; box-shadow:0 8px 28px rgba(0,0,0,.6); font-weight:400; pointer-events:none; }
+#pg-short .reason-tip:hover .reason-pop { display:block; }
 #pg-short .positive { color: #3fb950; }
 #pg-short .negative { color: #f85149; }
 #pg-short .neutral { color: #8aaccc; }
@@ -3758,10 +3761,10 @@ async function loadAllRatings(){
           <th>Invested</th>
           <th class="sortable" onclick="sortLive('pnlUSD')" id="liveSort-pnlUSD">Unrealized P&amp;L <span class="sort-icon">↕</span></th>
           <th class="sortable" onclick="sortLive('pnlPct')" id="liveSort-pnlPct">P&amp;L % <span class="sort-icon">↕</span></th>
-          <th>Targets</th><th>Trail Stop</th><th>Action</th>
+          <th>Targets</th><th>Trail Stop</th>
         </tr></thead>
         <tbody id="liveBody">
-          <tr><td colspan="12" class="empty">No live positions</td></tr>
+          <tr><td colspan="11" class="empty">No live positions</td></tr>
         </tbody>
       </table>
     </div>
@@ -4597,7 +4600,7 @@ function _renderPending() {
   tbody.innerHTML = pends.map(p => {
     const name = (window.COMPANY_NAMES && COMPANY_NAMES[p.ticker]) || '';
     return `<tr>
-      <td><div class="ticker-cell">${_flagIcon(p.exchange||'US')} ${p.ticker}</div><div class="ticker-name">${name}</div></td>
+      <td><div class="ticker-cell">${_flagIcon(p.exchange||'US')} ${p.ticker}${p.reason ? `<i class="reason-tip">ℹ<span class="reason-pop">${p.reason.replace(/</g,'&lt;')}</span></i>` : ''}</div><div class="ticker-name">${name}</div></td>
       <td>${_typeBadge(p.type)}</td>
       <td>${_pBadge(p.prob)}</td>
       <td>${_fmtDate(p.signalDate)}<br><small style="color:#8aaccc">${p.runTime ? _fmtTime(p.runTime) : '—'}</small></td>
@@ -4721,7 +4724,7 @@ function _renderLive() {
       : `<span style="color:#e3b341">50%→$${pt.toFixed(2)}</span> / <span style="color:#3fb950">$${ft.toFixed(2)}</span>`;
 
     return `<tr>
-      <td><div class="ticker-cell">${_flagIcon(t.exchange||'US')} ${t.ticker}</div><div class="ticker-name">${name}</div>${partTag}</td>
+      <td><div class="ticker-cell">${_flagIcon(t.exchange||'US')} ${t.ticker}${t.reason ? `<i class="reason-tip">ℹ<span class="reason-pop">${t.reason.replace(/</g,'&lt;')}</span></i>` : ''}</div><div class="ticker-name">${name}</div>${partTag}</td>
       <td>${_typeBadge(t.type)}</td>
       <td>${_pBadge(t.prob)}</td>
       <td style="white-space:nowrap"><div>${_fmtDate(t.buyDate)}</div><small style="color:#8aaccc">${_fmtTime(t.buyTime)}</small></td>
@@ -4732,9 +4735,6 @@ function _renderLive() {
       <td class="${cls}">${chg>=0?'+':''}${chg.toFixed(2)}%</td>
       <td style="font-size:12px">${targets}</td>
       <td style="color:#f85149">$${trail.toFixed(2)}<br><small style="color:#8aaccc">−2% trail</small></td>
-      <td style="padding-left:16px;padding-right:28px;min-width:100px;text-align:left">
-        <span class="badge-pending" style="background:#111d2c;color:#8aaccc;border:1px solid #1e3250;">Read-only</span>
-      </td>
     </tr>`;
   }).join('');
 }
