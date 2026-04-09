@@ -4427,9 +4427,12 @@ function _fmtDate(s) {
 
 function _fmtTime(t) {
   if (!t) return '';
+  const s = String(t);
+  // Already formatted with AM/PM — return as-is (avoids double-formatting)
+  if (/\b(AM|PM)\b/i.test(s)) return s;
   // Handle full Date strings — extract time in ET timezone
-  if (String(t).length > 8 || /GMT|UTC|T\d{2}:/.test(String(t))) {
-    const d = new Date(t);
+  if (s.length > 8 || /GMT|UTC|T\d{2}:/.test(s)) {
+    const d = new Date(s);
     if (!isNaN(d)) {
       return d.toLocaleTimeString('en-US', {
         timeZone: 'America/New_York',
@@ -4438,8 +4441,8 @@ function _fmtTime(t) {
     }
   }
   // Handle plain HH:MM or HH:MM:SS strings
-  const p = String(t).split(':');
-  if (p.length < 2) return String(t);
+  const p = s.split(':');
+  if (p.length < 2) return s;
   let h = parseInt(p[0], 10);
   const ampm = h >= 12 ? 'PM' : 'AM';
   h = h % 12 || 12;
