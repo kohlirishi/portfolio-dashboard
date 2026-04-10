@@ -3790,7 +3790,8 @@ async function loadAllRatings(){
     <div class="table-wrap">
       <table>
         <thead><tr>
-          <th>Ticker</th><th>Type</th><th>Prob</th>
+          <th>Ticker</th><th>Type</th>
+          <th class="sortable" onclick="sortClosed('prob')" id="closedSort-prob">Prob <span class="sort-icon">↕</span></th>
           <th class="sortable" onclick="sortClosed('buyDate')" id="closedSort-buyDate" style="white-space:nowrap">Buy Date <span class="sort-icon">↕</span></th>
           <th class="sortable" onclick="sortClosed('sellDate')" id="closedSort-sellDate" style="white-space:nowrap">Sell Date <span class="sort-icon">↕</span></th>
           <th>Buy Price</th><th>Sell Price</th>
@@ -4624,6 +4625,9 @@ function sortLive(col) {
     _liveSortCol = col;
     _liveSortDir = 'desc'; // default: highest first
   }
+  // Disable auto-sort when user manually picks a column
+  const liveToggle = document.getElementById('liveAutoSortToggle');
+  if (liveToggle) liveToggle.checked = false;
   // Update header icons
   ['prob','buyDate','pnlUSD','pnlPct'].forEach(c => {
     const th = document.getElementById('liveSort-' + c);
@@ -4638,6 +4642,67 @@ function sortLive(col) {
     }
   });
   _renderLive();
+}
+
+let _closedSortCol = null;   // 'prob' | 'buyDate' | 'sellDate' | 'pnlUSD' | 'pnlPct' | null
+let _closedSortDir = 'desc'; // 'asc' | 'desc'
+
+function sortClosed(col) {
+  if (_closedSortCol === col) {
+    _closedSortDir = _closedSortDir === 'desc' ? 'asc' : 'desc';
+  } else {
+    _closedSortCol = col;
+    _closedSortDir = 'desc'; // default: highest first
+  }
+  // Disable auto-sort when user manually picks a column
+  const closedToggle = document.getElementById('closedAutoSortToggle');
+  if (closedToggle) closedToggle.checked = false;
+  // Update header icons
+  ['prob','buyDate','sellDate','pnlUSD','pnlPct'].forEach(c => {
+    const th = document.getElementById('closedSort-' + c);
+    if (!th) return;
+    const icon = th.querySelector('.sort-icon');
+    if (c === _closedSortCol) {
+      th.classList.add('sort-active');
+      if (icon) icon.textContent = _closedSortDir === 'desc' ? '↓' : '↑';
+    } else {
+      th.classList.remove('sort-active');
+      if (icon) icon.textContent = '↕';
+    }
+  });
+  _renderClosed();
+}
+
+function toggleAutoSort(panel) {
+  if (panel === 'live') {
+    const on = document.getElementById('liveAutoSortToggle').checked;
+    if (on) {
+      // Revert to default order — clear manual sort
+      _liveSortCol = null;
+      ['prob','buyDate','pnlUSD','pnlPct'].forEach(c => {
+        const th = document.getElementById('liveSort-' + c);
+        if (!th) return;
+        th.classList.remove('sort-active');
+        const icon = th.querySelector('.sort-icon');
+        if (icon) icon.textContent = '↕';
+      });
+      _renderLive();
+    }
+  } else {
+    const on = document.getElementById('closedAutoSortToggle').checked;
+    if (on) {
+      // Revert to default order (sell date desc) — clear manual sort
+      _closedSortCol = null;
+      ['prob','buyDate','sellDate','pnlUSD','pnlPct'].forEach(c => {
+        const th = document.getElementById('closedSort-' + c);
+        if (!th) return;
+        th.classList.remove('sort-active');
+        const icon = th.querySelector('.sort-icon');
+        if (icon) icon.textContent = '↕';
+      });
+      _renderClosed();
+    }
+  }
 }
 
 // ─── LIVE POSITIONS ───────────────────────────────────────────────────────────
@@ -4753,7 +4818,31 @@ function _renderClosed() {
       const pnlPct = parseFloat(t.pnlPct) || 0;
       return pnl !== 0 || pnlPct !== 0; // Exclude $0 P&L entries
     })
-    .sort((a, b) => new Date(b.sellDate||'') - new Date(a.sellDate||''));
+    .sort((a, b) => {
+      // If user has chosen a manual sort column, apply it
+      if (_closedSortCol) {
+        let va, vb;
+        if (_closedSortCol === 'prob') {
+          va = parseFloat(a.prob) || 0;
+          vb = parseFloat(b.prob) || 0;
+        } else if (_closedSortCol === 'buyDate') {
+          va = new Date(a.buyDate || 0).getTime();
+          vb = new Date(b.buyDate || 0).getTime();
+        } else if (_closedSortCol === 'sellDate') {
+          va = new Date(a.sellDate || 0).getTime();
+          vb = new Date(b.sellDate || 0).getTime();
+        } else if (_closedSortCol === 'pnlUSD') {
+          va = parseFloat(a.pnl) || 0;
+          vb = parseFloat(b.pnl) || 0;
+        } else if (_closedSortCol === 'pnlPct') {
+          va = parseFloat(a.pnlPct) || 0;
+          vb = parseFloat(b.pnlPct) || 0;
+        }
+        return _closedSortDir === 'desc' ? vb - va : va - vb;
+      }
+      // Default (auto-sort): newest sell date first
+      return new Date(b.sellDate||'') - new Date(a.sellDate||'');
+    });
 
   const el = document.getElementById('closedBadge');
   if (el) el.textContent = closed.length;
