@@ -3680,13 +3680,13 @@ async function loadAllRatings(){
 
   <!-- SUMMARY CARDS -->
   <div class="cards">
+    <div class="card gold"><div class="card-val" id="totalTradesCount">0</div><div class="card-label">Total Trades</div></div>
     <div class="card open"><div class="card-val" id="openCount">0</div><div class="card-label">Open Positions</div></div>
+    <div class="card open"><div class="card-val" id="closedCount">0</div><div class="card-label">Closed Positions</div></div>
     <div class="card green"><div class="card-val" id="profitCount">0</div><div class="card-label">Wins</div></div>
     <div class="card red"><div class="card-val" id="lossCount">0</div><div class="card-label">Stop Losses</div></div>
-    <div class="card gold"><div class="card-val" id="totalTradesCount">0</div><div class="card-label">Total Trades</div></div>
     <div class="card blue"><div class="card-val" id="winRate">—</div><div class="card-label">Win Rate</div></div>
     <div class="card blue"><div class="card-val" id="winRate5">—</div><div class="card-label">Win Rate (Last 5)</div></div>
-    <div class="card gold"><div class="card-val" id="cadUsdDisplay">—</div><div class="card-label">CAD-USD Rate</div></div>
   </div>
 
   <!-- AUTO SCREENER -->
@@ -4602,13 +4602,16 @@ function _renderCards() {
   const last5Win    = last5.filter(t => t.exitReason === 'profit').length;
   const wr5         = last5.length > 0 ? Math.round(last5Win / last5.length * 100) + '%' : '—';
 
+  const closedTotal = profits + losses; // Wins + Stop Losses only (excludes $0 breakevens)
+
   const set = (id, val) => { const el = document.getElementById(id); if (el) el.textContent = val; };
-  set('openCount',       live + (pendingEntries.length ? ` (+${pendingEntries.length}⏳)` : ''));
-  set('profitCount',     profits);
-  set('lossCount',       losses);
-  set('winRate',         wr);
-  set('winRate5',        wr5);
-  set('totalTradesCount', live + validClosed.length); // live + valid closed only
+  set('totalTradesCount', live + validClosed.length);
+  set('openCount',        live + (pendingEntries.length ? ` (+${pendingEntries.length}⏳)` : ''));
+  set('closedCount',      closedTotal);
+  set('profitCount',      profits);
+  set('lossCount',        losses);
+  set('winRate',          wr);
+  set('winRate5',         wr5);
 }
 
 // ─── PENDING ENTRIES ──────────────────────────────────────────────────────────
