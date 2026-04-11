@@ -1031,36 +1031,26 @@ table.div-ht tfoot td{padding:10px 14px;font-size:13px;font-weight:700;backgroun
     <button id="mob-menu-btn" onclick="toggleMobNav()" aria-label="Menu">☰</button>
     <span id="market-badge" class="market-badge checking">○ Checking…</span>
     <span id="et-clock" class="et-clock">--:--:--</span>
-    <button class="h-btn" id="btn-dashboard-nav" onclick="showMain()" style="display:none">
+    <button class="h-btn active" id="btn-dashboard-nav" onclick="showMain()">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>
       Dashboard
-    </button>
-    <button class="h-btn" id="btn-div-nav" onclick="showDiv()">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21.21 15.89A10 10 0 1 1 8 2.83"/><path d="M22 12A10 10 0 0 0 12 2v10z"/></svg>
-      Diversification
     </button>
     <button class="h-btn" id="btn-short-nav" onclick="showShortTerm()">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
       Short Term Trading Portfolio
     </button>
-    <!-- More dropdown -->
-    <div class="h-more-wrap" id="h-more-wrap">
-      <button class="h-btn" id="btn-more-nav" onclick="toggleMoreMenu(event)">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/></svg>
-        More
-        <svg class="h-more-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" width="12" height="12"><polyline points="6 9 12 15 18 9"/></svg>
-      </button>
-      <div class="h-more-dropdown" id="h-more-dropdown">
-        <button class="h-more-item" id="btn-screener-nav" onclick="showScreener(); closeMoreMenu()">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-          Short Term Trading Screener
-        </button>
-        <button class="h-more-item" id="btn-longterm-nav" onclick="showLongTerm(); closeMoreMenu()">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></svg>
-          Long Term Screener
-        </button>
-      </div>
-    </div>
+    <button class="h-btn" id="btn-longterm-nav" onclick="showLongTerm()">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></svg>
+      Long Term Screener
+    </button>
+    <button class="h-btn" id="btn-screener-nav" onclick="showScreener()">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+      Short Term Trading Screener
+    </button>
+    <button class="h-btn" id="btn-div-nav" onclick="showDiv()">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21.21 15.89A10 10 0 1 1 8 2.83"/><path d="M22 12A10 10 0 0 0 12 2v10z"/></svg>
+      Diversification
+    </button>
 
   </div>
 </header>
@@ -2341,9 +2331,8 @@ function showDiv() {
   document.getElementById('pg-main').classList.add('hide');
   document.getElementById('pg-div').classList.add('show');
   document.getElementById('pg-analyser').style.display = 'none';
+  ['btn-dashboard-nav','btn-sa-nav'].forEach(id => document.getElementById(id)?.classList.remove('active'));
   document.getElementById('btn-div-nav').classList.add('active');
-  document.getElementById('btn-sa-nav')?.classList.remove('active');
-  document.getElementById('btn-dashboard-nav').style.display = '';
   renderDiversification();
 }
 function showMain() {
@@ -2352,9 +2341,8 @@ function showMain() {
   document.getElementById('pg-div').classList.remove('show');
   document.getElementById('pg-analyser').style.display = 'none';
   document.getElementById('pg-main').classList.remove('hide');
-  document.getElementById('btn-div-nav').classList.remove('active');
-  document.getElementById('btn-sa-nav')?.classList.remove('active');
-  document.getElementById('btn-dashboard-nav').style.display = 'none';
+  ['btn-div-nav','btn-sa-nav'].forEach(id => document.getElementById(id)?.classList.remove('active'));
+  document.getElementById('btn-dashboard-nav').classList.add('active');
   window.scrollTo(0,0);
 }
 
@@ -2669,9 +2657,8 @@ function showAnalyser() {
   document.getElementById('pg-main').classList.add('hide');
   document.getElementById('pg-div').classList.remove('show');
   document.getElementById('pg-analyser').style.display = 'block';
-  document.getElementById('btn-div-nav').classList.remove('active');
+  ['btn-dashboard-nav','btn-div-nav'].forEach(id => document.getElementById(id)?.classList.remove('active'));
   document.getElementById('btn-sa-nav')?.classList.add('active');
-  document.getElementById('btn-dashboard-nav').style.display = '';
   if (!document.querySelector('#wlBody tr[data-sym]')) {
     setTimeout(loadSheetStocks, 200);
   }
@@ -4184,23 +4171,6 @@ function _setSyncBadge(state) {
   else { el.textContent = '🟡 Local Only'; el.className = 'sync-badge local'; }
 }
 
-// ── More dropdown ─────────────────────────────────────────────────────────────
-function toggleMoreMenu(e) {
-  e.stopPropagation();
-  const wrap = document.getElementById('h-more-wrap');
-  const dd   = document.getElementById('h-more-dropdown');
-  const open = dd.classList.contains('open');
-  if(open) { wrap.classList.remove('open'); dd.classList.remove('open'); }
-  else      { wrap.classList.add('open');   dd.classList.add('open'); }
-}
-function closeMoreMenu() {
-  document.getElementById('h-more-wrap')?.classList.remove('open');
-  document.getElementById('h-more-dropdown')?.classList.remove('open');
-}
-document.addEventListener('click', function(e) {
-  const wrap = document.getElementById('h-more-wrap');
-  if(wrap && !wrap.contains(e.target)) closeMoreMenu();
-});
 
 // ── Sub-page navigation ───────────────────────────────────────────────────────
 function _hideSubPages() {
@@ -4212,19 +4182,13 @@ function _hideSubPages() {
     const el = document.getElementById(id);
     if(el) el.classList.remove('active');
   });
-  document.getElementById('btn-more-nav')?.classList.remove('active');
-  document.getElementById('h-more-wrap')?.classList.remove('open');
-  const dd = document.getElementById('h-more-dropdown');
-  if(dd) dd.classList.remove('open');
 }
 
 function showShortTerm() {
   document.getElementById('pg-main').classList.add('hide');
   document.getElementById('pg-div').classList.remove('show');
   document.getElementById('pg-analyser').style.display = 'none';
-  document.getElementById('btn-div-nav').classList.remove('active');
-  document.getElementById('btn-sa-nav')?.classList.remove('active');
-  document.getElementById('btn-dashboard-nav').style.display = '';
+  ['btn-dashboard-nav','btn-div-nav','btn-sa-nav'].forEach(id => document.getElementById(id)?.classList.remove('active'));
   _hideSubPages();
   const pg = document.getElementById('pg-short');
   pg.style.display = 'block';
@@ -4237,14 +4201,11 @@ function showScreener() {
   document.getElementById('pg-main').classList.add('hide');
   document.getElementById('pg-div').classList.remove('show');
   document.getElementById('pg-analyser').style.display = 'none';
-  document.getElementById('btn-div-nav').classList.remove('active');
-  document.getElementById('btn-sa-nav')?.classList.remove('active');
-  document.getElementById('btn-dashboard-nav').style.display = '';
+  ['btn-dashboard-nav','btn-div-nav','btn-sa-nav'].forEach(id => document.getElementById(id)?.classList.remove('active'));
   _hideSubPages();
   const pg = document.getElementById('pg-screener');
   pg.style.display = 'block';
   document.getElementById('btn-screener-nav').classList.add('active');
-  document.getElementById('btn-more-nav')?.classList.add('active');
   window.scrollTo(0,0);
   if(typeof initScreener === 'function') initScreener();
 }
@@ -4253,14 +4214,11 @@ function showLongTerm() {
   document.getElementById('pg-main').classList.add('hide');
   document.getElementById('pg-div').classList.remove('show');
   document.getElementById('pg-analyser').style.display = 'none';
-  document.getElementById('btn-div-nav').classList.remove('active');
-  document.getElementById('btn-sa-nav')?.classList.remove('active');
-  document.getElementById('btn-dashboard-nav').style.display = '';
+  ['btn-dashboard-nav','btn-div-nav','btn-sa-nav'].forEach(id => document.getElementById(id)?.classList.remove('active'));
   _hideSubPages();
   const pg = document.getElementById('pg-longterm');
   pg.style.display = 'block';
   document.getElementById('btn-longterm-nav').classList.add('active');
-  document.getElementById('btn-more-nav')?.classList.add('active');
   window.scrollTo(0,0);
   if(typeof initLongTerm === 'function') initLongTerm();
 }
