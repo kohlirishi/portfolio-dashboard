@@ -505,6 +505,12 @@ table.div-ht tfoot td{padding:10px 14px;font-size:13px;font-weight:700;backgroun
 #pg-short .section-header .right { display: flex; gap: 8px; align-items: center; }
 #pg-short .sec-min-btn { background: #111d2c; border: 1px solid #1e3250; color: #8aaccc; border-radius: 6px; width: 26px; height: 26px; font-size: 16px; line-height: 1; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: background 0.15s, color 0.15s; flex-shrink: 0; font-weight: 700; }
 #pg-short .sec-min-btn:hover { background: #1e3250; color: #e2ecf7; }
+#pg-short .st-pagination { display: flex; align-items: center; justify-content: center; gap: 6px; padding: 12px 16px; border-top: 1px solid #1e3250; flex-wrap: wrap; }
+#pg-short .st-pagination button { background: #111d2c; border: 1px solid #1e3250; color: #8aaccc; border-radius: 6px; padding: 4px 10px; font-size: 12px; cursor: pointer; transition: background 0.15s, color 0.15s; }
+#pg-short .st-pagination button:hover:not(:disabled) { background: #1e3250; color: #e2ecf7; }
+#pg-short .st-pagination button:disabled { opacity: 0.35; cursor: default; }
+#pg-short .st-pagination button.active { background: #1a5fa8; border-color: #2a7fd4; color: #fff; font-weight: 700; }
+#pg-short .st-pagination .pg-info { color: #8aaccc; font-size: 12px; padding: 0 6px; }
 #pg-short .sec-body.minimized { display: none; }
 #pg-short /* SCHEDULE */
   .schedule-meta { padding: 10px 16px; border-bottom: 1px solid #111d2c; display: flex; gap: 16px; flex-wrap: wrap; font-size: 12px; color: #8aaccc; }
@@ -3677,8 +3683,9 @@ async function loadAllRatings(){
     <div class="card open"><div class="card-val" id="openCount">0</div><div class="card-label">Open Positions</div></div>
     <div class="card green"><div class="card-val" id="profitCount">0</div><div class="card-label">Wins</div></div>
     <div class="card red"><div class="card-val" id="lossCount">0</div><div class="card-label">Stop Losses</div></div>
-    <div class="card blue"><div class="card-val" id="winRate">—</div><div class="card-label">Win Rate</div></div>
     <div class="card gold"><div class="card-val" id="totalTradesCount">0</div><div class="card-label">Total Trades</div></div>
+    <div class="card blue"><div class="card-val" id="winRate">—</div><div class="card-label">Win Rate</div></div>
+    <div class="card blue"><div class="card-val" id="winRate5">—</div><div class="card-label">Win Rate (Last 5)</div></div>
     <div class="card gold"><div class="card-val" id="cadUsdDisplay">—</div><div class="card-label">CAD-USD Rate</div></div>
   </div>
 
@@ -3782,10 +3789,10 @@ async function loadAllRatings(){
           <span class="autosort-label">Auto-sort</span>
           <span class="autosort-next" id="closedAutoSortNext"></span>
         </div>
-        <button class="sec-min-btn" onclick="toggleSection('closed-body','closed-min-btn')" id="closed-min-btn" title="Minimize">−</button>
+        <button class="sec-min-btn" onclick="toggleSection('closed-body','closed-min-btn')" id="closed-min-btn" title="Expand">+</button>
       </div>
     </div>
-    <div id="closed-body" class="sec-body">
+    <div id="closed-body" class="sec-body minimized">
     <div id="closedProbBreakdown"></div>
     <div class="table-wrap">
       <table>
@@ -3793,7 +3800,7 @@ async function loadAllRatings(){
           <th>Ticker</th><th>Type</th>
           <th class="sortable" onclick="sortClosed('prob')" id="closedSort-prob">Prob <span class="sort-icon">↕</span></th>
           <th class="sortable" onclick="sortClosed('buyDate')" id="closedSort-buyDate" style="white-space:nowrap">Buy Date <span class="sort-icon">↕</span></th>
-          <th class="sortable" onclick="sortClosed('sellDate')" id="closedSort-sellDate" style="white-space:nowrap">Sell Date <span class="sort-icon">↕</span></th>
+          <th class="sortable" onclick="sortClosed('sellDate')" id="closedSort-sellDate" style="white-space:nowrap">Sell Date <span class="sort-icon">↑</span></th>
           <th>Buy Price</th><th>Sell Price</th>
           <th>Invested</th>
           <th class="sortable" onclick="sortClosed('pnlUSD')" id="closedSort-pnlUSD">P&amp;L (USD) <span class="sort-icon">↕</span></th>
@@ -3805,6 +3812,7 @@ async function loadAllRatings(){
         </tbody>
       </table>
     </div>
+    <div id="closedPagination" class="st-pagination"></div>
     </div>
   </div>
 
@@ -4473,7 +4481,8 @@ function toggleSection(bodyId, btnId) {
 }
 
 function restoreSectionStates() {
-  ['pending-body','live-body','closed-body','runlog-body','notes-body'].forEach(id => {
+  // Standard panels: minimized if localStorage says '1'
+  ['pending-body','live-body','runlog-body','notes-body'].forEach(id => {
     try {
       if (localStorage.getItem('st_sec_' + id) === '1') {
         const body = document.getElementById(id);
@@ -4483,6 +4492,17 @@ function restoreSectionStates() {
       }
     } catch {}
   });
+  // closed-body: minimized by DEFAULT — only expand if user explicitly expanded it
+  try {
+    const saved = localStorage.getItem('st_sec_closed-body');
+    if (saved === '0') {
+      const body = document.getElementById('closed-body');
+      const btn  = document.getElementById('closed-min-btn');
+      if (body) body.classList.remove('minimized');
+      if (btn)  { btn.textContent = '−'; btn.title = 'Minimize'; }
+    }
+    // else: stays minimized (default HTML state)
+  } catch {}
 }
 
 // ─── MASTER RENDER ────────────────────────────────────────────────────────────
@@ -4577,11 +4597,17 @@ function _renderCards() {
   const total   = profits + losses;
   const wr      = total > 0 ? Math.round(profits / total * 100) + '%' : '—';
 
+  // Win Rate Last 5: most recent 5 closed trades (by sell date desc)
+  const last5       = [...validClosed].sort((a, b) => new Date(b.sellDate||'') - new Date(a.sellDate||'')).slice(0, 5);
+  const last5Win    = last5.filter(t => t.exitReason === 'profit').length;
+  const wr5         = last5.length > 0 ? Math.round(last5Win / last5.length * 100) + '%' : '—';
+
   const set = (id, val) => { const el = document.getElementById(id); if (el) el.textContent = val; };
   set('openCount',       live + (pendingEntries.length ? ` (+${pendingEntries.length}⏳)` : ''));
   set('profitCount',     profits);
   set('lossCount',       losses);
   set('winRate',         wr);
+  set('winRate5',        wr5);
   set('totalTradesCount', live + validClosed.length); // live + valid closed only
 }
 
@@ -4646,6 +4672,8 @@ function sortLive(col) {
 
 let _closedSortCol = null;   // 'prob' | 'buyDate' | 'sellDate' | 'pnlUSD' | 'pnlPct' | null
 let _closedSortDir = 'desc'; // 'asc' | 'desc'
+let _closedPage    = 1;      // current page (1-based)
+const CLOSED_PAGE_SIZE = 10; // records per page
 
 function sortClosed(col) {
   if (_closedSortCol === col) {
@@ -4654,6 +4682,7 @@ function sortClosed(col) {
     _closedSortCol = col;
     _closedSortDir = 'desc'; // default: highest first
   }
+  _closedPage = 1; // reset to first page on sort change
   // Disable auto-sort when user manually picks a column
   const closedToggle = document.getElementById('closedAutoSortToggle');
   if (closedToggle) closedToggle.checked = false;
@@ -4693,6 +4722,7 @@ function toggleAutoSort(panel) {
     if (on) {
       // Revert to default order (sell date desc) — clear manual sort
       _closedSortCol = null;
+      _closedPage = 1;
       ['prob','buyDate','sellDate','pnlUSD','pnlPct'].forEach(c => {
         const th = document.getElementById('closedSort-' + c);
         if (!th) return;
@@ -4855,10 +4885,16 @@ function _renderClosed() {
 
   if (!closed.length) {
     tbody.innerHTML = '<tr><td colspan="11" class="empty">No closed trades yet</td></tr>';
+    _renderClosedPagination(0, 0);
     return;
   }
 
-  tbody.innerHTML = closed.map(t => {
+  // Pagination: clamp current page, then slice
+  const totalPages = Math.ceil(closed.length / CLOSED_PAGE_SIZE);
+  _closedPage = Math.max(1, Math.min(_closedPage, totalPages));
+  const pageSlice = closed.slice((_closedPage - 1) * CLOSED_PAGE_SIZE, _closedPage * CLOSED_PAGE_SIZE);
+
+  tbody.innerHTML = pageSlice.map(t => {
     const pnl    = parseFloat(t.pnl)    || 0;
     const pnlPct = parseFloat(t.pnlPct) || 0;
     const cls    = pnl >= 0 ? 'positive' : 'negative';
@@ -4883,6 +4919,44 @@ function _renderClosed() {
       <td>${reasonBadge}</td>
     </tr>`;
   }).join('');
+
+  _renderClosedPagination(closed.length, totalPages);
+}
+
+function _renderClosedPagination(total, totalPages) {
+  const pg = document.getElementById('closedPagination');
+  if (!pg) return;
+  if (total === 0 || totalPages <= 1) { pg.innerHTML = ''; return; }
+
+  const start = (_closedPage - 1) * CLOSED_PAGE_SIZE + 1;
+  const end   = Math.min(_closedPage * CLOSED_PAGE_SIZE, total);
+
+  let html = '';
+  html += `<button onclick="goToClosedPage(1)" ${_closedPage===1?'disabled':''} title="First">«</button>`;
+  html += `<button onclick="goToClosedPage(${_closedPage-1})" ${_closedPage===1?'disabled':''} title="Previous">‹</button>`;
+
+  // Page number buttons (show up to 5 around current page)
+  const range = 2;
+  for (let p = 1; p <= totalPages; p++) {
+    if (p === 1 || p === totalPages || (p >= _closedPage - range && p <= _closedPage + range)) {
+      html += `<button onclick="goToClosedPage(${p})" class="${p===_closedPage?'active':''}">${p}</button>`;
+    } else if (p === _closedPage - range - 1 || p === _closedPage + range + 1) {
+      html += `<span class="pg-info">…</span>`;
+    }
+  }
+
+  html += `<button onclick="goToClosedPage(${_closedPage+1})" ${_closedPage===totalPages?'disabled':''} title="Next">›</button>`;
+  html += `<button onclick="goToClosedPage(${totalPages})" ${_closedPage===totalPages?'disabled':''} title="Last">»</button>`;
+  html += `<span class="pg-info">${start}–${end} of ${total}</span>`;
+  pg.innerHTML = html;
+}
+
+function goToClosedPage(page) {
+  if (!portfolioState) return;
+  const total = (portfolioState.trades || []).filter(t => t.status !== 'live' && t.status !== 'partial').length;
+  const totalPages = Math.ceil(total / CLOSED_PAGE_SIZE) || 1;
+  _closedPage = Math.max(1, Math.min(page, totalPages));
+  _renderClosed();
 }
 
 // ─── SCREENER RUN LOG ─────────────────────────────────────────────────────────
