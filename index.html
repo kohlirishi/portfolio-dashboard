@@ -4041,20 +4041,15 @@ async function loadAllRatings(){
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:14px;font-size:12px;color:#8aaccc;line-height:1.8">
       <div>
         <strong style="color:#e2ecf7">Pass/Fail Filters (hard rules):</strong><br>
-        ✓ Market Cap &gt; $100B<br>
-        ✓ P/E between 0 and 60<br>
-        ✓ Price &gt; SMA(50) Weekly<br>
-        ✓ Price &gt; SMA(200) Weekly <span style="color:#4a6a8a">(Golden Cross)</span><br>
-        ✓ SMA(50)W &gt; SMA(200)W<br>
-        ✓ 52W Low &gt; SMA(200)W<br>
-        ✓ 5Y Performance &gt; 100%
+        ✓ P/E &lt;= 65<br>
+        ✓ Price &gt; SMA(200) Weekly<br>
+        ✓ 5Y Performance &gt;= 85%
       </div>
       <div>
         <strong style="color:#e2ecf7">Strength % Score (weighted):</strong><br>
-        P/E score (20%) · Market Cap score (10%)<br>
-        EPS score (20%) · SMA50/200 trend gap (20%)<br>
-        52W Low resilience (15%) · 5Y Perf (15%)<br>
-        <span style="color:#4a6a8a;font-size:11px">Lower P/E · Higher MCap · Higher EPS · Wider golden cross gap = higher score</span>
+        5Y Performance (40%) · SMA200W trend gap (30%)<br>
+        Price vs SMA50W proximity (20%) · P/E score (10%)<br>
+        <span style="color:#4a6a8a;font-size:11px">Higher 5Y perf · Wider golden cross gap · Price near SMA50W · Lower P/E = higher score</span>
       </div>
       <div>
         <strong style="color:#e2ecf7">Grade Scale:</strong><br>
@@ -6313,12 +6308,7 @@ function ltSelectFund(symbol) {
   document.getElementById('ltSearchInput').value = d.symbol + (d.name ? ' — ' + d.name : '');
 
   // Determine fail reasons using same thresholds as App Script
-  const exch = (d.exchange || '').toUpperCase();
-  const capThreshold = exch.includes('TSX') ? 50e9 : 100e9;
-  const capLabel     = exch.includes('TSX') ? '$50B' : '$100B';
   const failReasons = [];
-  if (d.marketCap > 0 && d.marketCap < capThreshold)
-    failReasons.push(`Market Cap ${ltFmtMcap(d.marketCap)} is below the ${capLabel} threshold`);
   if (d.perf5y < 85)
     failReasons.push(`5Y Performance ${d.perf5y.toFixed(1)}% is below the 85% minimum`);
   if (d.price > 0 && d.sma200w > 0 && d.price < d.sma200w)
@@ -6363,7 +6353,7 @@ function ltSelectFund(symbol) {
         ${ltMetricCell('Price', d.price > 0 ? '$'+ltFmtNum(d.price) : '—')}
         ${ltMetricCell('Change %', d.change !== 0 ? (d.change>=0?'+':'')+d.change.toFixed(2)+'%' : '—', d.change >= 0 ? '#3fb950' : '#f85149')}
         ${ltMetricCell('Volume', ltFmtVol(d.volume))}
-        ${ltMetricCell('Market Cap', ltFmtMcap(d.marketCap), d.marketCap >= capThreshold ? '' : '#f85149')}
+        ${ltMetricCell('Market Cap', ltFmtMcap(d.marketCap))}
         ${ltMetricCell('P/E Ratio', d.pe > 0 ? d.pe.toFixed(1) : '—', d.pe > 65 ? '#f85149' : '')}
         ${ltMetricCell('EPS (TTM)', d.eps > 0 ? '$'+d.eps.toFixed(2) : '—')}
         ${ltMetricCell('5Y Performance', d.perf5y.toFixed(1)+'%', d.perf5y >= 85 ? '#3fb950' : '#f85149')}
