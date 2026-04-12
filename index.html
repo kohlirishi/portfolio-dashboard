@@ -6256,10 +6256,12 @@ function toggleLtResults() {
   try { localStorage.setItem('lt_results_min', isNowHidden ? '1' : '0'); } catch {}
 }
 
-// Restore minimize state on load
+// Restore minimize state on load — default is minimized unless user explicitly expanded
 function restoreLtResultsState() {
   try {
-    if (localStorage.getItem('lt_results_min') === '1') {
+    const saved = localStorage.getItem('lt_results_min');
+    // Default to minimized (saved === null means first visit → minimize)
+    if (saved !== '0') {
       const body = document.getElementById('ltResultsBody');
       const btn  = document.getElementById('ltResultsMinBtn');
       if (body) body.style.display = 'none';
