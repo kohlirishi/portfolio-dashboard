@@ -4068,32 +4068,63 @@ async function loadAllRatings(){
     </div>
   </div>
 
-  <!-- RESULTS HEADER -->
-  <div style="display:flex;align-items:center;gap:12px;margin-bottom:14px;flex-wrap:wrap">
-    <div style="font-size:17px;font-weight:700;color:#e2ecf7">📊 Screening Results</div>
-    <span id="ltResultBadge" style="background:#111d2c;border:1px solid #3fb950;color:#3fb950;border-radius:12px;padding:2px 10px;font-size:12px;font-weight:700">0</span>
-    <span id="ltSortSubtitle" style="font-size:12px;color:#4a6a8a">PASS only · Strength ≥ 60% · sorted by Strength % (high to low) · from Google Sheet tab: testScreener</span>
-    <span id="ltLoadStatus" style="font-size:12px;color:#8aaccc;margin-left:auto"></span>
+  <!-- RESULTS PANEL -->
+  <div style="background:#152032;border:1px solid #1e3250;border-radius:8px;margin-bottom:20px">
+    <!-- Panel Header with Minimize -->
+    <div style="display:flex;align-items:center;gap:12px;padding:12px 16px;border-bottom:1px solid #1e3250;flex-wrap:wrap">
+      <div style="font-size:15px;font-weight:700;color:#e2ecf7">📊 Screening Results</div>
+      <span id="ltResultBadge" style="background:#111d2c;border:1px solid #3fb950;color:#3fb950;border-radius:12px;padding:2px 10px;font-size:12px;font-weight:700">0</span>
+      <span id="ltSortSubtitle" style="font-size:12px;color:#4a6a8a">PASS only · Strength ≥ 60% · sorted by Strength % (high to low) · from Google Sheet tab: testScreener</span>
+      <span id="ltLoadStatus" style="font-size:12px;color:#8aaccc;margin-left:auto"></span>
+      <button id="ltResultsMinBtn" onclick="toggleLtResults()" style="background:#111d2c;border:1px solid #1e3250;color:#8aaccc;border-radius:6px;width:26px;height:26px;font-size:16px;line-height:1;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0;font-weight:700;transition:background .15s,color .15s" title="Minimize" onmouseover="this.style.background='#1e3250';this.style.color='#e2ecf7'" onmouseout="this.style.background='#111d2c';this.style.color='#8aaccc'">−</button>
+    </div>
+    <!-- Panel Body (collapsible) -->
+    <div id="ltResultsBody" style="overflow:hidden;overflow-x:auto">
+      <table id="ltTable" style="width:100%;border-collapse:collapse;min-width:960px">
+        <thead>
+          <tr style="background:#111d2c">
+            <th style="padding:11px 16px;text-align:left;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:#8aaccc;border-bottom:1px solid #1e3250;white-space:nowrap">Stock</th>
+            <th style="padding:11px 16px;text-align:left;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:#8aaccc;border-bottom:1px solid #1e3250;white-space:nowrap">Price &amp; Volume</th>
+            <th id="ltStrengthHeader" onclick="toggleLtSort()" style="padding:11px 16px;text-align:left;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:#58a6ff;border-bottom:1px solid #1e3250;white-space:nowrap;cursor:pointer;user-select:none" title="Click to toggle sort direction">Strength <span id="ltSortIcon">↓</span></th>
+            <th style="padding:11px 16px;text-align:left;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:#8aaccc;border-bottom:1px solid #1e3250;white-space:nowrap">Technical Checks</th>
+            <th style="padding:11px 16px;text-align:left;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:#8aaccc;border-bottom:1px solid #1e3250;white-space:nowrap">Fundamentals</th>
+            <th id="ltDateHeader" onclick="toggleLtDateSort()" style="padding:11px 16px;text-align:left;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:#58a6ff;border-bottom:1px solid #1e3250;white-space:nowrap;cursor:pointer;user-select:none" title="Click to toggle sort direction">Date Added <span id="ltDateSortIcon"></span></th>
+            <th style="padding:11px 16px;text-align:left;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:#8aaccc;border-bottom:1px solid #1e3250;white-space:nowrap">Notes</th>
+          </tr>
+        </thead>
+        <tbody id="ltBody">
+          <tr><td colspan="7" style="padding:40px;text-align:center;color:#4a6a8a;font-size:14px">Click ↻ Refresh Data to load from Google Sheet</td></tr>
+        </tbody>
+      </table>
+    </div>
   </div>
 
-  <!-- RESULTS TABLE -->
-  <div style="background:#152032;border:1px solid #1e3250;border-radius:8px;overflow:hidden;overflow-x:auto">
-    <table id="ltTable" style="width:100%;border-collapse:collapse;min-width:960px">
-      <thead>
-        <tr style="background:#111d2c">
-          <th style="padding:11px 16px;text-align:left;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:#8aaccc;border-bottom:1px solid #1e3250;white-space:nowrap">Stock</th>
-          <th style="padding:11px 16px;text-align:left;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:#8aaccc;border-bottom:1px solid #1e3250;white-space:nowrap">Price &amp; Volume</th>
-          <th id="ltStrengthHeader" onclick="toggleLtSort()" style="padding:11px 16px;text-align:left;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:#58a6ff;border-bottom:1px solid #1e3250;white-space:nowrap;cursor:pointer;user-select:none" title="Click to toggle sort direction">Strength <span id="ltSortIcon">↓</span></th>
-          <th style="padding:11px 16px;text-align:left;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:#8aaccc;border-bottom:1px solid #1e3250;white-space:nowrap">Technical Checks</th>
-          <th style="padding:11px 16px;text-align:left;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:#8aaccc;border-bottom:1px solid #1e3250;white-space:nowrap">Fundamentals</th>
-          <th id="ltDateHeader" onclick="toggleLtDateSort()" style="padding:11px 16px;text-align:left;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:#58a6ff;border-bottom:1px solid #1e3250;white-space:nowrap;cursor:pointer;user-select:none" title="Click to toggle sort direction">Date Added <span id="ltDateSortIcon"></span></th>
-          <th style="padding:11px 16px;text-align:left;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:#8aaccc;border-bottom:1px solid #1e3250;white-space:nowrap">Notes</th>
-        </tr>
-      </thead>
-      <tbody id="ltBody">
-        <tr><td colspan="7" style="padding:40px;text-align:center;color:#4a6a8a;font-size:14px">Click ↻ Refresh Data to load from Google Sheet</td></tr>
-      </tbody>
-    </table>
+  <!-- SEARCH FUND PANEL -->
+  <div style="background:#152032;border:1px solid #1e3250;border-radius:8px;margin-bottom:20px">
+    <!-- Panel Header -->
+    <div style="display:flex;align-items:center;gap:12px;padding:12px 16px;border-bottom:1px solid #1e3250;flex-wrap:wrap">
+      <div style="font-size:15px;font-weight:700;color:#e2ecf7">🔍 Search Fund</div>
+      <span style="font-size:12px;color:#4a6a8a">Search any fund from the full list — including ones that didn't pass screening. Load data first via ↻ Refresh Data.</span>
+    </div>
+    <!-- Search Input Area -->
+    <div style="padding:16px">
+      <div style="position:relative">
+        <input type="text" id="ltSearchInput"
+          placeholder="Type fund name or ticker (e.g. NVDA, Apple…)"
+          style="width:100%;background:#0d1520;border:1px solid #1e3250;border-radius:6px;color:#e2ecf7;padding:10px 14px;font-size:13px;font-family:inherit;box-sizing:border-box;outline:none"
+          oninput="ltSearchOnInput(this.value)"
+          onkeydown="ltSearchKeydown(event)"
+          onfocus="this.style.borderColor='#58a6ff'"
+          onblur="setTimeout(()=>{document.getElementById('ltSearchDropdown').style.display='none'},200);this.style.borderColor='#1e3250'"
+          autocomplete="off"
+        >
+        <!-- Suggestions Dropdown -->
+        <div id="ltSearchDropdown" style="display:none;position:absolute;top:100%;left:0;right:0;background:#152032;border:1px solid #1e3250;border-top:none;border-radius:0 0 6px 6px;max-height:240px;overflow-y:auto;z-index:200;box-shadow:0 8px 24px rgba(0,0,0,.5)">
+        </div>
+      </div>
+      <!-- Result Card -->
+      <div id="ltSearchResult" style="margin-top:16px;display:none"></div>
+    </div>
   </div>
 
 </div><!-- main wrapper -->
@@ -6210,7 +6241,172 @@ const LT_GID = 1955075183;
 const LT_HTML_URL = `https://docs.google.com/spreadsheets/d/${LT_SHEET_ID}/gviz/tq?tqx=out:html&gid=${LT_GID}`;
 
 let _ltInited = false;
-let ltSheetData = [];
+let ltSheetData = []; // PASS rows only (for the results table)
+let ltAllData   = []; // ALL rows (for search)
+
+// ─── MINIMIZE / EXPAND RESULTS PANEL ─────────────────────────────────────────
+function toggleLtResults() {
+  const body = document.getElementById('ltResultsBody');
+  const btn  = document.getElementById('ltResultsMinBtn');
+  if (!body || !btn) return;
+  const isNowHidden = body.style.display !== 'none';
+  body.style.display = isNowHidden ? 'none' : '';
+  btn.textContent = isNowHidden ? '+' : '−';
+  btn.title       = isNowHidden ? 'Expand' : 'Minimize';
+  try { localStorage.setItem('lt_results_min', isNowHidden ? '1' : '0'); } catch {}
+}
+
+// Restore minimize state on load
+function restoreLtResultsState() {
+  try {
+    if (localStorage.getItem('lt_results_min') === '1') {
+      const body = document.getElementById('ltResultsBody');
+      const btn  = document.getElementById('ltResultsMinBtn');
+      if (body) body.style.display = 'none';
+      if (btn)  { btn.textContent = '+'; btn.title = 'Expand'; }
+    }
+  } catch {}
+}
+
+// ─── SEARCH FUND ──────────────────────────────────────────────────────────────
+function ltSearchOnInput(q) {
+  const dropdown = document.getElementById('ltSearchDropdown');
+  if (!ltAllData.length) {
+    dropdown.innerHTML = '<div style="padding:12px 14px;color:#4a6a8a;font-size:13px">Load data first — click ↻ Refresh Data above</div>';
+    dropdown.style.display = q.trim() ? 'block' : 'none';
+    return;
+  }
+  if (!q.trim()) { dropdown.style.display = 'none'; return; }
+  const term = q.trim().toLowerCase();
+  const matches = ltAllData.filter(d =>
+    d.symbol.toLowerCase().includes(term) || d.name.toLowerCase().includes(term)
+  ).slice(0, 10);
+
+  if (!matches.length) {
+    dropdown.innerHTML = '<div style="padding:12px 14px;color:#4a6a8a;font-size:13px">No fund found with this name</div>';
+    dropdown.style.display = 'block';
+    return;
+  }
+  dropdown.innerHTML = matches.map(d => `
+    <div onclick="ltSelectFund('${d.symbol.replace(/'/g,"\\'")}');document.getElementById('ltSearchDropdown').style.display='none'"
+      style="padding:10px 14px;cursor:pointer;display:flex;align-items:center;gap:10px;border-bottom:1px solid #111d2c"
+      onmouseover="this.style.background='#1a2840'" onmouseout="this.style.background=''">
+      <span style="font-weight:700;color:#e2ecf7;min-width:80px;font-size:13px">${d.symbol}</span>
+      <span style="color:#8aaccc;font-size:12px;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${d.name}</span>
+      <span style="flex-shrink:0;font-size:11px;padding:1px 8px;border-radius:10px;font-weight:700;${d.status==='PASS'?'background:#0d4a20;color:#3fb950;border:1px solid #238636':'background:#2a1a1a;color:#f85149;border:1px solid #6e1a1a'}">${d.status}</span>
+    </div>`).join('');
+  dropdown.style.display = 'block';
+}
+
+function ltSearchKeydown(e) {
+  if (e.key === 'Escape') {
+    document.getElementById('ltSearchDropdown').style.display = 'none';
+  }
+}
+
+function ltSelectFund(symbol) {
+  const d = ltAllData.find(x => x.symbol === symbol);
+  if (!d) return;
+
+  document.getElementById('ltSearchInput').value = d.symbol + (d.name ? ' — ' + d.name : '');
+
+  // Determine fail reasons using same thresholds as App Script
+  const exch = (d.exchange || '').toUpperCase();
+  const capThreshold = exch.includes('TSX') ? 50e9 : 100e9;
+  const capLabel     = exch.includes('TSX') ? '$50B' : '$100B';
+  const failReasons = [];
+  if (d.marketCap > 0 && d.marketCap < capThreshold)
+    failReasons.push(`Market Cap ${ltFmtMcap(d.marketCap)} is below the ${capLabel} threshold`);
+  if (d.perf5y < 85)
+    failReasons.push(`5Y Performance ${d.perf5y.toFixed(1)}% is below the 85% minimum`);
+  if (d.price > 0 && d.sma200w > 0 && d.price < d.sma200w)
+    failReasons.push(`Price $${ltFmtNum(d.price)} is below SMA 200W $${ltFmtNum(d.sma200w)}`);
+  if (d.pe > 65)
+    failReasons.push(`P/E ratio ${d.pe.toFixed(1)} exceeds the 65 limit`);
+
+  const strength = d.strength || 0;
+  const grade = strength >= 80 ? 'A' : strength >= 60 ? 'B' : strength >= 40 ? 'C' : 'D';
+  const gradeColor = strength >= 80 ? '#3fb950' : strength >= 60 ? '#d4a017' : strength >= 40 ? '#f0883e' : '#f85149';
+  const gradeBg    = strength >= 80 ? '#0d4a20' : strength >= 60 ? '#3d2f00' : strength >= 40 ? '#3d1a00' : '#2a1a1a';
+  const gradeBorder= strength >= 80 ? '#238636' : strength >= 60 ? '#9e6a03' : strength >= 40 ? '#bd561d' : '#6e1a1a';
+
+  const resultEl = document.getElementById('ltSearchResult');
+  resultEl.style.display = 'block';
+  resultEl.innerHTML = `
+    <div style="background:#111d2c;border:1px solid #1e3250;border-radius:8px;overflow:hidden">
+      <!-- Card Header -->
+      <div style="padding:14px 16px;border-bottom:1px solid #1e3250;display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+        <div>
+          <div style="font-size:15px;font-weight:700;color:#e2ecf7">
+            ${d.symbol}
+            <span style="font-size:11px;padding:2px 7px;border-radius:4px;background:#1a2840;color:#8aaccc;margin-left:4px;vertical-align:middle">${d.exchange||'US'}</span>
+          </div>
+          <div style="font-size:12px;color:#8aaccc;margin-top:2px">${d.name}</div>
+        </div>
+        <div style="margin-left:auto;display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+          <span style="padding:4px 14px;border-radius:20px;font-size:13px;font-weight:700;${d.status==='PASS'?'background:#0d4a20;color:#3fb950;border:1px solid #238636':'background:#2a1a1a;color:#f85149;border:1px solid #6e1a1a'}">${d.status}</span>
+          <span style="padding:4px 14px;border-radius:20px;font-size:13px;font-weight:700;background:${gradeBg};color:${gradeColor};border:1px solid ${gradeBorder}">${strength}% · Grade ${grade}</span>
+        </div>
+      </div>
+      <!-- Strength Bar -->
+      <div style="padding:10px 16px;border-bottom:1px solid #1e3250;display:flex;align-items:center;gap:10px">
+        <span style="font-size:11px;color:#4a6a8a;text-transform:uppercase;letter-spacing:.05em;white-space:nowrap">Strength</span>
+        <div style="flex:1;background:#0d1520;border-radius:3px;height:6px;overflow:hidden">
+          <div style="height:100%;border-radius:3px;width:${Math.min(strength,100)}%;background:linear-gradient(90deg,${gradeColor},${gradeColor}aa)"></div>
+        </div>
+        <span style="font-size:13px;font-weight:700;color:${gradeColor}">${strength}%</span>
+      </div>
+      <!-- Metrics Grid -->
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr))">
+        ${ltMetricCell('Price', d.price > 0 ? '$'+ltFmtNum(d.price) : '—')}
+        ${ltMetricCell('Change %', d.change !== 0 ? (d.change>=0?'+':'')+d.change.toFixed(2)+'%' : '—', d.change >= 0 ? '#3fb950' : '#f85149')}
+        ${ltMetricCell('Volume', ltFmtVol(d.volume))}
+        ${ltMetricCell('Market Cap', ltFmtMcap(d.marketCap), d.marketCap >= capThreshold ? '' : '#f85149')}
+        ${ltMetricCell('P/E Ratio', d.pe > 0 ? d.pe.toFixed(1) : '—', d.pe > 65 ? '#f85149' : '')}
+        ${ltMetricCell('EPS (TTM)', d.eps > 0 ? '$'+d.eps.toFixed(2) : '—')}
+        ${ltMetricCell('5Y Performance', d.perf5y.toFixed(1)+'%', d.perf5y >= 85 ? '#3fb950' : '#f85149')}
+        ${ltMetricCell('SMA 50W', d.sma50w > 0 ? '$'+ltFmtNum(d.sma50w) : '—')}
+        ${ltMetricCell('SMA 200W', d.sma200w > 0 ? '$'+ltFmtNum(d.sma200w) : '—')}
+        ${ltMetricCell('52W Low', d.w52low > 0 ? '$'+ltFmtNum(d.w52low) : '—')}
+      </div>
+      ${d.status === 'FAIL' && failReasons.length ? `
+      <!-- Fail Reasons -->
+      <div style="padding:12px 16px;border-top:1px solid #1e3250;background:#1a0d0d">
+        <div style="font-size:12px;font-weight:700;color:#f85149;margin-bottom:8px">⚠ Why it didn't pass screening:</div>
+        ${failReasons.map(r=>`<div style="font-size:12px;color:#f0883e;padding:3px 0">• ${r}</div>`).join('')}
+      </div>` : ''}
+      ${d.status === 'PASS' ? `
+      <div style="padding:10px 16px;border-top:1px solid #1e3250;font-size:12px;color:#3fb950;background:#0a1a0a">✓ Passes all screening criteria</div>` : ''}
+    </div>`;
+}
+
+function ltMetricCell(label, val, color) {
+  return `<div style="padding:10px 14px;border-right:1px solid #1e3250;border-bottom:1px solid #1e3250">
+    <div style="font-size:10px;color:#4a6a8a;text-transform:uppercase;letter-spacing:.05em;margin-bottom:3px">${label}</div>
+    <div style="font-size:13px;font-weight:600;color:${color||'#e2ecf7'}">${val}</div>
+  </div>`;
+}
+
+function ltFmtNum(n) {
+  if (!n && n !== 0) return '—';
+  return Number(n).toLocaleString('en-US', { maximumFractionDigits: 2 });
+}
+
+function ltFmtVol(v) {
+  if (!v) return '—';
+  if (v >= 1e9) return (v/1e9).toFixed(1)+'B';
+  if (v >= 1e6) return (v/1e6).toFixed(1)+'M';
+  if (v >= 1e3) return (v/1e3).toFixed(0)+'K';
+  return String(v);
+}
+
+function ltFmtMcap(v) {
+  if (!v) return '—';
+  if (v >= 1e12) return '$'+(v/1e12).toFixed(2)+'T';
+  if (v >= 1e9)  return '$'+(v/1e9).toFixed(1)+'B';
+  if (v >= 1e6)  return '$'+(v/1e6).toFixed(1)+'M';
+  return '$'+v.toLocaleString();
+}
 
 async function loadLtFromSheet() {
   const btn = document.getElementById('ltRefreshBtn');
@@ -6240,7 +6436,15 @@ async function loadLtFromSheet() {
     // 8: P/E, 9: EPS dil TTM, 10: 52W Low, 11: SMA50W,
     // 12: SMA200W, 13: Perf 5Y %, 14: Date Added, 15: Notes
     const dataRows = Array.from(rows).slice(1);
-    const parsed = [];
+    const allParsed  = []; // ALL rows (for search)
+    const passParsed = []; // PASS-only rows (for results table)
+
+    const toNum = (val) => {
+      if (!val || val === '—' || val === '#N/A') return null;
+      const cleaned = String(val).replace(/[^0-9.-]/g, '');
+      const num = parseFloat(cleaned);
+      return isNaN(num) ? null : num;
+    };
 
     for (const tr of dataRows) {
       const cells = Array.from(tr.querySelectorAll('td'));
@@ -6251,49 +6455,47 @@ async function loadLtFromSheet() {
       if (!symbol) continue;
 
       const statusVal = get(4).toUpperCase();
-      if (statusVal !== 'PASS') continue;
 
-      const toNum = (val) => {
-        if (!val || val === '—' || val === '#N/A') return null;
-        const cleaned = String(val).replace(/[^0-9.-]/g, '');
-        const num = parseFloat(cleaned);
-        return isNaN(num) ? null : num;
+      const row = {
+        symbol:      symbol,
+        name:        get(1),
+        price:       toNum(get(2))  || 0,
+        strength:    toNum(get(3))  || 0,
+        status:      statusVal,
+        change:      toNum(get(5))  || 0,
+        volume:      toNum(get(6))  || 0,
+        marketCap:   toNum(get(7))  || 0,
+        pe:          toNum(get(8))  || 0,
+        eps:         toNum(get(9))  || 0,
+        w52low:      toNum(get(10)) || 0,
+        sma50w:      toNum(get(11)) || 0,
+        sma200w:     toNum(get(12)) || 0,
+        perf5y:      toNum(get(13)) || 0,
+        dateAdded:   get(14),
+        notes:       get(15),
+        exchange:    get(16),
+        w52high:     toNum(get(17)) || 0,
+        distFromHigh:toNum(get(18)) || 0,
+        beta:        toNum(get(19)) || 0,
       };
 
-      parsed.push({
-        symbol: symbol,
-        name: get(1),
-        price: toNum(get(2)) || 0,
-        strength: toNum(get(3)) || 0,
-        change: toNum(get(5)) || 0,
-        volume: toNum(get(6)) || 0,
-        marketCap: toNum(get(7)) || 0,
-        pe: toNum(get(8)) || 0,
-        eps: toNum(get(9)) || 0,
-        w52low: toNum(get(10)) || 0,
-        sma50w: toNum(get(11)) || 0,      // SMA50W from column L (index 11)
-        sma200w: toNum(get(12)) || 0,     // SMA200W from column M (index 12)
-        perf5y: toNum(get(13)) || 0,      // Perf 5Y % from column N (index 13)
-        dateAdded: get(14),               // Date Added from column O (index 14)
-        notes: get(15),                   // Notes from column P (index 15)
-        exchange: get(16),                // Exchange from column Q (index 16)
-        w52high: toNum(get(17)) || 0,     // 52W High from column R (index 17)
-        distFromHigh: toNum(get(18)) || 0,// Dist from 52W High % from column S (index 18)
-        beta: toNum(get(19)) || 0,        // Beta from column T (index 19)
-      });
+      allParsed.push(row);
+      if (statusVal === 'PASS') passParsed.push(row);
     }
 
-    if (parsed.length === 0) {
+    ltAllData = allParsed; // make all rows available for search
+
+    if (passParsed.length === 0) {
       if (status) status.textContent = '⚠ No rows with Status = "PASS" found.';
       if (tbody) tbody.innerHTML = `<tr><td colspan="7" style="padding:40px;text-align:center;color:#d4a017">No PASS rows. Make sure column E (Status) contains "PASS" (uppercase).</td></tr>`;
       return;
     }
 
-    ltSheetData = parsed.sort((a, b) => b.strength - a.strength);
+    ltSheetData = passParsed.sort((a, b) => b.strength - a.strength);
     renderLtTable();
 
     const now = new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
-    if (status) status.textContent = `✓ ${ltSheetData.length} PASS stocks · refreshed ${now}`;
+    if (status) status.textContent = `✓ ${ltSheetData.length} PASS stocks · ${allParsed.length} total · refreshed ${now}`;
   } catch (err) {
     console.error('LT error:', err);
     if (status) status.textContent = '⚠ Failed to load data. Make sure the sheet is shared (Anyone with link can view).';
@@ -6508,6 +6710,7 @@ function renderLtTable() {
 async function initLongTerm() {
   if (_ltInited) return;
   _ltInited = true;
+  restoreLtResultsState();
   await loadLtFromSheet();
 }
 
