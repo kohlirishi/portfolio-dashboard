@@ -4041,9 +4041,17 @@ async function loadAllRatings(){
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:14px;font-size:12px;color:#8aaccc;line-height:1.8">
       <div>
         <strong style="color:#e2ecf7">Pass/Fail Filters (hard rules):</strong><br>
-        ✓ P/E &lt;= 65<br>
         ✓ Price &gt; SMA(200) Weekly<br>
-        ✓ 5Y Performance &gt;= 85%
+        ✓ Price &gt; SMA(50) Weekly<br>
+        ✓ Price &gt; EMA(50) Daily <span style="color:#4a6a8a">(US stocks)</span><br>
+        ✓ Golden Cross: SMA50W &gt; SMA200W<br>
+        ✓ 52W Low &gt; SMA(200) Weekly<br>
+        ✓ P/E &lt;= 65<br>
+        ✓ 5Y Performance &gt;= 85%<br>
+        ✓ Revenue Growth &gt;= 10% <span style="color:#4a6a8a">(US stocks)</span><br>
+        ✓ ROE &gt;= 10% <span style="color:#4a6a8a">(US stocks)</span><br>
+        ✓ EPS Growth YoY &gt;= 10% <span style="color:#4a6a8a">(US stocks)</span><br>
+        ✓ Gross Margin &gt;= 10% <span style="color:#4a6a8a">(US stocks)</span>
       </div>
       <div>
         <strong style="color:#e2ecf7">Strength % Score (weighted):</strong><br>
@@ -6315,6 +6323,22 @@ function ltSelectFund(symbol) {
     failReasons.push(`Price $${ltFmtNum(d.price)} is below SMA 200W $${ltFmtNum(d.sma200w)}`);
   if (d.pe > 65)
     failReasons.push(`P/E ratio ${d.pe.toFixed(1)} exceeds the 65 limit`);
+  if (d.price > 0 && d.sma50w > 0 && d.price < d.sma50w)
+    failReasons.push(`Price $${ltFmtNum(d.price)} is below SMA 50W $${ltFmtNum(d.sma50w)}`);
+  if (d.sma50w > 0 && d.sma200w > 0 && d.sma50w < d.sma200w)
+    failReasons.push(`No Golden Cross — SMA 50W ($${ltFmtNum(d.sma50w)}) is below SMA 200W ($${ltFmtNum(d.sma200w)})`);
+  if (d.w52low > 0 && d.sma200w > 0 && d.w52low < d.sma200w)
+    failReasons.push(`52W Low ($${ltFmtNum(d.w52low)}) is below SMA 200W ($${ltFmtNum(d.sma200w)})`);
+  if (d.sma50daily > 0 && d.price > 0 && d.price < d.sma50daily)
+    failReasons.push(`Price $${ltFmtNum(d.price)} is below EMA 50 Daily $${ltFmtNum(d.sma50daily)}`);
+  if (d.revGrowth !== null && d.revGrowth < 10)
+    failReasons.push(`Revenue Growth ${d.revGrowth.toFixed(1)}% is below the 10% minimum`);
+  if (d.roe !== null && d.roe < 10)
+    failReasons.push(`ROE ${d.roe.toFixed(1)}% is below the 10% minimum`);
+  if (d.epsGrowth !== null && d.epsGrowth < 10)
+    failReasons.push(`EPS Growth YoY ${d.epsGrowth.toFixed(1)}% is below the 10% minimum`);
+  if (d.grossMargin !== null && d.grossMargin < 10)
+    failReasons.push(`Gross Margin ${d.grossMargin.toFixed(1)}% is below the 10% minimum`);
 
   const strength = d.strength || 0;
   const grade = strength >= 80 ? 'A' : strength >= 60 ? 'B' : strength >= 40 ? 'C' : 'D';
@@ -6353,13 +6377,20 @@ function ltSelectFund(symbol) {
         ${ltMetricCell('Price', d.price > 0 ? '$'+ltFmtNum(d.price) : '—')}
         ${ltMetricCell('Change %', d.change !== 0 ? (d.change>=0?'+':'')+d.change.toFixed(2)+'%' : '—', d.change >= 0 ? '#3fb950' : '#f85149')}
         ${ltMetricCell('Volume', ltFmtVol(d.volume))}
+        ${ltMetricCell('Rel Volume', d.relVolume > 0 ? d.relVolume.toFixed(2)+'x' : '—', d.relVolume >= 1.5 ? '#3fb950' : d.relVolume >= 1 ? '#d4a017' : '')}
         ${ltMetricCell('Market Cap', ltFmtMcap(d.marketCap))}
         ${ltMetricCell('P/E Ratio', d.pe > 0 ? d.pe.toFixed(1) : '—', d.pe > 65 ? '#f85149' : '')}
         ${ltMetricCell('EPS (TTM)', d.eps > 0 ? '$'+d.eps.toFixed(2) : '—')}
         ${ltMetricCell('5Y Performance', d.perf5y.toFixed(1)+'%', d.perf5y >= 85 ? '#3fb950' : '#f85149')}
+        ${ltMetricCell('Div Yield %', d.divYield > 0 ? d.divYield.toFixed(2)+'%' : '—', '#58a6ff')}
         ${ltMetricCell('SMA 50W', d.sma50w > 0 ? '$'+ltFmtNum(d.sma50w) : '—')}
         ${ltMetricCell('SMA 200W', d.sma200w > 0 ? '$'+ltFmtNum(d.sma200w) : '—')}
         ${ltMetricCell('52W Low', d.w52low > 0 ? '$'+ltFmtNum(d.w52low) : '—')}
+        ${ltMetricCell('Revenue Growth', d.revGrowth !== null ? d.revGrowth.toFixed(1)+'%' : 'Not scraped yet', d.revGrowth !== null ? (d.revGrowth >= 10 ? '#3fb950' : '#f85149') : '#4a6a8a')}
+        ${ltMetricCell('ROE', d.roe !== null ? d.roe.toFixed(1)+'%' : 'Not scraped yet', d.roe !== null ? (d.roe >= 10 ? '#3fb950' : '#f85149') : '#4a6a8a')}
+        ${ltMetricCell('EPS Growth YoY', d.epsGrowth !== null ? d.epsGrowth.toFixed(1)+'%' : 'Not scraped yet', d.epsGrowth !== null ? (d.epsGrowth >= 10 ? '#3fb950' : '#f85149') : '#4a6a8a')}
+        ${ltMetricCell('Gross Margin', d.grossMargin !== null ? d.grossMargin.toFixed(1)+'%' : 'Not scraped yet', d.grossMargin !== null ? (d.grossMargin >= 10 ? '#3fb950' : '#f85149') : '#4a6a8a')}
+        ${d.sma50daily > 0 ? ltMetricCell('EMA50D (SMA~)', '$'+ltFmtNum(d.sma50daily), d.price > d.sma50daily ? '#3fb950' : '#f85149') : ''}
       </div>
       ${d.status === 'FAIL' && failReasons.length ? `
       <!-- Fail Reasons -->
@@ -6469,6 +6500,14 @@ async function loadLtFromSheet() {
         w52high:     toNum(get(17)) || 0,
         distFromHigh:toNum(get(18)) || 0,
         beta:        toNum(get(19)) || 0,
+        // Cols X(24)-AD(30): new data added from GOOGLEFINANCE + Finviz scraping
+        divYield:    toNum(get(23)) || 0,   // Col X: Div Yield % (×100 of yieldpct)
+        relVolume:   toNum(get(25)) || 0,   // Col Z: Rel Volume (volume / avgVolume)
+        revGrowth:   toNum(get(26)),          // Col AA: Revenue Growth % — null if not yet scraped
+        roe:         toNum(get(27)),          // Col AB: ROE % — null if not yet scraped
+        epsGrowth:   toNum(get(28)),          // Col AC: EPS Growth YoY % — null if not yet scraped
+        grossMargin: toNum(get(29)),          // Col AD: Gross Margin % — null if not yet scraped
+        sma50daily:  toNum(get(30)) || 0,   // Col AE: SMA50 Daily (EMA50D proxy, US PASS stocks only)
       };
 
       allParsed.push(row);
@@ -6606,14 +6645,21 @@ function renderLtTable() {
                 : { label:'D', color:'#f85149', bg:'rgba(248,81,73,.12)', border:'#6e1a1a' };
     const barC = grade.label==='A'?'#3fb950':grade.label==='B'?'#d4a017':grade.label==='C'?'#f0883e':'#f85149';
 
-    const aboveSMA200  = s.price > 0 && s.sma200w > 0 && s.price > s.sma200w;
-    const aboveSMA50   = s.price > 0 && s.sma50w  > 0 && s.price > s.sma50w;
-    const above52wLow  = s.price > 0 && s.w52low  > 0 && s.price > s.w52low;
-    const goldenCross  = s.sma50w > 0 && s.sma200w > 0 && s.sma50w > s.sma200w;
-    const goodPE       = s.pe > 0 && s.pe <= 60;
-    const goodPerf     = s.perf5y >= 100;
+    const aboveSMA200       = s.price > 0 && s.sma200w > 0 && s.price > s.sma200w;
+    const aboveSMA50W       = s.price > 0 && s.sma50w  > 0 && s.price > s.sma50w;
+    const goldenCross       = s.sma50w > 0 && s.sma200w > 0 && s.sma50w > s.sma200w;
+    const w52LowAboveSMA200 = s.w52low > 0 && s.sma200w > 0 && s.w52low > s.sma200w;
+    const aboveEMA50D       = s.sma50daily > 0 && s.price > 0 && s.price > s.sma50daily;
+    const goodPE       = s.pe > 0 && s.pe <= 65;
+    const goodPerf     = s.perf5y >= 85;
     const goodEPS      = s.eps > 0;
     const goodMCap     = s.marketCap >= 1e11;
+    // Fundamental data from Finviz (null = not yet scraped for this stock)
+    const hasFundamentals = s.revGrowth !== null || s.roe !== null;
+    const goodRevGrowth   = s.revGrowth   !== null && s.revGrowth   >= 10;
+    const goodROE         = s.roe         !== null && s.roe         >= 10;
+    const goodEPSGrowth   = s.epsGrowth   !== null && s.epsGrowth   >= 10;
+    const goodGrossMargin = s.grossMargin !== null && s.grossMargin >= 10;
 
     // Distance from 52W high -- colour code by proximity
     const distH = s.distFromHigh; // negative % means price is below high
@@ -6647,8 +6693,10 @@ function renderLtTable() {
         <div style="font-size:15px;font-weight:700;color:#e2ecf7">$${fmtN(s.price,2)}</div>
         <div style="font-size:12px;color:${chgC};margin-top:3px;font-weight:600">${chgSign}${fmtN(s.change,2)}%</div>
         <div style="font-size:11px;color:#4a6a8a;margin-top:2px">Vol: ${fmtVol(s.volume)}</div>
+        ${s.relVolume > 0 ? `<div style="font-size:11px;color:#8aaccc;margin-top:2px">Rel Vol: <span style="color:${s.relVolume>=1.5?'#3fb950':s.relVolume>=1?'#d4a017':'#8aaccc'}">${fmtN(s.relVolume,2)}x</span></div>` : ''}
+        ${s.divYield > 0 ? `<div style="font-size:11px;color:#8aaccc;margin-top:2px">Div Yield: <span style="color:#58a6ff">${fmtN(s.divYield,2)}%</span></div>` : ''}
       </td>
-      <td style="padding:14px 16px;vertical-align:top;min-width:130px">
+      <td style="padding:14px 16px;vertical-align:top;min-width:140px">
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:5px">
           <span style="font-size:18px;font-weight:700;color:${barC}">${s.strength}%</span>
           <span style="padding:3px 10px;border-radius:20px;font-size:12px;font-weight:700;background:${grade.bg};color:${grade.color};border:1px solid ${grade.border}">${grade.label}</span>
@@ -6659,34 +6707,42 @@ function renderLtTable() {
         <div style="font-size:10px;color:#4a6a8a;margin-top:5px">Strength Score</div>
       </td>
       <td style="padding:14px 16px;vertical-align:top">
-        <div style="display:flex;flex-wrap:wrap;gap:0;max-width:240px">
-          ${chk(aboveSMA200, 'Price > SMA200W')}
-          ${chk(aboveSMA50,  'Price > SMA50W')}
-          ${chk(above52wLow, 'Above 52W Low')}
-          ${chk(goldenCross, 'Golden Cross')}
+        <div style="display:flex;flex-wrap:wrap;gap:0;max-width:260px">
+          ${chk(aboveSMA200,       'Price>SMA200W')}
+          ${chk(aboveSMA50W,       'Price>SMA50W')}
+          ${chk(goldenCross,       'Golden Cross')}
+          ${chk(w52LowAboveSMA200, '52WLow>SMA200W')}
+          ${s.sma50daily > 0 ? chk(aboveEMA50D, 'Price>EMA50D') : ''}
         </div>
         <div style="font-size:11px;color:#8aaccc;margin-top:6px;line-height:1.9">
           <span style="color:#e2ecf7">SMA50W:</span> $${fmtN(s.sma50w,2)} &nbsp;
           <span style="color:#e2ecf7">SMA200W:</span> $${fmtN(s.sma200w,2)}<br>
           <span style="color:#e2ecf7">52W Low:</span> $${fmtN(s.w52low,2)} &nbsp;
           <span style="color:#e2ecf7">52W High:</span> $${fmtN(s.w52high,2)}<br>
+          ${s.sma50daily > 0 ? `<span style="color:#e2ecf7">EMA50D~:</span> $${fmtN(s.sma50daily,2)}<br>` : ''}
           <span style="color:#e2ecf7">Dist from High:</span> <span style="color:${distHColor}">${distH ? distHSign + fmtN(distH,1) + '%' : 'N/A'}</span>
         </div>
       </td>
       <td style="padding:14px 16px;vertical-align:top">
-        <div style="display:flex;flex-wrap:wrap;gap:0;max-width:220px">
+        <div style="display:flex;flex-wrap:wrap;gap:0;max-width:260px">
           ${chk(goodMCap,  'MCap>$100B')}
-          ${chk(goodPE,    'P/E 0-60')}
-          ${chk(goodPerf,  '5Y Perf>100%')}
+          ${chk(goodPE,    'P/E 0-65')}
+          ${chk(goodPerf,  '5Y Perf>85%')}
           ${chk(goodEPS,   'EPS>0')}
+          ${hasFundamentals ? chk(goodRevGrowth,   'RevGr>10%')   : ''}
+          ${hasFundamentals ? chk(goodROE,          'ROE>10%')     : ''}
+          ${hasFundamentals ? chk(goodEPSGrowth,    'EPSGr>10%')   : ''}
+          ${hasFundamentals ? chk(goodGrossMargin,  'GrossM>10%')  : ''}
         </div>
         <div style="font-size:11px;color:#8aaccc;margin-top:6px;line-height:1.9">
           <span style="color:#e2ecf7">MCap:</span> ${fmtMCap(s.marketCap)} &nbsp;
           <span style="color:#e2ecf7">P/E:</span> ${fmtN(s.pe,1)}<br>
           <span style="color:#e2ecf7">EPS:</span> ${fmtN(s.eps,2)} &nbsp;
-          <span style="color:#e2ecf7">5Y Perf:</span> <span style="color:${s.perf5y>=100?'#3fb950':'#d4a017'}">${fmtN(s.perf5y,1)}%</span><br>
+          <span style="color:#e2ecf7">5Y Perf:</span> <span style="color:${s.perf5y>=85?'#3fb950':'#d4a017'}">${fmtN(s.perf5y,1)}%</span><br>
           <span style="color:#e2ecf7">Beta:</span> <span style="color:${betaColor}">${s.beta ? fmtN(s.beta,2) : 'N/A'}</span>
           <span style="color:#4a6a8a;font-size:10px">&nbsp;${s.beta <= 1 ? '(low risk)' : s.beta <= 1.5 ? '(moderate)' : s.beta > 0 ? '(high risk)' : ''}</span>
+          ${hasFundamentals ? `<br><span style="color:#e2ecf7">RevGr:</span> <span style="color:${goodRevGrowth?'#3fb950':'#f85149'}">${s.revGrowth !== null ? fmtN(s.revGrowth,1)+'%' : 'N/A'}</span> &nbsp; <span style="color:#e2ecf7">ROE:</span> <span style="color:${goodROE?'#3fb950':'#f85149'}">${s.roe !== null ? fmtN(s.roe,1)+'%' : 'N/A'}</span>` : ''}
+          ${hasFundamentals ? `<br><span style="color:#e2ecf7">EPSGr:</span> <span style="color:${goodEPSGrowth?'#3fb950':'#f85149'}">${s.epsGrowth !== null ? fmtN(s.epsGrowth,1)+'%' : 'N/A'}</span> &nbsp; <span style="color:#e2ecf7">GrossM:</span> <span style="color:${goodGrossMargin?'#3fb950':'#f85149'}">${s.grossMargin !== null ? fmtN(s.grossMargin,1)+'%' : 'N/A'}</span>` : ''}
         </div>
       </td>
       <td style="padding:14px 16px;vertical-align:top;white-space:nowrap">
