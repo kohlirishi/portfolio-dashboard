@@ -4045,7 +4045,7 @@ async function loadAllRatings(){
         ✓ Price &gt; SMA(50) Weekly<br>
         ✓ Price &gt; EMA(50) Daily <span style="color:#4a6a8a">(US stocks)</span><br>
         ✓ Golden Cross: SMA50W &gt; SMA200W<br>
-        ✓ 52W Low &gt; SMA(200) Weekly<br>
+        ✓ 52W Low &gt; SMA(200) Weekly + 10% margin<br>
         ✓ P/E &lt;= 65<br>
         ✓ 5Y Performance &gt;= 85%<br>
         ✓ Revenue Growth &gt;= 10% <span style="color:#4a6a8a">(US stocks)</span><br>
@@ -6327,8 +6327,8 @@ function ltSelectFund(symbol) {
     failReasons.push(`Price $${ltFmtNum(d.price)} is below SMA 50W $${ltFmtNum(d.sma50w)}`);
   if (d.sma50w > 0 && d.sma200w > 0 && d.sma50w < d.sma200w)
     failReasons.push(`No Golden Cross — SMA 50W ($${ltFmtNum(d.sma50w)}) is below SMA 200W ($${ltFmtNum(d.sma200w)})`);
-  if (d.w52low > 0 && d.sma200w > 0 && d.w52low < d.sma200w)
-    failReasons.push(`52W Low ($${ltFmtNum(d.w52low)}) is below SMA 200W ($${ltFmtNum(d.sma200w)})`);
+  if (d.w52low > 0 && d.sma200w > 0 && d.w52low < d.sma200w * 1.10)
+    failReasons.push(`52W Low ($${ltFmtNum(d.w52low)}) is less than 10% above SMA 200W ($${ltFmtNum(d.sma200w)}) — margin: ${(((d.w52low/d.sma200w)-1)*100).toFixed(1)}%`);
   if (d.sma50daily > 0 && d.price > 0 && d.price < d.sma50daily)
     failReasons.push(`Price $${ltFmtNum(d.price)} is below EMA 50 Daily $${ltFmtNum(d.sma50daily)}`);
   if (d.revGrowth !== null && d.revGrowth < 10)
@@ -6648,7 +6648,7 @@ function renderLtTable() {
     const aboveSMA200       = s.price > 0 && s.sma200w > 0 && s.price > s.sma200w;
     const aboveSMA50W       = s.price > 0 && s.sma50w  > 0 && s.price > s.sma50w;
     const goldenCross       = s.sma50w > 0 && s.sma200w > 0 && s.sma50w > s.sma200w;
-    const w52LowAboveSMA200 = s.w52low > 0 && s.sma200w > 0 && s.w52low > s.sma200w;
+    const w52LowAboveSMA200 = s.w52low > 0 && s.sma200w > 0 && s.w52low >= s.sma200w * 1.10; // 10% margin required
     const aboveEMA50D       = s.sma50daily > 0 && s.price > 0 && s.price > s.sma50daily;
     const goodPE       = s.pe > 0 && s.pe <= 65;
     const goodPerf     = s.perf5y >= 85;
@@ -6711,7 +6711,7 @@ function renderLtTable() {
           ${chk(aboveSMA200,       'Price>SMA200W')}
           ${chk(aboveSMA50W,       'Price>SMA50W')}
           ${chk(goldenCross,       'Golden Cross')}
-          ${chk(w52LowAboveSMA200, '52WLow>SMA200W')}
+          ${chk(w52LowAboveSMA200, '52WLow>SMA200W+10%')}
           ${s.sma50daily > 0 ? chk(aboveEMA50D, 'Price>EMA50D') : ''}
         </div>
         <div style="font-size:11px;color:#8aaccc;margin-top:6px;line-height:1.9">
