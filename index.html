@@ -6385,6 +6385,80 @@ function ltSearchKeydown(e) {
   }
 }
 
+// ─── STRENGTH BREAKDOWN HELPER ────────────────────────────────────────────────
+// Replicates the Apps Script scoring formula and explains each component's deduction.
+// Returns { pts:{perf,trend,prox,val}, lines:[], shortLine }
+// Formula: strength = compoundScore×40 + trendScore×30 + proximityScore×20 + valScore×10
+function ltStrengthBreakdown(d) {
+  const perf5y   = d.perf5y  || 0;
+  const price    = d.price   || 0;
+  const sma200w  = d.sma200w || 0;
+  const sma50w   = d.sma50w  || 0;
+  const pe       = d.pe      || 0;
+
+  const compoundScore  = Math.min(Math.max((perf5y - 70) / 250, 0), 1);
+  const trendGap       = sma200w > 0 ? (price - sma200w) / sma200w : 0;
+  const trendScore     = (trendGap > 0.10 && trendGap < 0.60) ? 1.0 : (trendGap >= 0.60 ? 0.5 : 0);
+  const proximityScore = sma50w > 0 ? Math.min(Math.max((price / sma50w - 0.95) / 0.15, 0), 1) : 0;
+  const valScore       = (pe >= 15 && pe <= 50) ? 1.0 : 0.4;
+
+  const pts = {
+    perf:  Math.round(compoundScore  * 40),
+    trend: Math.round(trendScore     * 30),
+    prox:  Math.round(proximityScore * 20),
+    val:   Math.round(valScore       * 10)
+  };
+
+  const lines  = [];
+  const short  = [];
+
+  // 5Y Performance (max 40 pts)
+  if (pts.perf >= 40) {
+    lines.push({ icon:'✓', color:'#3fb950', text:`5Y Performance (${perf5y.toFixed(1)}%) — full score 40/40 pts` });
+  } else {
+    const gap = 40 - pts.perf;
+    lines.push({ icon:'−', color:'#e3b341', text:`5Y Performance (${perf5y.toFixed(1)}%) — ${pts.perf}/40 pts · full score requires ≥320% 5Y return` });
+    short.push(`5Y Perf −${gap}pts`);
+  }
+
+  // Trend vs SMA200W (max 30 pts)
+  const trendPct = (trendGap * 100).toFixed(1);
+  if (pts.trend >= 30) {
+    lines.push({ icon:'✓', color:'#3fb950', text:`Trend: price is ${trendPct}% above SMA200W — ideal range (10–60%), full score 30/30 pts` });
+  } else if (pts.trend === 15) {
+    lines.push({ icon:'−', color:'#e3b341', text:`Trend: price is ${trendPct}% above SMA200W — over 60% looks overextended, half score 15/30 pts` });
+    short.push(`Trend −15pts (>60% above SMA200W)`);
+  } else {
+    lines.push({ icon:'−', color:'#f85149', text:`Trend: price is only ${trendPct}% above SMA200W — below the 10% minimum threshold, 0/30 pts` });
+    short.push(`Trend −30pts (<10% above SMA200W)`);
+  }
+
+  // Proximity to SMA50W (max 20 pts)
+  if (pts.prox >= 20) {
+    lines.push({ icon:'✓', color:'#3fb950', text:`Price proximity: price is well above SMA50W — full score 20/20 pts` });
+  } else {
+    const gap = 20 - pts.prox;
+    const prxPct = sma50w > 0 ? ((price/sma50w - 1)*100).toFixed(1) : '?';
+    lines.push({ icon:'−', color:'#e3b341', text:`Price proximity: ${prxPct}% above SMA50W — ${pts.prox}/20 pts · full score needs price ≥10% above SMA50W` });
+    if (gap > 1) short.push(`Proximity −${gap}pts`);
+  }
+
+  // Valuation — P/E (max 10 pts)
+  if (pts.val >= 10) {
+    lines.push({ icon:'✓', color:'#3fb950', text:`Valuation: P/E ${pe > 0 ? pe.toFixed(1) : 'N/A'} is in the ideal 15–50 range — full score 10/10 pts` });
+  } else {
+    const gap = 10 - pts.val;
+    const reason = pe <= 0 ? 'P/E not available'
+                 : pe < 15 ? `P/E ${pe.toFixed(1)} is below 15 (too low / no earnings)`
+                 : `P/E ${pe.toFixed(1)} is above 50 (expensive valuation)`;
+    lines.push({ icon:'−', color:'#e3b341', text:`Valuation: ${reason} — ${pts.val}/10 pts · ideal range 15–50` });
+    short.push(`P/E −${gap}pts`);
+  }
+
+  const shortLine = short.length ? short.join(' · ') : 'All components near maximum';
+  return { pts, lines, shortLine };
+}
+
 function ltSelectFund(symbol) {
   const d = ltAllData.find(x => x.symbol === symbol);
   if (!d) return;
@@ -6440,13 +6514,40 @@ function ltSelectFund(symbol) {
           <span style="padding:4px 14px;border-radius:20px;font-size:13px;font-weight:700;background:${gradeBg};color:${gradeColor};border:1px solid ${gradeBorder}">${strength}% · Grade ${grade}</span>
         </div>
       </div>
-      <!-- Strength Bar -->
-      <div style="padding:10px 16px;border-bottom:1px solid #1e3250;display:flex;align-items:center;gap:10px">
-        <span style="font-size:11px;color:#4a6a8a;text-transform:uppercase;letter-spacing:.05em;white-space:nowrap">Strength</span>
-        <div style="flex:1;background:#0d1520;border-radius:3px;height:6px;overflow:hidden">
-          <div style="height:100%;border-radius:3px;width:${Math.min(strength,100)}%;background:linear-gradient(90deg,${gradeColor},${gradeColor}aa)"></div>
+      <!-- Strength Bar + Breakdown -->
+      <div style="padding:10px 16px 0;border-bottom:1px solid #1e3250">
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">
+          <span style="font-size:11px;color:#4a6a8a;text-transform:uppercase;letter-spacing:.05em;white-space:nowrap">Strength</span>
+          <div style="flex:1;background:#0d1520;border-radius:3px;height:6px;overflow:hidden">
+            <div style="height:100%;border-radius:3px;width:${Math.min(strength,100)}%;background:linear-gradient(90deg,${gradeColor},${gradeColor}aa)"></div>
+          </div>
+          <span style="font-size:13px;font-weight:700;color:${gradeColor}">${strength}%</span>
         </div>
-        <span style="font-size:13px;font-weight:700;color:${gradeColor}">${strength}%</span>
+        ${(() => {
+          const bd = ltStrengthBreakdown(d);
+          const scoreBar = (pts, max, color) => {
+            const w = Math.round((pts/max)*100);
+            return `<div style="display:flex;align-items:center;gap:6px;flex-shrink:0;min-width:80px">
+              <div style="flex:1;background:#0a1525;border-radius:2px;height:4px;overflow:hidden;min-width:40px">
+                <div style="height:100%;width:${w}%;background:${color};border-radius:2px"></div>
+              </div>
+              <span style="font-size:10px;color:${color};font-weight:600;white-space:nowrap">${pts}/${max}</span>
+            </div>`;
+          };
+          const rowStyle = 'display:flex;align-items:center;gap:8px;padding:5px 0;border-top:1px solid #0d1520;flex-wrap:wrap';
+          return `<div style="padding-bottom:10px">
+            <div style="font-size:10px;color:#4a6a8a;text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px">Score breakdown</div>
+            ${bd.lines.map((l, i) => `
+              <div style="${rowStyle}">
+                <span style="font-size:11px;color:${l.color};flex-shrink:0;width:10px">${l.icon}</span>
+                ${i===0 ? scoreBar(bd.pts.perf,  40, l.color) :
+                  i===1 ? scoreBar(bd.pts.trend, 30, l.color) :
+                  i===2 ? scoreBar(bd.pts.prox,  20, l.color) :
+                          scoreBar(bd.pts.val,   10, l.color)}
+                <span style="font-size:12px;color:#c9d1d9;line-height:1.4">${l.text}</span>
+              </div>`).join('')}
+          </div>`;
+        })()}
       </div>
       <!-- Metrics Grid -->
       <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr))">
@@ -6780,7 +6881,11 @@ function renderLtTable() {
         <div style="height:6px;background:#111d2c;border-radius:3px;overflow:hidden">
           <div style="height:100%;width:${Math.min(s.strength,100)}%;background:${barC};border-radius:3px;transition:width .4s"></div>
         </div>
-        <div style="font-size:10px;color:#4a6a8a;margin-top:5px">Strength Score</div>
+        <div style="font-size:10px;color:#4a6a8a;margin-top:6px;line-height:1.5">${(() => {
+          const bd = ltStrengthBreakdown(s);
+          if (!bd.shortLine || bd.shortLine === 'All components near maximum') return '<span style="color:#3fb950">All components near max</span>';
+          return '<span style="color:#e3b341">' + bd.shortLine + '</span>';
+        })()}</div>
       </td>
       <td style="padding:14px 16px;vertical-align:top">
         <div style="display:flex;flex-wrap:wrap;gap:0;max-width:260px">
