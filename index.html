@@ -4432,9 +4432,9 @@ function _fmtDate(s) {
   // Also handle plain YYYY-MM-DD strings
   let d;
   if (/^\d{4}-\d{2}-\d{2}$/.test(String(s).trim())) {
-    // Plain date string YYYY-MM-DD — parse as local date to avoid UTC shift
+    // Parse at noon UTC so no local timezone (e.g. IST UTC+5:30) can roll the date back to the previous day
     const parts = String(s).trim().split('-');
-    d = new Date(parseInt(parts[0]), parseInt(parts[1]) - 1, parseInt(parts[2]));
+    d = new Date(Date.UTC(parseInt(parts[0]), parseInt(parts[1]) - 1, parseInt(parts[2]), 12, 0, 0));
   } else {
     d = new Date(s);
   }
@@ -5045,19 +5045,21 @@ function _fmtDateNice(s) {
   if (!s || s === '—') return '—';
   let d;
   if (/^\d{4}-\d{2}-\d{2}$/.test(String(s).trim())) {
+    // Parse at noon UTC so no local timezone (e.g. IST UTC+5:30) can roll the date back to the previous day
     const p = String(s).trim().split('-');
-    d = new Date(parseInt(p[0]), parseInt(p[1]) - 1, parseInt(p[2]));
+    d = new Date(Date.UTC(parseInt(p[0]), parseInt(p[1]) - 1, parseInt(p[2]), 12, 0, 0));
   } else {
     d = new Date(s);
   }
   if (isNaN(d)) return String(s);
-  const day    = d.getDate();
+  // Use UTC accessors since we anchored at noon UTC — the UTC date always matches the intended date
+  const day    = d.getUTCDate();
   const suffix = [11,12,13].includes(day) ? 'th'
                : day % 10 === 1 ? 'st'
                : day % 10 === 2 ? 'nd'
                : day % 10 === 3 ? 'rd' : 'th';
-  const month  = d.toLocaleString('en-US', { month: 'long' });
-  return `${day}${suffix} ${month} ${d.getFullYear()}`;
+  const month  = d.toLocaleString('en-US', { month: 'long', timeZone: 'UTC' });
+  return `${day}${suffix} ${month} ${d.getUTCFullYear()}`;
 }
 
 // ─── STOP LOSS AUTO-ANALYSIS RENDERER ────────────────────────────────────────
