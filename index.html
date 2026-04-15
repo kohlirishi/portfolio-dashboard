@@ -3680,7 +3680,7 @@ async function loadAllRatings(){
     <div class="card green"><div class="card-val" id="profitCount">0</div><div class="card-label">Wins</div></div>
     <div class="card red"><div class="card-val" id="lossCount">0</div><div class="card-label">Stop Losses</div></div>
     <div class="card blue"><div class="card-val" id="winRate">—</div><div class="card-label">Win Rate</div></div>
-    <div class="card blue"><div class="card-val" id="winRate5">—</div><div class="card-label">Win Rate (Last 5)</div></div>
+    <div class="card blue"><div class="card-val" id="winRate5">—</div><div class="card-label">Win Rate (Last 10)</div></div>
   </div>
 
   <!-- AUTO SCREENER -->
@@ -4602,10 +4602,10 @@ function _renderCards() {
   const total   = profits + losses;
   const wr      = total > 0 ? Math.round(profits / total * 100) + '%' : '—';
 
-  // Win Rate Last 5: most recent 5 closed trades (by sell date desc)
-  const last5       = [...validClosed].sort((a, b) => new Date(b.sellDate||'') - new Date(a.sellDate||'')).slice(0, 5);
-  const last5Win    = last5.filter(t => t.exitReason === 'profit').length;
-  const wr5         = last5.length > 0 ? Math.round(last5Win / last5.length * 100) + '%' : '—';
+  // Win Rate Last 10: most recent 10 closed trades (by sell date desc)
+  const last10      = [...validClosed].sort((a, b) => new Date(b.sellDate||'') - new Date(a.sellDate||'')).slice(0, 10);
+  const last10Win   = last10.filter(t => t.exitReason === 'profit').length;
+  const wr5         = last10.length > 0 ? Math.round(last10Win / last10.length * 100) + '%' : '—';
 
   const closedTotal = profits + losses; // Wins + Stop Losses only (excludes $0 breakevens)
 
