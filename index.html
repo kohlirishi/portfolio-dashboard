@@ -4990,12 +4990,25 @@ function goToClosedPage(page) {
 
 // ─── SCREENER RUN LOG ─────────────────────────────────────────────────────────
 // ─── SHARED: sort screener runs newest-first ─────────────────────────────────
+function _timeToMins(timeStr) {
+  // Handles: "4:28 PM EST (MANUAL)", "8:46 AM EST", "16:06 (MANUAL)", "7:28 AM EST"
+  const s = (timeStr || '').replace(/\(MANUAL\)/gi, '').replace(/EST/gi, '').trim();
+  const m12 = s.match(/(\d{1,2}):(\d{2})\s*(AM|PM)/i);
+  if (m12) {
+    let h = parseInt(m12[1]); const min = parseInt(m12[2]); const ap = m12[3].toUpperCase();
+    if (ap === 'PM' && h !== 12) h += 12;
+    if (ap === 'AM' && h === 12) h = 0;
+    return h * 60 + min;
+  }
+  const m24 = s.match(/^(\d{1,2}):(\d{2})$/);
+  if (m24) return parseInt(m24[1]) * 60 + parseInt(m24[2]);
+  return 0;
+}
 function _sortedRuns() {
   return [...(portfolioState.screenerRuns || [])].sort((a, b) => {
-    // Sort by date desc, then time desc (both are "YYYY-MM-DD" and "HH:MM" strings)
-    const da = (a.date || '') + ' ' + (a.time || '');
-    const db = (b.date || '') + ' ' + (b.time || '');
-    return db.localeCompare(da);
+    const da = (a.date || ''), db = (b.date || '');
+    if (db !== da) return db > da ? 1 : -1;           // newer date first
+    return _timeToMins(b.time) - _timeToMins(a.time); // newer time first (AM/PM-aware)
   });
 }
 
