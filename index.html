@@ -3866,7 +3866,7 @@ async function loadAllRatings(){
 </div>
 <!-- STATS BAR -->
 <div class="stats-bar">
-  <div class="stat">Screened: <strong id="screenedCount">0</strong> / <strong id="totalCount">515</strong></div>
+  <div class="stat">Screened: <strong id="screenedCount">0</strong> / <strong id="totalCount">515</strong> <span id="tickerSource" style="font-size:11px;color:#8aaccc;margin-left:4px" title="Ticker list source">⏳ loading…</span></div>
   <span class="stat-divider">|</span>
   <div class="stat">Table 1 (ATH): <strong id="t1Count">0</strong></div>
   <div class="stat">Table 2 (Swing): <strong id="t2Count">0</strong></div>
@@ -5735,10 +5735,22 @@ async function loadMajorListTickers() {
     // Merge names — MajorList names take priority
     Object.assign(COMPANY_NAMES, newNames);
 
+    const src = document.getElementById('tickerSource');
+    if (src) {
+      src.textContent = `✅ MajorList (${newTickers.length}: ${newUS.length} US, ${newTSX.length} TSX)`;
+      src.style.color = '#3fb950';
+      src.title = 'Ticker list loaded from MajorList sheet';
+    }
     console.log(`[MajorList] Loaded ${newTickers.length} tickers (${newUS.length} US, ${newTSX.length} TSX)`);
     return true;
   } catch (e) {
     console.error('[MajorList] Failed to load tickers:', e);
+    const src = document.getElementById('tickerSource');
+    if (src) {
+      src.textContent = `⚠️ fallback list (${TICKERS.length})`;
+      src.style.color = '#e3b341';
+      src.title = `MajorList failed: ${e.message}`;
+    }
     showNotification(
       `⚠️ Could not load ticker list from MajorList sheet: ${e.message}. Falling back to built-in list (${TICKERS.length} stocks).`,
       'error'
@@ -6471,6 +6483,8 @@ async function startScreen() {
   let tickersToRun = TICKERS;
   try {
     // ── Step 1: load ticker list from MajorList sheet ──────────────────────
+    const srcEl = document.getElementById('tickerSource');
+    if (srcEl) { srcEl.textContent = '⏳ loading…'; srcEl.style.color = '#8aaccc'; }
     document.getElementById('currentTicker').textContent = 'Loading ticker list from MajorList…';
     await loadMajorListTickers(); // mutates TICKERS/EXCHANGE_MAP/COMPANY_NAMES in place; shows error+fallback on failure
     updateStats(); // refresh totalCount display with the loaded list size
