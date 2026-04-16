@@ -1,0 +1,2692 @@
+// ═══════════════════════════════════════════════════════════════════════════════
+// SHORT TERM TRACKER — Google Apps Script Web App v2
+// Writes individual readable rows to each tab + full JSON blob to settings
+// ───────────────────────────────────────────────────────────────────────────────
+// TO UPDATE: Go to Extensions → Apps Script → paste this → Save
+//            Then Deploy → Manage Deployments → Edit → New Version → Deploy
+// ═══════════════════════════════════════════════════════════════════════════════
+
+// ── TAB HEADERS ──────────────────────────────────────────────────────────────
+const TAB_HEADERS = {
+  trades: [
+    'ID', 'Ticker', 'Exchange', 'Type', 'Prob %',
+    'Status', 'Buy Date', 'Buy Time', 'Buy Price (USD)',
+    'Shares Total', 'Shares Open', 'Invested ($)',
+    'Partial Exit Done', 'Partial Exit Price', 'Partial Exit Date', 'Partial Exit P&L ($)',
+    'Sell Date', 'Sell Time', 'Sell Price (USD)',
+    'P&L ($)', 'P&L %', 'Exit Reason',
+    'Partial Target', 'Final Target', 'Trailing Stop',
+    'Highest Price', 'Current Price', 'Rule Version', 'Last Updated'
+  ],
+  notes: [
+    'Index', 'Ticker', 'Signal Type', 'Outcome', 'Note Text',
+    'Added Date', 'Stop Trigger Date', 'Last Updated'
+  ],
+  screenerRuns: [
+    'Date', 'Time (EST)', 'ATH Signals', 'Swing Signals',
+    'Trades Placed', 'Pending Entries', 'Skipped',
+    'Regime US', 'Regime CA', 'Tickers Screened', 'Last Updated'
+  ],
+  pendingEntries: [
+    'ID', 'Ticker', 'Exchange', 'Type', 'Prob %',
+    'Signal Date', 'Reclaim Close ($)', 'Run Time', 'Last Updated', 'Selection Reason'
+  ],
+  settings: [
+    'key', 'value (JSON)', 'last_updated'
+  ]
+};
+
+// ── GET: Read data ────────────────────────────────────────────────────────────
+function doGet(e) {
+  try {
+    const path = e.parameter.path || 'tracker';
+
+    // For the main portfolio state, build directly from sheets to avoid the
+    // 50,000-character cell limit that JSON.stringify(state) can exceed.
+    if (path === 'tracker') {
+      const state = buildStateForClient();
+      return jsonResponse({ data: state });
+    }
+
+    // For all other paths (sl_analyses, etc.) read from the settings blob as before.
+    const sheetId = e.parameter.sheetId || '';
+    const ss = sheetId
+      ? SpreadsheetApp.openById(sheetId)
+      : SpreadsheetApp.getActiveSpreadsheet();
+    const settingsSheet = ss.getSheetByName('settings');
+    if (!settingsSheet) return jsonResponse({ data: null, error: 'settings tab not found' });
+    const data = readPath(settingsSheet, path);
+    return jsonResponse({ data });
+  } catch(err) {
+    return jsonResponse({ data: null, error: err.message });
+  }
+}
+
+// ── POST: Write data ──────────────────────────────────────────────────────────
+function doPost(e) {
+  try {
+    const body = JSON.parse(e.postData.contents);
+
+    // Handle manual screener trigger
+    if (body.action === 'runManualScreener') {
+      triggerManualScreener();
+      return jsonResponse({ success: true, message: 'Screener executed successfully' });
+    }
+
+    const path = body.path  || 'tracker';
+    const val  = body.data;
+    const ss   = SpreadsheetApp.getActiveSpreadsheet();
+    const now  = new Date().toISOString();
+
+    // 1. Always write full JSON blob to settings tab
+    let settingsSheet = getOrCreateSheet(ss, 'settings', TAB_HEADERS.settings);
+    writePath(settingsSheet, path, val);
+
+    // 2. If this is the main tracker state, also write individual rows to each tab
+    if (path === 'tracker' && val && typeof val === 'object') {
+      writeTradesTab(ss, val.trades || [], now);
+      writeNotesTab(ss, val.notes || [], now);
+      writeRunsTab(ss, val.screenerRuns || [], now);
+      writePendingTab(ss, val.pendingEntries || [], now);
+    }
+
+    return jsonResponse({ success: true, path });
+  } catch(err) {
+    return jsonResponse({ success: false, error: err.message });
+  }
+}
+
+// ── MANUAL SCREENER TRIGGER ───────────────────────────────────────────────────
+// Returns immediately after scheduling — screener runs as a background trigger.
+// This avoids HTTP connection timeouts caused by the 4+ minute screener execution.
+function triggerManualScreener() {
+  if (isAutoTradePaused()) throw new Error('Auto-trade is currently paused');
+  if (!isWeekdayET()) throw new Error('Screener only runs on weekdays');
+
+  // Remove any stale runManualScreenerAsync triggers from previous attempts
+  ScriptApp.getProjectTriggers()
+    .filter(t => t.getHandlerFunction() === 'runManualScreenerAsync')
+    .forEach(t => ScriptApp.deleteTrigger(t));
+
+  // Schedule screener to run in ~1 minute (minimum Apps Script trigger granularity)
+  ScriptApp.newTrigger('runManualScreenerAsync')
+    .timeBased()
+    .after(60 * 1000)
+    .create();
+
+  Logger.log('[triggerManualScreener] Async trigger scheduled — screener will run in ~1 min');
+}
+
+// ── ASYNC SCREENER (called by 1-min trigger) ──────────────────────────────────
+function runManualScreenerAsync() {
+  // Delete this one-shot trigger first
+  ScriptApp.getProjectTriggers()
+    .filter(t => t.getHandlerFunction() === 'runManualScreenerAsync')
+    .forEach(t => ScriptApp.deleteTrigger(t));
+
+  const marketOpen = isUSMarketOpen();
+  runScreener(marketOpen);
+
+  // Tag the latest ScreenerLog entry as MANUAL
+  const sh = getSheet('ScreenerLog');
+  const lastRow = sh.getLastRow();
+  if (lastRow > 1) {
+    const currentTime = sh.getRange(lastRow, 2).getValue();
+    const timeStr = (currentTime instanceof Date)
+      ? Utilities.formatDate(currentTime, 'America/New_York', 'h:mm a') + ' EST'
+      : String(currentTime);
+    sh.getRange(lastRow, 2).setValue(timeStr + ' (MANUAL)');
+  }
+
+  syncStateToTracker();
+  Logger.log('[runManualScreenerAsync] Complete');
+}
+
+// ── WRITE: trades tab ─────────────────────────────────────────────────────────
+function writeTradesTab(ss, trades, now) {
+  const sheet = getOrCreateSheet(ss, 'trades', TAB_HEADERS.trades);
+
+  const lastRow = sheet.getLastRow();
+  if (lastRow > 1) sheet.getRange(2, 1, lastRow - 1, TAB_HEADERS.trades.length).clearContent();
+
+  if (!trades.length) return;
+
+  const rows = trades.map(t => [
+    t.id            || '',
+    t.ticker        || '',
+    t.exchange      || '',
+    t.type          || '',
+    t.prob          || '',
+    t.status        || '',
+    t.buyDate       || '',
+    t.buyTime       || '',
+    t.buyPrice      || '',
+    t.sharesTotal   || '',
+    t.sharesOpen    || '',
+    t.invested      || '',
+    t.partialExitDone  ? 'Yes' : 'No',
+    t.partialExitPrice || '',
+    t.partialExitDate  || '',
+    t.partialExitPnl   || '',
+    t.sellDate      || '',
+    t.sellTime      || '',
+    t.sellPrice     || '',
+    t.pnl           !== null && t.pnl !== undefined ? t.pnl : '',
+    t.pnlPct        !== null && t.pnlPct !== undefined ? t.pnlPct : '',
+    t.exitReason    || '',
+    t.partialTarget || '',
+    t.finalTarget   || '',
+    t.trailingStop  || '',
+    t.highestPrice  || '',
+    t.currentPrice  || '',
+    t.ruleVersion   || '',
+    now
+  ]);
+
+  sheet.getRange(2, 1, rows.length, TAB_HEADERS.trades.length).setValues(rows);
+
+  for (let i = 0; i < rows.length; i++) {
+    const status     = trades[i].status || '';
+    const exitReason = trades[i].exitReason || '';
+    let color = '#ffffff';
+    if (status === 'live' || status === 'partial') color = '#e8f5e9';
+    else if (exitReason === 'profit')  color = '#e8f5e9';
+    else if (exitReason === 'loss')    color = '#ffebee';
+    else if (exitReason === 'manual')  color = '#fff8e1';
+    sheet.getRange(i + 2, 1, 1, TAB_HEADERS.trades.length).setBackground(color);
+  }
+}
+
+// ── WRITE: notes tab ──────────────────────────────────────────────────────────
+function writeNotesTab(ss, notes, now) {
+  const sheet = getOrCreateSheet(ss, 'notes', TAB_HEADERS.notes);
+  const lastRow = sheet.getLastRow();
+  if (lastRow > 1) sheet.getRange(2, 1, lastRow - 1, TAB_HEADERS.notes.length).clearContent();
+
+  if (!notes.length) return;
+
+  const rows = notes.map((n, i) => [
+    i + 1,
+    typeof n === 'object' ? (n.ticker     || 'General') : 'General',
+    typeof n === 'object' ? (n.signalType || '')         : '',
+    typeof n === 'object' ? (n.outcome    || '')         : '',
+    typeof n === 'object' ? (n.text       || String(n)) : String(n),
+    typeof n === 'object' ? (n.ts         || '')         : '',
+    typeof n === 'object' ? (n.stopTriggerTs || '')      : '',
+    now
+  ]);
+
+  sheet.getRange(2, 1, rows.length, TAB_HEADERS.notes.length).setValues(rows);
+}
+
+// ── WRITE: screenerRuns tab ───────────────────────────────────────────────────
+function writeRunsTab(ss, runs, now) {
+  const sheet = getOrCreateSheet(ss, 'screenerRuns', TAB_HEADERS.screenerRuns);
+  const lastRow = sheet.getLastRow();
+  if (lastRow > 1) sheet.getRange(2, 1, lastRow - 1, TAB_HEADERS.screenerRuns.length).clearContent();
+
+  if (!runs.length) return;
+
+  const sorted = [...runs].reverse();
+  const rows = sorted.map(r => [
+    r.date          || '',
+    r.time          || '',
+    r.athCount      || 0,
+    r.swingCount    || 0,
+    r.tradedCount   || 0,
+    r.pendingCount  || 0,
+    r.skippedCount  || 0,
+    r.regimeUS      || '',
+    r.regimeTSX     || '',
+    (r.totalScreened || 0) + ' / 515',
+    now
+  ]);
+
+  sheet.getRange(2, 1, rows.length, TAB_HEADERS.screenerRuns.length).setValues(rows);
+}
+
+// ── WRITE: pendingEntries tab ─────────────────────────────────────────────────
+function writePendingTab(ss, pending, now) {
+  const sheet = getOrCreateSheet(ss, 'pendingEntries', TAB_HEADERS.pendingEntries);
+  const lastRow = sheet.getLastRow();
+  if (lastRow > 1) sheet.getRange(2, 1, lastRow - 1, TAB_HEADERS.pendingEntries.length).clearContent();
+
+  if (!pending.length) return;
+
+  const rows = pending.map(p => [
+    p.id           || '',
+    p.ticker       || '',
+    p.exchange     || '',
+    p.type         || '',
+    p.prob         || '',
+    p.signalDate   || '',
+    p.reclaimClose || '',
+    p.runTime      || '',
+    now,
+    p.reason       || ''
+  ]);
+
+  sheet.getRange(2, 1, rows.length, TAB_HEADERS.pendingEntries.length).setValues(rows);
+  sheet.getRange(2, 1, rows.length, TAB_HEADERS.pendingEntries.length).setBackground('#e3f2fd');
+}
+
+// ── HELPERS ───────────────────────────────────────────────────────────────────
+function getOrCreateSheet(ss, name, headers) {
+  let sheet = ss.getSheetByName(name);
+  if (!sheet) {
+    sheet = ss.insertSheet(name);
+  }
+
+  if (sheet.getLastRow() === 0) {
+    sheet.appendRow(headers);
+    sheet.getRange(1, 1, 1, headers.length)
+      .setFontWeight('bold')
+      .setBackground('#37474f')
+      .setFontColor('#ffffff');
+
+    for (let i = 1; i <= headers.length; i++) {
+      sheet.autoResizeColumn(i);
+    }
+    sheet.setFrozenRows(1);
+  } else {
+    sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
+  }
+  return sheet;
+}
+
+function readPath(sheet, path) {
+  const data = sheet.getDataRange().getValues();
+  for (let i = 0; i < data.length; i++) {
+    if (data[i][0] === path) {
+      try { return JSON.parse(data[i][1]); }
+      catch(e) { return data[i][1]; }
+    }
+  }
+  return null;
+}
+
+function writePath(sheet, path, val) {
+  const jsonVal   = JSON.stringify(val);
+  const timestamp = new Date().toISOString();
+  const data      = sheet.getDataRange().getValues();
+
+  for (let i = 0; i < data.length; i++) {
+    if (data[i][0] === path) {
+      sheet.getRange(i + 1, 1, 1, 3).setValues([[path, jsonVal, timestamp]]);
+      return;
+    }
+  }
+  sheet.appendRow([path, jsonVal, timestamp]);
+}
+
+function jsonResponse(obj) {
+  return ContentService
+    .createTextOutput(JSON.stringify(obj))
+    .setMimeType(ContentService.MimeType.JSON);
+}
+
+// ── ONE-TIME SETUP ────────────────────────────────────────────────────────────
+function setupSheets() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  Object.entries(TAB_HEADERS).forEach(([name, headers]) => {
+    getOrCreateSheet(ss, name, headers);
+  });
+  SpreadsheetApp.getUi().alert(
+    '✅ All 5 tabs created with correct headers!\n' +
+    'tabs: trades | notes | screenerRuns | pendingEntries | settings\n' +
+    'Now deploy this script as a Web App and update your index.html.'
+  );
+}
+
+/**
+* SHUFFLES the MasterList symbols and names randomly.
+*/
+function shuffleMasterList() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sheet = ss.getSheetByName('MasterList');
+  if (!sheet) {
+    Logger.log("❌ Error: 'MasterList' sheet not found.");
+    return;
+  }
+  const lastRow = sheet.getLastRow();
+  if (lastRow < 2) return;
+
+  const range = sheet.getRange(2, 1, lastRow - 1, 2);
+  const values = range.getValues();
+
+  for (let i = values.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [values[i], values[j]] = [values[j], values[i]];
+  }
+  range.setValues(values);
+
+  PropertiesService.getScriptProperties().setProperty('LAST_INDEX', '1');
+  Logger.log("🎲 MasterList Shuffled! Scanner reset to Row 2.");
+}
+
+// ============================================================
+// LONG-TERM SIP SCREENER
+// Columns A–AE (31 cols total)
+// PASS filters: Price>SMA200W, Price>SMA50W, SMA50W>SMA200W (Golden Cross),
+//               52WLow>SMA200W, PE<=65, Perf5Y>=85%,
+//               Price>EMA50D (US only, scraped), RevGrowth>=10% (US only),
+//               ROE>=10% (US only), EPSGrowth>=10% (US only), GrossMargin>=10% (US only)
+// ============================================================
+const SCREENER_SHEET = "testScreener";
+const MASTER_SHEET = "MasterList";
+const PROPERTIES_KEY = "ScreenerPreviousMetrics";
+
+// ------------------- 1. SETUP SCREENER SHEET -------------------
+function setupScreenerSheet() {
+  Logger.log(`[${new Date()}] START: setupScreenerSheet()`);
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+
+  // 1. Get MasterList data
+  let masterSheet = ss.getSheetByName(MASTER_SHEET);
+  if (!masterSheet) throw new Error(`Sheet "${MASTER_SHEET}" not found.`);
+
+  const lastMasterRow = masterSheet.getLastRow();
+  if (lastMasterRow < 2) throw new Error(`No data in "${MASTER_SHEET}".`);
+
+  const tickerData = masterSheet.getRange(2, 1, lastMasterRow - 1, 3).getValues();
+
+  // Preference filtering (TSX vs US)
+  const preferredData = new Map();
+  tickerData.forEach(row => {
+    const sym = row[0] ? row[0].toString().trim().toUpperCase() : "";
+    if (!sym) return;
+    const name = row[1] ? row[1].toString().trim() : sym;
+    const exchange = row[2] ? row[2].toString().trim().toUpperCase() : "N/A";
+    const isTSX = exchange.includes("TSX");
+
+    if (!preferredData.has(sym)) {
+      preferredData.set(sym, { name, exchange, isTSX });
+    } else {
+      const existing = preferredData.get(sym);
+      if (existing.isTSX && !isTSX) {
+        preferredData.set(sym, { name, exchange, isTSX });
+      }
+    }
+  });
+
+  const finalTickers = Array.from(preferredData.entries());
+  const newSymbols   = finalTickers.map(entry => entry[0]);
+  const newNames     = finalTickers.map(entry => entry[1].name);
+  const newExchanges = finalTickers.map(entry => entry[1].exchange);
+
+  // 2. Preserve existing dates
+  let screenerSheet = ss.getSheetByName(SCREENER_SHEET);
+  let existingDateMap = new Map();
+
+  if (screenerSheet) {
+    const lastRow = screenerSheet.getLastRow();
+    if (lastRow >= 2) {
+      const existingData = screenerSheet.getRange(2, 1, lastRow - 1, 15).getValues();
+      for (let i = 0; i < existingData.length; i++) {
+        const sym = existingData[i][0];
+        const dateAdded = existingData[i][14];
+        if (sym && dateAdded) existingDateMap.set(sym, dateAdded);
+      }
+    }
+    screenerSheet.clear();
+  } else {
+    screenerSheet = ss.insertSheet(SCREENER_SHEET);
+  }
+
+  // 3. HEADERS (A to AG — 33 Columns)
+  // Col  1 A : Symbol            Col 11 K : 52W Low          Col 21 U : Previous Close
+  // Col  2 B : Company Name      Col 12 L : SMA50W           Col 22 V : Day Low
+  // Col  3 C : Price             Col 13 M : SMA200W          Col 23 W : Day High
+  // Col  4 D : Strength %        Col 14 N : Perf 5Y %        Col 24 X : Div Yield %
+  // Col  5 E : Status            Col 15 O : Date Added       Col 25 Y : Avg Volume
+  // Col  6 F : Change %          Col 16 P : Notes            Col 26 Z : Rel Volume
+  // Col  7 G : Volume            Col 17 Q : Exchange         Col 27 AA: Revenue Growth %
+  // Col  8 H : Market Cap        Col 18 R : 52W High         Col 28 AB: ROE %
+  // Col  9 I : P/E               Col 19 S : Dist from High % Col 29 AC: EPS Growth YoY %
+  // Col 10 J : EPS dil TTM       Col 20 T : Beta             Col 30 AD: Gross Margin %
+  //                                                           Col 31 AE: EMA50 Daily
+  //                                                           Col 32 AF: Sector
+  //                                                           Col 33 AG: Industry
+  const headers = [
+    "Symbol", "Company Name", "Price", "Strength %", "Status",
+    "Change %", "Volume", "Market Cap", "P/E", "EPS dil TTM",
+    "52W Low", "SMA50W", "SMA200W", "Perf 5Y %", "Date Added",
+    "Notes", "Exchange",
+    "52W High", "Dist from 52W High %", "Beta",
+    "Previous Close", "Day Low", "Day High",
+    "Div Yield %", "Avg Volume", "Rel Volume",
+    "Revenue Growth %", "ROE %", "EPS Growth YoY %", "Gross Margin %",
+    "EMA50 Daily", "Sector", "Industry"
+  ];
+
+  screenerSheet.getRange(1, 1, 1, headers.length).setValues([headers]);
+  screenerSheet.getRange(1, 1, 1, headers.length).setFontWeight("bold");
+
+  // 4. Formatting & Writing Data
+  screenerSheet.getRange(2, 15, newSymbols.length, 1).setNumberFormat("dd-MMMM-yyyy");
+  screenerSheet.getRange(2, 1,  newSymbols.length, 1).setValues(newSymbols.map(s => [s]));
+  screenerSheet.getRange(2, 2,  newNames.length,   1).setValues(newNames.map(n => [n]));
+  screenerSheet.getRange(2, 17, newExchanges.length, 1).setValues(newExchanges.map(e => [e]));
+
+  // 5. Formulas (per row)
+  for (let i = 0; i < newSymbols.length; i++) {
+    const row = i + 2;
+    const sym = newSymbols[i];
+
+    // ── Core GOOGLEFINANCE formulas (cols C-N) ──
+    screenerSheet.getRange(row, 3).setFormula(`=GOOGLEFINANCE("${sym}", "price")`);
+    screenerSheet.getRange(row, 6).setFormula(`=GOOGLEFINANCE("${sym}", "changepct")`);
+    screenerSheet.getRange(row, 7).setFormula(`=GOOGLEFINANCE("${sym}", "volume")`);
+    screenerSheet.getRange(row, 8).setFormula(`=GOOGLEFINANCE("${sym}", "marketcap")`);
+    screenerSheet.getRange(row, 9).setFormula(`=GOOGLEFINANCE("${sym}", "pe")`);
+    screenerSheet.getRange(row, 10).setFormula(`=GOOGLEFINANCE("${sym}", "eps")`);
+    screenerSheet.getRange(row, 11).setFormula(`=MIN(INDEX(GOOGLEFINANCE("${sym}", "low", TODAY()-365, TODAY()),,2))`);
+    screenerSheet.getRange(row, 12).setFormula(`=IFERROR(AVERAGE(INDEX(GOOGLEFINANCE("${sym}", "close", TODAY()-350, TODAY()),,2)), 0)`);
+    screenerSheet.getRange(row, 13).setFormula(`=IFERROR(AVERAGE(INDEX(GOOGLEFINANCE("${sym}", "close", TODAY()-1400, TODAY()),,2)), 0)`);
+    screenerSheet.getRange(row, 14).setFormula(
+      `=IFERROR((GOOGLEFINANCE("${sym}","price") - ` +
+      `INDEX(GOOGLEFINANCE("${sym}","close",DATE(YEAR(TODAY())-5,MONTH(TODAY()),DAY(TODAY())), ` +
+      `DATE(YEAR(TODAY())-5,MONTH(TODAY()),DAY(TODAY())+5),"DAILY"),2,2)) / ` +
+      `INDEX(GOOGLEFINANCE("${sym}","close",DATE(YEAR(TODAY())-5,MONTH(TODAY()),DAY(TODAY())), ` +
+      `DATE(YEAR(TODAY())-5,MONTH(TODAY()),DAY(TODAY())+5),"DAILY"),2,2)*100, 0)`
+    );
+
+    let dateValue = existingDateMap.get(sym) || new Date();
+    screenerSheet.getRange(row, 15).setValue(dateValue);
+
+    // ── Columns R-W (18-23) ──
+    screenerSheet.getRange(row, 18).setFormula(
+      `=MAX(INDEX(GOOGLEFINANCE("${sym}", "high", TODAY()-365, TODAY()),,2))`
+    );
+    screenerSheet.getRange(row, 19).setFormula(
+      `=IF(AND(C${row}>0, R${row}>0), (1-C${row}/R${row})*100, 0)`
+    );
+    screenerSheet.getRange(row, 20).setFormula(
+      `=IFERROR(GOOGLEFINANCE("${sym}", "beta"), 0)`
+    );
+    screenerSheet.getRange(row, 21).setFormula(
+      `=IFERROR(INDEX(GOOGLEFINANCE("${sym}", "price", TODAY()-1), 2, 2), 0)`
+    );
+    screenerSheet.getRange(row, 22).setFormula(
+      `=IFERROR(GOOGLEFINANCE("${sym}", "low"), 0)`
+    );
+    screenerSheet.getRange(row, 23).setFormula(
+      `=IFERROR(GOOGLEFINANCE("${sym}", "high"), 0)`
+    );
+
+    // ── Column X (24): Dividend Yield % (yieldpct × 100) ──
+    screenerSheet.getRange(row, 24).setFormula(
+      `=IFERROR(GOOGLEFINANCE("${sym}", "yieldpct")*100, 0)`
+    );
+
+    // ── Column Y (25): Average Volume ──
+    screenerSheet.getRange(row, 25).setFormula(
+      `=IFERROR(GOOGLEFINANCE("${sym}", "volumeavg"), 0)`
+    );
+
+    // ── Column Z (26): Relative Volume = current volume / average volume ──
+    screenerSheet.getRange(row, 26).setFormula(
+      `=IFERROR(G${row}/Y${row}, 0)`
+    );
+
+    // ── Columns AA-AE (27-31): Yahoo Finance scraped — initialize empty ──
+    // Filled by fetchFundamentalsForPassStocks() for PASS stocks only
+    screenerSheet.getRange(row, 27, 1, 5).setValues([['', '', '', '', '']]);
+
+    // ── Columns AF-AG (32-33): Sector & Industry — filled by fetchFundamentalsForPassStocks() ──
+    screenerSheet.getRange(row, 32).setValue('');
+    screenerSheet.getRange(row, 33).setValue('');
+  }
+
+  // Format columns
+  screenerSheet.getRange(2, 19, newSymbols.length, 1).setNumberFormat("0.00\"%\"");
+  screenerSheet.getRange(2, 20, newSymbols.length, 1).setNumberFormat("0.00");
+  screenerSheet.getRange(2, 21, newSymbols.length, 3).setNumberFormat("$0.00");
+  screenerSheet.getRange(2, 24, newSymbols.length, 1).setNumberFormat("0.00");  // Div Yield
+  screenerSheet.getRange(2, 26, newSymbols.length, 1).setNumberFormat("0.00");  // Rel Volume
+  screenerSheet.getRange(2, 27, newSymbols.length, 5).setNumberFormat("0.00");  // Fundamentals + SMA50D
+
+  // Auto-resize columns (A–AG = 33)
+  screenerSheet.autoResizeColumns(1, 33);
+
+  // ⚠️ GOOGLEFINANCE formulas for 500+ stocks take 5-10 minutes to fully evaluate.
+  // Do NOT run scoring here — call runScreenerUpdate() manually after data has loaded.
+  SpreadsheetApp.flush();
+  // updateStrengthAndStatus();        // ← commented out: run via runScreenerUpdate() after 5 mins
+  // fetchFundamentalsForPassStocks(); // ← commented out: run via runScreenerUpdate() after 5 mins
+
+  Logger.log(`[setupScreenerSheet] DONE — formulas written for all rows. Wait ~5 mins for GOOGLEFINANCE to load, then run runScreenerUpdate().`);
+}
+
+// ── RUN THIS MANUALLY ~5 MINS AFTER setupScreenerSheet() ─────────────────────
+// Calculates strength/status once GOOGLEFINANCE data has fully loaded,
+// then fetches EMA50 Daily for all PASS stocks via Yahoo Finance.
+function runScreenerUpdate() {
+  Logger.log('[runScreenerUpdate] START');
+
+  // Step 0: Clear col AE (EMA50D) for all rows.
+  // This prevents stale/wrong EMA50D values from wrongly FAILing stocks in step 1,
+  // which would cause fetchFundamentalsForPassStocks() to skip them and never refresh the value.
+  const ss0 = SpreadsheetApp.getActiveSpreadsheet();
+  const sh0 = ss0.getSheetByName(SCREENER_SHEET);
+  if (sh0 && sh0.getLastRow() > 1) {
+    sh0.getRange(2, 31, sh0.getLastRow() - 1, 1).clearContent();
+    Logger.log('[runScreenerUpdate] Step 0/3 — cleared stale EMA50D values from col AE');
+  }
+
+  Logger.log('[runScreenerUpdate] Step 1/3 — updateStrengthAndStatus() (no EMA50D in col AE, so no stale FAILs)');
+  updateStrengthAndStatus();
+
+  Logger.log('[runScreenerUpdate] Step 2/3 — fetchFundamentalsForPassStocks() (fresh EMA50D for all PASS stocks)');
+  fetchFundamentalsForPassStocks();
+
+  // Step 3: Re-run strength so stocks flipped PASS→FAIL by EMA50D get correct final strength.
+  Logger.log('[runScreenerUpdate] Step 3/3 — updateStrengthAndStatus() to finalise strength after EMA50D');
+  updateStrengthAndStatus();
+
+  Logger.log('[runScreenerUpdate] DONE — PASS/FAIL, Strength %, and EMA50D are now current.');
+}
+
+// ------------------- 2. UPDATE STRENGTH, STATUS, NOTES -------------------
+function updateStrengthAndStatus() {
+  Logger.log(`[${new Date()}] START: updateStrengthAndStatus()`);
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sheet = ss.getSheetByName(SCREENER_SHEET);
+  if (!sheet) return;
+
+  const lastRow = sheet.getLastRow();
+  if (lastRow < 2) return;
+
+  // Read all 31 columns so fundamental data (cols 27-31) is included in PASS logic
+  const data = sheet.getRange(2, 1, lastRow - 1, 31).getValues();
+
+  // Read existing strength/status so we can preserve them for rows whose GOOGLEFINANCE
+  // data hasn't loaded yet (SMA50W=0, SMA200W=0). Without this, a mid-load run would
+  // overwrite good values with scores computed from zeros.
+  const existingStrength = sheet.getRange(2, 4, lastRow - 1, 1).getValues().flat();
+  const existingStatus   = sheet.getRange(2, 5, lastRow - 1, 1).getValues().flat();
+
+  const strengthScores = [];
+  const statuses = [];
+  const notes = [];
+
+  let previousMetrics = {};
+  const stored = PropertiesService.getScriptProperties().getProperty(PROPERTIES_KEY);
+  if (stored) previousMetrics = JSON.parse(stored);
+
+  const today = new Date();
+  const dateStr = `${today.getDate().toString().padStart(2,'0')}-${["January","February","March","April","May","June","July","August","September","October","November","December"][today.getMonth()]}-${today.getFullYear()}`;
+
+  for (let i = 0; i < data.length; i++) {
+    const row = data[i];
+    const symbol   = row[0];
+    const price    = parseFloat(row[2])  || 0;   // col C
+    const marketCap= parseFloat(row[7])  || 0;   // col H
+    const pe       = parseFloat(row[8])  || 0;   // col I
+    const w52low   = parseFloat(row[10]) || 0;   // col K
+    const sma50w   = parseFloat(row[11]) || 0;   // col L
+    const sma200w  = parseFloat(row[12]) || 0;   // col M
+    const perf5y   = toNullableNum(row[13]);      // col N — null when GOOGLEFINANCE hasn't loaded yet
+    const exchange = row[16] ? row[16].toString().toUpperCase() : ""; // col Q
+
+    // Fundamental data (null = not yet scraped)
+    const revGrowth   = toNullableNum(row[26]); // col AA
+    const roe         = toNullableNum(row[27]); // col AB
+    const epsGrowth   = toNullableNum(row[28]); // col AC
+    const grossMargin = toNullableNum(row[29]); // col AD
+    const sma50daily  = toNullableNum(row[30]); // col AE
+
+    // ── STRENGTH SCORING ──
+    const perf5yNum    = perf5y !== null ? perf5y : 0; // use 0 for scoring when not yet loaded
+    let compoundScore  = Math.min(Math.max((perf5yNum - 70) / 250, 0), 1);
+    let trendGap       = sma200w > 0 ? (price - sma200w) / sma200w : 0;
+    let trendScore     = (trendGap > 0.10 && trendGap < 0.60) ? 1.0 : (trendGap >= 0.60 ? 0.5 : 0);
+    let proximityScore = sma50w > 0 ? Math.min(Math.max((price / sma50w - 0.95) / 0.15, 0), 1) : 0;
+    let valScore       = (pe >= 15 && pe <= 50) ? 1.0 : 0.4;
+    let strength = Math.round((compoundScore * 0.4 + trendScore * 0.3 + proximityScore * 0.2 + valScore * 0.1) * 100);
+    strengthScores.push(strength);
+
+    // ── PASS / FAIL FILTERS ──
+    let pass = true;
+
+    // ── Technical filters (GOOGLEFINANCE data — all stocks) ──
+    // Guard: if SMA50W and SMA200W are both 0, GOOGLEFINANCE hasn't loaded yet for this row.
+    // Keep the existing strength/status rather than overwriting with wrong zeros-based values.
+    if (price <= 0) { statuses.push(''); strengthScores.push(0); notes.push(''); continue; }
+    if (sma50w === 0 && sma200w === 0) {
+      // SMA data not loaded yet — write blank so stale/wrong values don't persist.
+      // Next run of updateStrengthAndStatus() after data loads will fill these in correctly.
+      strengthScores.push('');
+      statuses.push('');
+      notes.push('');
+      continue;
+    }
+    if (perf5y !== null && perf5y < 85)                                 pass = false; // 5Y Performance >= 85%
+    if (sma200w > 0 && price < sma200w)                                 pass = false; // Price > SMA(200)W
+    if (sma50w  > 0 && price < sma50w)                                  pass = false; // Price > SMA(50)W
+    if (sma50w  > 0 && sma200w > 0 && sma50w < sma200w)                pass = false; // Golden Cross: SMA50W > SMA200W
+    if (w52low  > 0 && sma200w > 0 && w52low < sma200w * 1.05)         pass = false; // 52W Low >= SMA(200)W + 5% margin
+    if (pe > 0 && pe > 65)                                              pass = false; // P/E <= 65
+
+    // ── Fundamental filters (Yahoo Finance — all stocks, when data exists) ──
+    if (revGrowth   !== null && revGrowth   < 10) pass = false; // Revenue Growth >= 10%
+    if (roe         !== null && roe         < 10) pass = false; // ROE >= 10%
+    if (epsGrowth   !== null && epsGrowth   < 10) pass = false; // EPS Growth YoY >= 10%
+    if (grossMargin !== null && grossMargin < 10) pass = false; // Gross Margin >= 10%
+
+    // ── EMA 50 Daily filter (Yahoo-scraped — US stocks only, when data exists) ──
+    if (sma50daily !== null && price > 0 && price < sma50daily) pass = false; // Price > EMA50D
+
+    statuses.push(pass ? "PASS" : "FAIL");
+
+    // ── NOTE TRACKING ──
+    const prev = previousMetrics[symbol] || {};
+    let note = (prev.strength && Math.abs(strength - prev.strength) >= 5)
+               ? `Base Strength shifted ${strength - prev.strength}% on ${dateStr}` : "";
+    notes.push(note);
+
+    previousMetrics[symbol] = { strength, price, marketCap, pe, perf5y };
+  }
+
+  // Write Strength % (col D) and Status (col E)
+  sheet.getRange(2, 4, strengthScores.length, 1).setValues(strengthScores.map(s => [s]));
+  sheet.getRange(2, 5, statuses.length, 1).setValues(statuses.map(s => [s]));
+
+  // Write Notes (col P)
+  const existingNotes = sheet.getRange(2, 16, lastRow - 1, 1).getValues().flat();
+  const finalNotes = notes.map((n, i) => [n || existingNotes[i] || ""]);
+  sheet.getRange(2, 16, finalNotes.length, 1).setValues(finalNotes);
+
+  PropertiesService.getScriptProperties().setProperty(PROPERTIES_KEY, JSON.stringify(previousMetrics));
+  sortScreener();
+  Logger.log(`COMPLETED: updateStrengthAndStatus()`);
+}
+
+// ------------------- 3. SORT FUNCTION -------------------
+function sortScreener() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sheet = ss.getSheetByName(SCREENER_SHEET);
+  if (!sheet) return;
+
+  const lastRow = sheet.getLastRow();
+  if (lastRow < 2) return;
+
+  const numCols = sheet.getLastColumn();
+  const dataRange = sheet.getRange(2, 1, lastRow - 1, numCols);
+
+  dataRange.sort([
+    { column: 5, ascending: false },  // Status: PASS first
+    { column: 4, ascending: false }   // Strength %: high to low
+  ]);
+
+  Logger.log(`Sorted sheet by Status and Strength %`);
+}
+
+// ------------------- 4. MANUAL REFRESH -------------------
+function refreshScreener() {
+  updateStrengthAndStatus();
+}
+
+// ── HELPER: null-safe number parse (empty string → null, 0 → 0) ──────────────
+function toNullableNum(val) {
+  if (val === '' || val === null || val === undefined) return null;
+  const n = parseFloat(val);
+  return isNaN(n) ? null : n;
+}
+
+// ── AUTH: get Yahoo Finance session cookie + crumb (required since 2024) ───────
+// Yahoo Finance v10 quoteSummary needs: cookie from fc.yahoo.com + crumb token.
+// The crumb is fetched once per run and reused for all tickers.
+function getYahooCrumb() {
+  try {
+    // Step 1: hit fc.yahoo.com to get the session cookie
+    const cookieResp = UrlFetchApp.fetch('https://fc.yahoo.com', {
+      muteHttpExceptions: true,
+      followRedirects: true,
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+      }
+    });
+
+    // Extract all Set-Cookie values and join into a single cookie string
+    const allHeaders = cookieResp.getAllHeaders();
+    const rawCookies = allHeaders['Set-Cookie'] || allHeaders['set-cookie'] || '';
+    const cookieArr  = Array.isArray(rawCookies) ? rawCookies : (rawCookies ? [rawCookies] : []);
+    const cookieStr  = cookieArr.map(c => c.split(';')[0]).filter(Boolean).join('; ');
+
+    if (!cookieStr) {
+      Logger.log('[YahooCrumb] No cookies received from fc.yahoo.com');
+      return null;
+    }
+
+    // Step 2: fetch the crumb using the session cookie
+    const crumbResp = UrlFetchApp.fetch('https://query2.finance.yahoo.com/v1/test/getcrumb', {
+      muteHttpExceptions: true,
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'Cookie': cookieStr
+      }
+    });
+
+    if (crumbResp.getResponseCode() !== 200) {
+      Logger.log(`[YahooCrumb] getcrumb HTTP ${crumbResp.getResponseCode()}`);
+      return null;
+    }
+
+    const crumb = crumbResp.getContentText().trim();
+    if (!crumb || crumb.includes('<') || crumb.length > 50) {
+      Logger.log(`[YahooCrumb] unexpected crumb value: "${crumb.substring(0, 80)}"`);
+      return null;
+    }
+
+    Logger.log(`[YahooCrumb] OK — crumb starts with: ${crumb.substring(0, 6)}...`);
+    return { crumb, cookieStr };
+
+  } catch(e) {
+    Logger.log(`[YahooCrumb] error: ${e}`);
+    return null;
+  }
+}
+
+// ── FETCH FUNDAMENTALS: Yahoo Finance quoteSummary for PASS stocks ───────────
+// Called automatically after setupScreenerSheet() and manually via refreshFundamentals()
+function fetchFundamentalsForPassStocks() {
+  Logger.log('[fetchFundamentals] START');
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sheet = ss.getSheetByName(SCREENER_SHEET);
+  if (!sheet) return;
+
+  const lastRow = sheet.getLastRow();
+  if (lastRow < 2) return;
+
+  // Read Symbol (col 1), Status (col 5), Exchange (col 17), Sector (col 32), Industry (col 33)
+  const data    = sheet.getRange(2, 1,  lastRow - 1, 17).getValues();
+  const siData  = sheet.getRange(2, 32, lastRow - 1, 2).getValues(); // AF=sector, AG=industry
+
+  // Get Yahoo auth once — needed for sector/industry assetProfile calls
+  const auth = getYahooCrumb();
+
+  let scraped = 0;
+  for (let i = 0; i < data.length; i++) {
+    const symbol   = (data[i][0] || '').toString().trim();
+    const status   = (data[i][4] || '').toString().trim();
+    const exchange = (data[i][16] || '').toString().toUpperCase();
+
+    if (!symbol) continue;
+
+    // Build Yahoo Finance ticker — TSX stocks need ".TO" suffix
+    const isTSX = exchange.includes('TSX') || symbol.endsWith('.TO');
+    const yahooTicker = isTSX && !symbol.endsWith('.TO') ? symbol + '.TO' : symbol;
+
+    const row = i + 2;
+
+    // ── Sector & Industry for ALL stocks via Yahoo Finance assetProfile ──
+    const existingSector   = (siData[i][0] || '').toString().trim();
+    const existingIndustry = (siData[i][1] || '').toString().trim();
+    if (auth && (!existingSector || !existingIndustry)) {
+      // Only call Yahoo if sector OR industry is missing
+      const profile = fetchAssetProfile(yahooTicker, auth);
+      if (profile.sector)   sheet.getRange(row, 32).setValue(profile.sector);
+      if (profile.industry) sheet.getRange(row, 33).setValue(profile.industry);
+    } else if (existingSector) {
+      Logger.log(`[fetchAssetProfile] ${yahooTicker}: skipped (already set: ${existingSector})`);
+    }
+
+    if (status !== 'PASS') {
+      Utilities.sleep(150); // lighter rate-limit for non-PASS rows (sector/industry only)
+      continue;
+    }
+
+    Utilities.sleep(400); // Rate-limit between Yahoo calls for PASS stocks
+
+    // Fetch true EMA50 Daily via Yahoo Finance chart API (no auth needed)
+    const ema50d = fetchEMA50Daily(yahooTicker);
+
+    // Write col AE (31) only — cols AA-AD (27-30) stay blank until fundamentals are enabled
+    sheet.getRange(row, 31).setValue(ema50d !== null ? ema50d : '');
+
+    // Re-evaluate PASS/FAIL: only EMA50D filter here (fundamentals filters skipped for now)
+    const currentPrice = parseFloat(sheet.getRange(row, 3).getValue()) || 0;
+    let newStatus = 'PASS';
+    if (ema50d !== null && currentPrice > 0 && currentPrice < ema50d) newStatus = 'FAIL';
+
+    // Only update status if EMA50D caused a change (don't overwrite existing FAIL from updateStrengthAndStatus)
+    const existingStatus = sheet.getRange(row, 5).getValue().toString().trim();
+    if (existingStatus === 'PASS' && newStatus === 'FAIL') {
+      sheet.getRange(row, 5).setValue('FAIL');
+    }
+
+    scraped++;
+    Logger.log(`[fetchEMA50D] ${yahooTicker}: EMA50D=${ema50d !== null ? ema50d.toFixed(2) : 'null'} price=${currentPrice} → ${newStatus}`);
+  }
+
+  Logger.log(`[fetchEMA50D] DONE. Processed ${scraped} PASS stocks.`);
+  sortScreener();
+}
+
+// ── DEBUG: run this manually to test EMA50D fetch for one ticker ──────────────
+function debugYahoo() {
+  const symbol = 'MCK'; // ← change to any ticker
+  const ema50d = fetchEMA50Daily(symbol);
+  Logger.log(`debugYahoo [${symbol}] EMA50D: ${ema50d}`);
+}
+
+// ── FETCH: fundamental metrics via Yahoo Finance quoteSummary API ─────────────
+// Requires auth object { crumb, cookieStr } obtained from getYahooCrumb().
+// Returns: { revGrowth, roe, epsGrowth, grossMargin } in % (e.g. 15.2 = 15.2%)
+// Null means data not available for this ticker.
+function fetchFundamentalsYahoo(ticker, auth) {
+  const result = { revGrowth: null, roe: null, epsGrowth: null, grossMargin: null };
+  try {
+    const url = `https://query2.finance.yahoo.com/v10/finance/quoteSummary/${encodeURIComponent(ticker)}?modules=financialData&crumb=${encodeURIComponent(auth.crumb)}`;
+    const resp = UrlFetchApp.fetch(url, {
+      muteHttpExceptions: true,
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'Accept': 'application/json',
+        'Cookie': auth.cookieStr
+      }
+    });
+    const code = resp.getResponseCode();
+    if (code !== 200) {
+      Logger.log(`[Yahoo Fundamentals] ${ticker}: HTTP ${code}`);
+      return result;
+    }
+    const json = JSON.parse(resp.getContentText());
+    const fd = json?.quoteSummary?.result?.[0]?.financialData;
+    if (!fd) {
+      Logger.log(`[Yahoo Fundamentals] ${ticker}: no financialData in response`);
+      return result;
+    }
+
+    // Yahoo returns decimals (0.15 = 15%) — convert to percentage
+    const toPct = (obj) => {
+      if (!obj || obj.raw === null || obj.raw === undefined) return null;
+      return parseFloat((obj.raw * 100).toFixed(2));
+    };
+
+    result.grossMargin = toPct(fd.grossMargins);
+    result.roe         = toPct(fd.returnOnEquity);
+    result.revGrowth   = toPct(fd.revenueGrowth);
+    result.epsGrowth   = toPct(fd.earningsGrowth);
+
+  } catch(e) {
+    Logger.log(`[Yahoo Fundamentals] ${ticker}: error: ${e}`);
+  }
+  return result;
+}
+
+// ── FETCH: Sector & Industry via Yahoo Finance assetProfile ──────────────────────
+// Returns { sector, industry } strings. Empty string if not available.
+function fetchAssetProfile(ticker, auth) {
+  const result = { sector: '', industry: '' };
+  try {
+    const url = `https://query2.finance.yahoo.com/v10/finance/quoteSummary/${encodeURIComponent(ticker)}?modules=assetProfile&crumb=${encodeURIComponent(auth.crumb)}`;
+    const resp = UrlFetchApp.fetch(url, {
+      muteHttpExceptions: true,
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'Accept': 'application/json',
+        'Cookie': auth.cookieStr
+      }
+    });
+    if (resp.getResponseCode() !== 200) {
+      Logger.log(`[fetchAssetProfile] ${ticker}: HTTP ${resp.getResponseCode()}`);
+      return result;
+    }
+    const json = JSON.parse(resp.getContentText());
+    const profile = json?.quoteSummary?.result?.[0]?.assetProfile;
+    if (profile) {
+      result.sector   = profile.sector   || '';
+      result.industry = profile.industry || '';
+      Logger.log(`[fetchAssetProfile] ${ticker}: sector="${result.sector}" industry="${result.industry}"`);
+    }
+  } catch(e) {
+    Logger.log(`[fetchAssetProfile] ${ticker} error: ${e}`);
+  }
+  return result;
+}
+
+// ── FETCH: True EMA(50) Daily via Yahoo Finance — matches TradingView's EMA(50) ─
+// Uses 200 days of close data so the EMA has enough history to warm up properly.
+// Formula: EMA = Price × k + PrevEMA × (1−k), where k = 2/(50+1)
+function fetchEMA50Daily(ticker) {
+  try {
+    const url = `https://query2.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(ticker)}?interval=1d&range=200d`;
+    const resp = UrlFetchApp.fetch(url, { muteHttpExceptions: true });
+    if (resp.getResponseCode() !== 200) return null;
+
+    const json   = JSON.parse(resp.getContentText());
+    // Use split-adjusted close prices (adjclose) so stock splits don't corrupt the EMA.
+    // TradingView also uses split-adjusted data for its EMA calculations.
+    const closes = json.chart?.result?.[0]?.indicators?.adjclose?.[0]?.adjclose?.filter(c => c != null) || [];
+    if (closes.length < 50) return null;
+
+    const period = 50;
+    const k = 2 / (period + 1); // smoothing factor ≈ 0.0392
+
+    // Seed: SMA of the first 50 closes
+    let ema = closes.slice(0, period).reduce((sum, v) => sum + v, 0) / period;
+
+    // Apply EMA for every close after the seed window
+    for (let i = period; i < closes.length; i++) {
+      ema = closes[i] * k + ema * (1 - k);
+    }
+
+    return parseFloat(ema.toFixed(4));
+  } catch(e) {
+    Logger.log(`[fetchEMA50Daily] ${ticker} error: ${e}`);
+    return null;
+  }
+}
+
+// ── MANUAL TRIGGER: refresh fundamentals only (run from Apps Script UI) ──────
+function refreshFundamentals() {
+  fetchFundamentalsForPassStocks();
+}
+
+/**
+* Filters data from MajorList into MasterList.
+* Rules:
+*   - Column D (assetType) must be exactly "Stock" or "ETF"
+*   - TSX stocks: Mkt Cap >= $2B
+*   - All other exchanges (US/NYSE/NASDAQ): Mkt Cap >= $10B
+*/
+function updateMasterList() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sourceSheet = ss.getSheetByName("MajorList");
+  const targetSheet = ss.getSheetByName("MasterList");
+
+  const sourceData = sourceSheet.getDataRange().getValues();
+  sourceData.shift();
+
+  const results = [];
+
+  sourceData.forEach(row => {
+    const symbol    = row[0] ? row[0].toString().trim() : "";
+    const name      = row[1] ? row[1].toString().trim() : "";
+    const exchange  = row[2] ? row[2].toString().trim() : "";
+    const assetType = row[3] ? row[3].toString().trim() : "";
+    const mktCap    = parseFloat(row[7]) || 0;
+
+    if (!symbol) return;
+    if (assetType !== "Stock" && assetType !== "ETF") return;
+
+    const isTSX = exchange.toUpperCase().includes("TSX");
+    if (isTSX && mktCap < 2)   return;
+    if (!isTSX && mktCap < 10) return;
+
+    results.push([symbol, name, exchange, mktCap]);
+  });
+
+  targetSheet.clearContents();
+
+  const outputHeaders = [["Symbol", "Name", "Exchange", "Mkt Cap"]];
+  targetSheet.getRange(1, 1, 1, 4).setValues(outputHeaders).setFontWeight("bold");
+
+  if (results.length > 0) {
+    targetSheet.getRange(2, 1, results.length, 4).setValues(results);
+  }
+
+  Logger.log(`updateMasterList: ${results.length} rows written to MasterList.`);
+}
+
+// ============================================================
+// TRADING PLATFORM — Google Apps Script
+// Replaces all browser-dependent logic from index.html
+// Tabs: pendingEntries, LiveTrades, ScreenerLog, Config
+// ============================================================
+
+// ── CONSTANTS (must match index.html) ───────────────────────
+const RULE_VERSION      = "v4";
+const TRADE_SIZE        = 100;
+const TOTAL_CAPITAL     = 10000;
+const PARTIAL_TARGET    = 0.03;  // Stage 1: sell 50% at +3%, floor stop at +3%
+const PARTIAL_TARGET_2  = 0.05;  // Stage 2: sell 25% at +5%, floor stop at +5%
+const PROFIT_TARGET     = 0.08;  // Stage 3: sell final 25% at +8%
+const STOP_LOSS         = 0.02;  // trailing stop: -2% from highest
+const EMA_PERIOD        = 220;
+const MA_BUFFER         = 0.003;
+const ATH_THRESHOLD     = 0.05;
+const S2_ATH_MAX_DD     = 0.15;
+const MAX_RECLAIM_BARS  = 60;
+const MAX_BELOW_BARS    = 10;
+const SWING_HIGH_MIN_BARS = 126;
+const SWING_HIGH_MAX_BARS = 378;
+const SWING_NEAR_MIN    = 0.01;
+const SWING_NEAR_MAX    = 0.05;
+const VOLUME_RATIO      = 1.2;
+const WEEKLY_EMA_PERIOD = 44;
+const WEEKLY_TREND_PENALTY = 15;
+const EMA_EXTENSION_MAX = 25;
+const PROXIMITY_52W_MAX = 0.25;
+const ATH_PROB_THRESHOLD   = 70;
+const SWING_PROB_THRESHOLD = 50;
+const COOLDOWN_MS       = 48 * 60 * 60 * 1000;
+const DOUBLE_STOP_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
+const DOUBLE_STOP_PAUSE_MS  = 7 * 24 * 60 * 60 * 1000;
+
+const NYSE_HOLIDAYS = new Set([
+  "2026-01-01","2026-01-19","2026-02-16","2026-04-03",
+  "2026-05-25","2026-06-19","2026-07-03","2026-09-07",
+  "2026-11-26","2026-12-25"
+]);
+
+const TSX_HOLIDAYS = new Set([
+  "2026-01-01","2026-02-16","2026-04-03","2026-05-18",
+  "2026-07-01","2026-08-03","2026-09-07","2026-10-12",
+  "2026-11-11","2026-12-25","2026-12-28"
+]);
+
+const SP500_TICKERS = [
+  "A","AAL","AAP","AAPL","ABBV","ABT","ACN","ADBE","ADI","ADM","ADP","ADSK","AEE","AEP","AES","AFL","AIG","AIZ","AJG","AKAM",
+  "ALB","ALGN","ALL","ALLE","AMAT","AMCR","AMD","AME","AMGN","AMP","AMT","AMZN","ANET","AON","AOS","APA","APD","APH","APTV","ARE",
+  "ATO","AVB","AVGO","AVY","AWK","AXON","AXP","AZO","BA","BAC","BALL","BAX","BBWI","BBY","BDX","BEN","BF-B","BG","BIIB","BK",
+  "BKNG","BKR","BLDR","BLK","BMY","BR","BRK-B","BRO","BSX","BWA","BX","BXP","C","CAG","CAH","CARR","CAT","CB","CBOE","CBRE",
+  "CCI","CCL","CDNS","CDW","CE","CEG","CF","CFG","CHD","CHRW","CHTR","CI","CINF","CL","CLX","CMA","CMCSA","CME","CMG","CMI",
+  "CMS","CNC","CNP","COF","COO","COP","COST","CPB","CPRT","CPT","CRL","CRM","CRWD","CSCO","CSGP","CSX","CTAS","CTRA","CTSH","CTVA",
+  "CVS","CVX","CZR","D","DAL","DAY","DD","DE","DECK","DG","DGX","DHI","DHR","DIS","DLR","DLTR","DOC","DOV","DOW","DPZ","DRI",
+  "DTE","DUK","DVA","DVN","DXCM","EA","EBAY","ECL","ED","EFX","EG","EIX","EL","ELV","EMN","EMR","ENPH","EOG","EPAM","EQIX",
+  "EQR","EQT","ES","ESS","ETN","ETR","ETSY","EVRG","EW","EXC","EXPD","EXPE","EXR","F","FANG","FAST","FCX","FDS","FDX","FE",
+  "FFIV","FICO","FIS","FITB","FMC","FOX","FOXA","FRT","FSLR","FTNT","FTV","GD","GDDY","GE","GEHC","GEN","GILD","GIS","GL","GLW",
+  "GM","GNRC","GOOGL","GOOG","GPC","GPN","GS","GWW","HAL","HAS","HBAN","HCA","HD","HIG","HII","HLT","HOLX","HON","HPE","HPQ",
+  "HRL","HSIC","HST","HSY","HUBB","HUM","HWM","IBM","ICE","IDXX","IEX","IFF","ILMN","INCY","INTC","INTU","INVH","IP","IQV","IR",
+  "IRM","ISRG","IT","ITW","IVZ","J","JBHT","JCI","JKHY","JNJ","JPM","KEY","KEYS","KHC","KIM","KLAC","KMB","KMI","KMX","KO",
+  "KR","L","LDOS","LEN","LH","LHX","LIN","LKQ","LLY","LMT","LNT","LOW","LRCX","LULU","LUV","LVS","LW","LYB","LYV","MA",
+  "MAA","MAR","MAS","MCD","MCHP","MCK","MCO","MDLZ","MDT","MET","META","MGM","MHK","MKC","MKTX","MLM","MNST","MO","MOH",
+  "MOS","MPC","MPWR","MRK","MRNA","MS","MSCI","MSFT","MSI","MTB","MTD","MU","NCLH","NDAQ","NEE","NEM","NFLX","NI","NKE",
+  "NOC","NOW","NRG","NSC","NTAP","NTRS","NUE","NVDA","NVR","NWS","NWSA","NXPI","O","ODFL","OKE","OMC","ON","ORCL","ORLY",
+  "OXY","PAYC","PAYX","PCAR","PCG","PEG","PEP","PFE","PFG","PG","PGR","PH","PHM","PKG","PLD","PM","PNC","PNR","PNW","PODD",
+  "POOL","PPG","PPL","PRU","PSA","PSX","PTC","PWR","PYPL","QCOM","QRVO","RCL","REG","REGN","RF","RJF","RL","RMD","ROK","ROL",
+  "ROP","ROST","RSG","RTX","RVTY","SBAC","SBUX","SCHW","SJM","SLB","SMCI","SNA","SNPS","SO","SPG","SPGI","SRE","STE","STLD",
+  "STT","STX","STZ","SWK","SWKS","SYF","SYK","SYY","T","TAP","TDG","TDY","TECH","TEL","TER","TFC","TFX","TGT","TJX","TMO",
+  "TMUS","TPR","TRGP","TRMB","TROW","TRV","TSCO","TSLA","TSN","TT","TTWO","TXN","TXT","TYL","UAL","UDR","UHS","ULTA","UNH",
+  "UNP","UPS","URI","USB","V","VFC","VICI","VLO","VLTO","VMC","VRSK","VRSN","VRTX","VTR","VTRS","VZ","WAB","WAT","WDAY",
+  "WBD","WDC","WELL","WFC","WHR","WM","WMB","WMT","WRB","WST","WTW","WY","WYNN","XEL","XOM","XYL","YUM","ZBH","ZBRA","ZTS"
+];
+
+const TSX_TICKERS = [
+  "RY.TO","TD.TO","BN.TO","ENB.TO","CNR.TO","CP.TO","BMO.TO","BNS.TO","SHOP.TO","SU.TO",
+  "CNQ.TO","MFC.TO","TRP.TO","CM.TO","ATD.TO","WCN.TO","BAM.TO","SLF.TO","IFC.TO","TRI.TO",
+  "L.TO","POW.TO","GWO.TO","T.TO","BCE.TO","WPM.TO","ABX.TO","AEM.TO","NTR.TO","FTS.TO",
+  "DOL.TO","CSU.TO","QSR.TO","H.TO","GFL.TO","WSP.TO","MRU.TO","RCI-B.TO","IMO.TO","FFH.TO"
+];
+
+const ALL_TICKERS = [...SP500_TICKERS, ...TSX_TICKERS];
+
+// ── SHEET HELPERS ────────────────────────────────────────────
+function getSheet(name) {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sh = ss.getSheetByName(name);
+  if (!sh) throw new Error("Sheet not found: " + name);
+  return sh;
+}
+
+function getConfig(key) {
+  const sh = getSheet("Config");
+  const data = sh.getDataRange().getValues();
+  for (let i = 1; i < data.length; i++) {
+    if (String(data[i][0]).trim() === key) return data[i][1];
+  }
+  return null;
+}
+
+function setConfig(key, value) {
+  const sh = getSheet("Config");
+  const data = sh.getDataRange().getValues();
+  for (let i = 1; i < data.length; i++) {
+    if (String(data[i][0]).trim() === key) {
+      sh.getRange(i + 1, 2).setValue(value);
+      return;
+    }
+  }
+  sh.appendRow([key, value]);
+}
+
+function isExchangeTSX(ticker) {
+  return ticker.endsWith(".TO");
+}
+
+// ── DATE / MARKET HELPERS ────────────────────────────────────
+function todayET() {
+  return Utilities.formatDate(new Date(), "America/New_York", "yyyy-MM-dd");
+}
+
+function timeET() {
+  return Utilities.formatDate(new Date(), "America/New_York", "HH:mm");
+}
+
+function nowETHourMin() {
+  const t = timeET();
+  const [h, m] = t.split(":").map(Number);
+  return h * 60 + m;
+}
+
+function isWeekdayET() {
+  const d = new Date();
+  const day = parseInt(Utilities.formatDate(d, "America/New_York", "u"));
+  return day >= 1 && day <= 5;
+}
+
+function isNYSEHoliday() { return NYSE_HOLIDAYS.has(todayET()); }
+function isTSXHoliday()  { return TSX_HOLIDAYS.has(todayET()); }
+
+function isUSMarketOpen() {
+  if (!isWeekdayET() || isNYSEHoliday()) return false;
+  const mins = nowETHourMin();
+  return mins >= 570 && mins < 960;
+}
+
+function isTSXMarketOpen() {
+  if (!isWeekdayET() || isTSXHoliday()) return false;
+  const mins = nowETHourMin();
+  return mins >= 570 && mins < 960;
+}
+
+function isMarketOpenFor(ticker) {
+  return isExchangeTSX(ticker) ? isTSXMarketOpen() : isUSMarketOpen();
+}
+
+// ── YAHOO FINANCE FETCH ──────────────────────────────────────
+function fetchOHLCV(ticker) {
+  const url = `https://query2.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(ticker)}?interval=1d&range=5y`;
+  try {
+    const resp = UrlFetchApp.fetch(url, { muteHttpExceptions: true });
+    if (resp.getResponseCode() !== 200) return null;
+
+    const json = JSON.parse(resp.getContentText());
+    const result = json.chart?.result?.[0];
+    if (!result) return null;
+
+    const ts = result.timestamp;
+    const q  = result.indicators.quote[0];
+    const ac = result.indicators.adjclose?.[0]?.adjclose || q.close;
+
+    return ts.map((t, i) => ({
+      date:   new Date(t * 1000).toISOString().split("T")[0],
+      high:   q.high[i],
+      low:    q.low[i],
+      close:  ac[i],
+      volume: q.volume[i]
+    })).filter(d => d.close != null && d.high != null && d.close > 0);
+  } catch (e) {
+    Logger.log("fetchOHLCV error " + ticker + ": " + e);
+    return null;
+  }
+}
+
+function fetchLatestPrice(ticker) {
+  const url = `https://query2.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(ticker)}?interval=1d&range=5d`;
+  try {
+    const resp = UrlFetchApp.fetch(url, { muteHttpExceptions: true });
+    if (resp.getResponseCode() !== 200) return null;
+
+    const json = JSON.parse(resp.getContentText());
+    const result = json.chart?.result?.[0];
+    const closes = result?.indicators?.adjclose?.[0]?.adjclose || result?.indicators?.quote?.[0]?.close;
+    if (!closes) return null;
+
+    for (let i = closes.length - 1; i >= 0; i--) {
+      if (closes[i] != null) return closes[i];
+    }
+    return null;
+  } catch (e) {
+    Logger.log("fetchLatestPrice error " + ticker + ": " + e);
+    return null;
+  }
+}
+
+function fetchCadUsd() {
+  const p = fetchLatestPrice("CADUSD=X");
+  const rate = p || 0.74;
+  setConfig("cadUsdRate", rate);
+  return rate;
+}
+
+function toUSD(price, ticker) {
+  if (!isExchangeTSX(ticker)) return price;
+  const rate = getConfig("cadUsdRate") || 0.74;
+  return price * rate;
+}
+
+// ── MATH HELPERS ─────────────────────────────────────────────
+function calcEMA(prices, period) {
+  const k = 2 / (period + 1);
+  const ema = new Array(prices.length);
+  ema[0] = prices[0];
+  for (let i = 1; i < prices.length; i++) {
+    ema[i] = prices[i] * k + ema[i - 1] * (1 - k);
+  }
+  return ema;
+}
+
+function calcWeeklyEMA(ohlcv, period) {
+  const weeklyCloses = [];
+  let weekClose = null;
+  for (const d of ohlcv) {
+    const dt = new Date(d.date + "T12:00:00Z");
+    weekClose = d.close;
+    if (dt.getDay() === 5) { weeklyCloses.push(weekClose); weekClose = null; }
+  }
+  if (weekClose != null) weeklyCloses.push(weekClose);
+  if (weeklyCloses.length < period) return null;
+  return calcEMA(weeklyCloses, period);
+}
+
+function checkWeeklyTrend(ohlcv) {
+  const wema = calcWeeklyEMA(ohlcv, WEEKLY_EMA_PERIOD);
+  if (!wema) return true;
+  return ohlcv[ohlcv.length - 1].close > wema[wema.length - 1];
+}
+
+function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
+
+function findValidReclaim(c, mu, md) {
+  const n = c.length;
+  for (let i = n - 1; i > 1; i--) {
+    if (c[i] > mu[i] && c[i - 1] <= mu[i - 1]) {
+      let belowIdx = -1;
+      for (let j = i - 1; j >= Math.max(0, i - MAX_RECLAIM_BARS); j--) {
+        if (c[j] < md[j]) { belowIdx = j; break; }
+      }
+      if (belowIdx === -1) continue;
+
+      let epStart = belowIdx;
+      for (let k = belowIdx - 1; k >= 0; k--) {
+        if (c[k] > mu[k]) { epStart = k + 1; break; }
+        if (k === 0) epStart = 0;
+      }
+
+      let valid = true;
+      for (let k = i + 1; k < n; k++) {
+        if (c[k] < md[k]) { valid = false; break; }
+      }
+      if (!valid) continue;
+
+      return { reclaimIdx: i, belowEpStart: epStart };
+    }
+  }
+  return null;
+}
+
+function checkVolumeConfirmation(ohlcv, reclaimIdx) {
+  const volumes = ohlcv.map(d => d.volume || 0);
+  const reclaimVol = volumes[reclaimIdx];
+  if (!reclaimVol) return { volumeOk: true, volRatio: 1 };
+
+  const window = volumes.slice(Math.max(0, reclaimIdx - 20), reclaimIdx);
+  if (!window.length) return { volumeOk: true, volRatio: 1 };
+
+  const avgVol = window.reduce((s, v) => s + v, 0) / window.length;
+  if (!avgVol) return { volumeOk: true, volRatio: 1 };
+
+  const volRatio = reclaimVol / avgVol;
+  return { volumeOk: volRatio >= VOLUME_RATIO, volRatio };
+}
+
+function findWeightedSwingHigh(ohlcv) {
+  const n = ohlcv.length;
+  const winStart = n - SWING_HIGH_MAX_BARS, winEnd = n - SWING_HIGH_MIN_BARS;
+  if (winStart < 0 || winEnd < 0 || winStart >= winEnd) return null;
+
+  let bestWeighted = -Infinity, bestRaw = -Infinity, bestIdx = -1;
+  for (let i = winStart; i < winEnd; i++) {
+    const barsFromEnd = n - 1 - i;
+    const weight = barsFromEnd < 126 ? 1.0 : barsFromEnd < 252 ? 0.85 : 0.70;
+    const weighted = ohlcv[i].high * weight;
+    if (weighted > bestWeighted) { bestWeighted = weighted; bestRaw = ohlcv[i].high; bestIdx = i; }
+  }
+  if (bestIdx === -1) return null;
+  return { swingHigh: bestRaw, swingDate: ohlcv[bestIdx].date };
+}
+
+function check52WHighProximity(ohlcv) {
+  const n = ohlcv.length;
+  const bars52w = Math.min(252, n);
+  const slice = ohlcv.slice(n - bars52w);
+  const high52w = Math.max(...slice.map(d => d.high));
+  const lastClose = ohlcv[n - 1].close;
+  const pctBelow = (high52w - lastClose) / high52w;
+  return { proximityOk: pctBelow <= PROXIMITY_52W_MAX, pctBelow, high52w };
+}
+
+function checkTightStructure(ohlcv) {
+  const n = ohlcv.length;
+  if (n < 20) return { tight: false, atrRatio: null };
+
+  const recent  = ohlcv.slice(n - 10);
+  const earlier = ohlcv.slice(n - 20, n - 10);
+
+  const avgRecent  = recent.reduce((s, d)  => s + (d.high - d.low), 0) / 10 / ohlcv[n-1].close * 100;
+  const avgEarlier = earlier.reduce((s, d) => s + (d.high - d.low), 0) / 10 / ohlcv[n-10].close * 100;
+
+  const atrRatio = avgEarlier > 0 ? parseFloat((avgRecent / avgEarlier).toFixed(2)) : null;
+  return { tight: atrRatio != null && atrRatio < 0.85, atrRatio };
+}
+
+function calcRS(ohlcv, benchOHLCV) {
+  const n = ohlcv.length, bn = benchOHLCV ? benchOHLCV.length : 0;
+  if (n < 22 || bn < 22) return { rsOk: true, rsValue: null };
+
+  const stockRet = (ohlcv[n-1].close - ohlcv[n-21].close) / ohlcv[n-21].close * 100;
+  const benchRet = (benchOHLCV[bn-1].close - benchOHLCV[bn-21].close) / benchOHLCV[bn-21].close * 100;
+  const rsValue = parseFloat((stockRet - benchRet).toFixed(2));
+
+  return { rsOk: rsValue >= 0, rsValue };
+}
+
+function computeScoreComponents(type, pctBelowATH, pctAboveEMA, barsSince, volRatio, momentum20, rsValue, tight) {
+  const bd = {};
+  bd.vol = volRatio >= 1.5 ? 10 : volRatio >= 1.2 ? 6 : volRatio >= 1.0 ? 2 : -5;
+  bd.rs  = rsValue == null ? 0 : rsValue > 5 ? 10 : rsValue > 2 ? 5 : rsValue >= 0 ? 2 : -10;
+  bd.ema = pctAboveEMA < 8 ? 10 : pctAboveEMA < 15 ? 5 : pctAboveEMA < 20 ? -10 : -20;
+  bd.str = tight ? 10 : (type === "ath" ? 0 : -5);
+  bd.age = barsSince <= 20 ? 10 : barsSince <= 40 ? 5 : barsSince <= 60 ? 0 : barsSince <= 100 ? -10 : -20;
+  bd.ath = pctBelowATH < 1 ? 10 : pctBelowATH < 5 ? 5 : pctBelowATH < 10 ? 0 : pctBelowATH < 20 ? -5 : -15;
+  bd.mom = momentum20 > 5 ? 5 : momentum20 >= 0 ? 2 : -8;
+  return bd;
+}
+
+function scoreATH(pctBelowATH, pctAboveEMA, barsSince, belowBars, volRatio, momentum20, weeklyTrendOk, rsValue, tight) {
+  const base = 60;
+  const bd = computeScoreComponents("ath", pctBelowATH, pctAboveEMA, barsSince, volRatio, momentum20, rsValue, tight);
+  let prob = base + bd.vol + bd.rs + bd.ema + bd.str + bd.age + bd.ath + bd.mom;
+  if (rsValue != null && rsValue < -1) prob = Math.min(prob, 50);
+  return clamp(Math.round(prob), 40, 96);
+}
+
+function scoreSwing(pctToRes, pctAboveEMA, barsSince, belowBars, pctBelowATH, volRatio, momentum20, weeklyTrendOk, rsValue, tight) {
+  const base = 55;
+  const bd = computeScoreComponents("swing", pctBelowATH, pctAboveEMA, barsSince, volRatio, momentum20, rsValue, tight);
+  let prob = base + bd.vol + bd.rs + bd.ema + bd.str + bd.age + bd.ath + bd.mom;
+  if (rsValue != null && rsValue < -1) prob = Math.min(prob, 50);
+  return clamp(Math.round(prob), 35, 90);
+}
+
+// ── REGIME CHECK ─────────────────────────────────────────────
+function checkRegime() {
+  let spyAbove = true, xiuAbove = true;
+
+  try {
+    const spyData = fetchOHLCV("SPY");
+    if (spyData && spyData.length >= EMA_PERIOD) {
+      const closes = spyData.map(d => d.close);
+      const ema = calcEMA(closes, EMA_PERIOD);
+      spyAbove = closes[closes.length - 1] > ema[ema.length - 1];
+    }
+  } catch(e) {}
+
+  try {
+    const xiuData = fetchOHLCV("XIU.TO");
+    if (xiuData && xiuData.length >= EMA_PERIOD) {
+      const closes = xiuData.map(d => d.close);
+      const ema = calcEMA(closes, EMA_PERIOD);
+      xiuAbove = closes[closes.length - 1] > ema[ema.length - 1];
+    }
+  } catch(e) {}
+
+  return { spyAbove, xiuAbove };
+}
+
+// ── SCREENER CORE ─────────────────────────────────────────────
+function runScreenOnOHLCV(ticker, ohlcv, benchOHLCV) {
+  const n = ohlcv.length;
+  if (n < EMA_PERIOD + 10) return null;
+
+  const closes = ohlcv.map(d => d.close);
+  const highs   = ohlcv.map(d => d.high);
+  const dates   = ohlcv.map(d => d.date);
+
+  const ema = calcEMA(closes, EMA_PERIOD);
+  const mu  = ema.map(e => e * (1 + MA_BUFFER));
+  const md  = ema.map(e => e * (1 - MA_BUFFER));
+
+  const rec = findValidReclaim(closes, mu, md);
+  if (!rec) return null;
+
+  const { reclaimIdx, belowEpStart } = rec;
+  const belowBars = reclaimIdx - belowEpStart;
+  if (belowBars > MAX_BELOW_BARS) return null;
+
+  const lastClose   = closes[n - 1];
+  const reclaimClose = closes[reclaimIdx];
+  const currentATH  = Math.max(...highs);
+  const pctBelowATH = (currentATH - lastClose) / currentATH;
+
+  const currentEMA  = ema[n - 1];
+  const pctAboveEMA = (lastClose - currentEMA) / currentEMA * 100;
+  const barsSince   = n - 1 - reclaimIdx;
+
+  const { volRatio } = checkVolumeConfirmation(ohlcv, reclaimIdx);
+  const weeklyTrendOk = checkWeeklyTrend(ohlcv);
+  const momentum20  = n > 20 ? (closes[n-1] - closes[n-21]) / closes[n-21] * 100 : 0;
+
+  if (volRatio < 0.8) return null;
+  if (pctAboveEMA > EMA_EXTENSION_MAX) return null;
+  if (barsSince > 120) return null;
+
+  const { proximityOk } = check52WHighProximity(ohlcv);
+  if (!proximityOk) return null;
+
+  const { tight } = checkTightStructure(ohlcv);
+  const { rsValue } = calcRS(ohlcv, benchOHLCV);
+
+  if (pctBelowATH <= ATH_THRESHOLD) {
+    const prob = scoreATH(pctBelowATH * 100, pctAboveEMA, barsSince, belowBars, volRatio, momentum20, weeklyTrendOk, rsValue, tight);
+    return { type: "ath", prob, lastClose, reclaimClose, reclaimDate: dates[reclaimIdx],
+             pctBelowATH, pctAboveEMA, barsSince, volRatio, momentum20, weeklyTrendOk, rsValue, tight, pctToSwing: null };
+  }
+
+  if (pctBelowATH <= S2_ATH_MAX_DD) {
+    if (lastClose >= currentATH * (1 - ATH_THRESHOLD)) return null;
+
+    const swing = findWeightedSwingHigh(ohlcv);
+    if (!swing) return null;
+
+    const pctToSwing = (swing.swingHigh - lastClose) / swing.swingHigh;
+    if (pctToSwing < SWING_NEAR_MIN || pctToSwing > SWING_NEAR_MAX) return null;
+
+    const prob = scoreSwing(pctToSwing * 100, pctAboveEMA, barsSince, belowBars, pctBelowATH * 100, volRatio, momentum20, weeklyTrendOk, rsValue, tight);
+    return { type: "swing", prob, lastClose, reclaimClose, reclaimDate: dates[reclaimIdx],
+             pctBelowATH, pctAboveEMA, barsSince, volRatio, momentum20, weeklyTrendOk, rsValue, tight, pctToSwing };
+  }
+
+  return null;
+}
+
+// ── CAPITAL / STATE HELPERS (reads from LiveTrades sheet) ────
+function getDeployedCapital() {
+  const sh = getSheet("LiveTrades");
+  const data = sh.getDataRange().getValues();
+  let total = 0;
+
+  for (let i = 1; i < data.length; i++) {
+    const status = String(data[i][5]);
+    if (status === "live" || status === "partial") {
+      const partialDone = data[i][15];
+      const invested    = parseFloat(data[i][11]) || 0;
+      total += partialDone ? invested / 2 : invested;
+    }
+  }
+  return total;
+}
+
+function getAvailableCapital() {
+  return TOTAL_CAPITAL - getDeployedCapital();
+}
+
+function isAlreadyHolding(ticker) {
+  const sh = getSheet("LiveTrades");
+  const data = sh.getDataRange().getValues();
+  for (let i = 1; i < data.length; i++) {
+    const t      = String(data[i][1]);
+    const status = String(data[i][5]);
+    if (t === ticker && (status === "live" || status === "partial")) return true;
+  }
+  return false;
+}
+
+function isInCooldown(ticker) {
+  const sh = getSheet("LiveTrades");
+  const data = sh.getDataRange().getValues();
+  const now = Date.now();
+
+  for (let i = 1; i < data.length; i++) {
+    if (String(data[i][1]) !== ticker) continue;
+    if (String(data[i][C.exitReason - 1]) !== "loss") continue;
+
+    const sellDate = data[i][C.sellDate - 1];
+    const sellTime = data[i][C.sellTime - 1];
+    if (!sellDate || !sellTime) continue;
+
+    try {
+      const sellMs = new Date(sellDate + "T" + sellTime + ":00").getTime();
+      if (now - sellMs < COOLDOWN_MS) return true;
+    } catch(e) {}
+  }
+  return false;
+}
+
+function isAutoTradePaused() {
+  const paused = getConfig("autoTradePaused");
+  if (!paused || paused === "FALSE" || paused === false) return false;
+
+  const until = getConfig("autoTradePauseUntil");
+  if (until && new Date(until).getTime() < Date.now()) {
+    setConfig("autoTradePaused", false);
+    setConfig("autoTradePauseUntil", "");
+    return false;
+  }
+  return true;
+}
+
+function checkDoubleStop() {
+  const sh = getSheet("LiveTrades");
+  const data = sh.getDataRange().getValues();
+  const now = Date.now();
+  let recentLosses = 0;
+
+  for (let i = 1; i < data.length; i++) {
+    if (String(data[i][30]) !== "loss") continue;
+
+    const sellDate = data[i][21];
+    const sellTime = data[i][22];
+    if (!sellDate || !sellTime) continue;
+
+    try {
+      const sellMs = new Date(sellDate + "T" + sellTime + ":00").getTime();
+      if (now - sellMs < DOUBLE_STOP_WINDOW_MS) recentLosses++;
+    } catch(e) {}
+  }
+
+  if (recentLosses >= 2 && !isAutoTradePaused()) {
+    setConfig("autoTradePaused", true);
+    setConfig("autoTradePauseUntil", new Date(Date.now() + DOUBLE_STOP_PAUSE_MS).toISOString());
+    Logger.log("Auto-trade PAUSED: 2 stop losses in 7 days.");
+  }
+}
+
+// ── pendingEntries SHEET HELPERS ─────────────────────────────
+function getPendingEntries() {
+  const sh = getSheet("pendingEntries");
+  const data = sh.getDataRange().getValues();
+  const entries = [];
+
+  for (let i = 1; i < data.length; i++) {
+    if (!data[i][0]) continue;
+    entries.push({
+      rowIndex:     i + 1,
+      id:           String(data[i][0]),
+      ticker:       String(data[i][1]),
+      exchange:     String(data[i][2]),
+      type:         String(data[i][3]),
+      prob:         parseFloat(data[i][4]) || 0,
+      signalDate:   data[i][5] ? Utilities.formatDate(new Date(data[i][5]), "America/New_York", "yyyy-MM-dd") : todayET(),
+      reclaimClose: parseFloat(data[i][6]) || 0,
+      runTime:      String(data[i][7]),
+      reason:       String(data[i][9] || ''),
+    });
+  }
+  return entries;
+}
+
+function isAlreadyPending(ticker) {
+  const entries = getPendingEntries();
+  return entries.some(p => p.ticker === ticker);
+}
+
+function upsertPendingEntry(ticker, exchange, type, prob, reclaimClose, runTime, reason) {
+  const sh = getSheet("pendingEntries");
+  const data = sh.getDataRange().getValues();
+  const now  = new Date().toISOString();
+  const today = todayET();
+
+  for (let i = 1; i < data.length; i++) {
+    if (String(data[i][1]) === ticker) {
+      sh.getRange(i + 1, 4).setValue(type);
+      sh.getRange(i + 1, 5).setValue(prob);
+      sh.getRange(i + 1, 6).setValue(today);
+      sh.getRange(i + 1, 7).setValue(reclaimClose);
+      sh.getRange(i + 1, 8).setValue(runTime);
+      sh.getRange(i + 1, 9).setValue(now);
+      sh.getRange(i + 1, 10).setValue(reason || '');
+      return "updated";
+    }
+  }
+
+  const id = "p_" + Date.now() + "_" + Math.random().toString(36).slice(2, 5);
+  sh.appendRow([id, ticker, exchange, type, prob, today, reclaimClose, runTime, now, reason || '']);
+  return "added";
+}
+
+function removePendingEntry(ticker) {
+  const sh   = getSheet("pendingEntries");
+  const data = sh.getDataRange().getValues();
+
+  for (let i = data.length - 1; i >= 1; i--) {
+    if (String(data[i][1]) === ticker) {
+      sh.deleteRow(i + 1);
+      return;
+    }
+  }
+}
+
+// ── LiveTrades SHEET HELPERS ─────────────────────────────────
+// Columns A–AF (1–32):
+// A=id B=ticker C=exchange D=type E=prob F=status G=buyDate H=buyTime
+// I=buyPrice J=sharesTotal K=sharesOpen L=invested M=currentPrice
+// N=highestPrice O=trailingStop P=partialExitDone Q=partialExitPrice
+// R=partialExitDate S=partialExitTime T=partialExitPnl U=partialTarget
+// V=finalTarget W=sellDate X=sellTime Y=sellPrice Z=pnl AA=pnlPct
+// AB=exitReason AC=ruleVersion AD=screenerRunDate AE=screenerRunTime AF=reason
+function createLiveTrade(ticker, type, prob, priceUSD, runTime, reason) {
+  if (isAlreadyHolding(ticker)) return false;
+  if (isInCooldown(ticker)) return false;
+  if (getAvailableCapital() < TRADE_SIZE) return false;
+  if (isAutoTradePaused()) return false;
+
+  const shares   = TRADE_SIZE / priceUSD;
+  const id       = "t_" + Date.now() + "_" + Math.random().toString(36).slice(2, 5);
+  const exchange = isExchangeTSX(ticker) ? "TSX" : "US";
+  const today    = todayET();
+  const time     = timeET();
+
+  const row = [
+    id, ticker, exchange, type, prob, "live",
+    today, time,
+    priceUSD.toFixed(4), shares.toFixed(6), shares.toFixed(6), TRADE_SIZE,
+    priceUSD.toFixed(4),
+    priceUSD.toFixed(4),
+    (priceUSD * (1 - STOP_LOSS)).toFixed(4),
+    false, "", "", "", "",
+    (priceUSD * (1 + PARTIAL_TARGET)).toFixed(4),
+    (priceUSD * (1 + PROFIT_TARGET)).toFixed(4),
+    "", "", "",
+    "", "",
+    "",
+    RULE_VERSION, today, runTime,
+    reason || '',
+    false, "", "", "", ""   // partial2Done, partial2Price, partial2Date, partial2Time, partial2Pnl
+  ];
+
+  getSheet("LiveTrades").appendRow(row);
+  Logger.log("TRADE CREATED: " + ticker + " @ " + priceUSD.toFixed(2));
+  return true;
+}
+
+function getLiveTradeRows() {
+  const sh   = getSheet("LiveTrades");
+  const data = sh.getDataRange().getValues();
+  const rows = [];
+
+  for (let i = 1; i < data.length; i++) {
+    const status = String(data[i][5]);
+    if (status === "live" || status === "partial") {
+      rows.push({ rowIndex: i + 1, data: data[i] });
+    }
+  }
+  return rows;
+}
+
+function updateTradeRow(rowIndex, updates) {
+  const sh = getSheet("LiveTrades");
+  for (const [col, val] of Object.entries(updates)) {
+    sh.getRange(rowIndex, parseInt(col)).setValue(val);
+  }
+}
+
+// col map (1-based)
+const C = {
+  id:1,ticker:2,exchange:3,type:4,prob:5,status:6,
+  buyDate:7,buyTime:8,buyPrice:9,sharesTotal:10,sharesOpen:11,invested:12,
+  currentPrice:13,highestPrice:14,trailingStop:15,
+  partialExitDone:16,partialExitPrice:17,partialExitDate:18,partialExitTime:19,partialExitPnl:20,
+  partialTarget:21,finalTarget:22,
+  sellDate:23,sellTime:24,sellPrice:25,
+  pnl:26,pnlPct:27,exitReason:28,ruleVersion:29,screenerRunDate:30,screenerRunTime:31,
+  reason:32,
+  partial2Done:33,partial2Price:34,partial2Date:35,partial2Time:36,partial2Pnl:37
+};
+
+// ── POSITION MONITOR ─────────────────────────────────────────
+function monitorPositions() {
+  if (!isUSMarketOpen() && !isTSXMarketOpen()) {
+    Logger.log("monitorPositions: market closed, skipping.");
+    return;
+  }
+
+  fetchCadUsd();
+  const cadRate = getConfig("cadUsdRate") || 0.74;
+  const liveRows = getLiveTradeRows();
+  if (!liveRows.length) { Logger.log("No live positions to monitor."); return; }
+
+  for (const { rowIndex, data } of liveRows) {
+    const ticker      = String(data[C.ticker - 1]);
+    const exchange    = String(data[C.exchange - 1]);
+    const buyPrice    = parseFloat(data[C.buyPrice - 1]);
+    const sharesOpen  = parseFloat(data[C.sharesOpen - 1]);
+    const sharesTotal = parseFloat(data[C.sharesTotal - 1]);
+    const invested    = parseFloat(data[C.invested - 1]);
+    const partialDone  = data[C.partialExitDone - 1] === true ||
+                         String(data[C.partialExitDone - 1]).toLowerCase() === "true";
+    const partialPnl   = parseFloat(data[C.partialExitPnl - 1]) || 0;
+    const partial2Done = data[C.partial2Done - 1] === true ||
+                         String(data[C.partial2Done - 1]).toLowerCase() === "true";
+    const partial2Pnl  = parseFloat(data[C.partial2Pnl - 1]) || 0;
+
+    let highestPrice       = parseFloat(data[C.highestPrice - 1]) || buyPrice;
+    let trailingStop       = parseFloat(data[C.trailingStop - 1]) || buyPrice * (1 - STOP_LOSS);
+    const partialExitPrice = parseFloat(data[C.partialExitPrice - 1]) || 0;
+
+    const marketOpen = exchange === "TSX" ? isTSXMarketOpen() : isUSMarketOpen();
+    if (!marketOpen) continue;
+
+    let rawPrice = fetchLatestPrice(ticker);
+    if (!rawPrice) { Logger.log("No price for " + ticker); continue; }
+    let price = exchange === "TSX" ? rawPrice * cadRate : rawPrice;
+
+    if (price > highestPrice) highestPrice = price;
+    const rawStop = highestPrice * (1 - STOP_LOSS);
+    // Floor rises with each stage: +3% after Stage 1, +5% after Stage 2
+    const floor = partial2Done
+      ? (buyPrice * (1 + PARTIAL_TARGET_2))
+      : partialDone
+        ? (partialExitPrice || buyPrice)
+        : 0;
+    trailingStop = Math.max(rawStop, floor, trailingStop);
+
+    const chgFromBuy = (price - buyPrice) / buyPrice * 100;
+
+    const updates = {};
+    updates[C.currentPrice]  = price.toFixed(4);
+    updates[C.highestPrice]  = highestPrice.toFixed(4);
+    updates[C.trailingStop]  = trailingStop.toFixed(4);
+
+    // ── Stage 1: sell 50% at +3%, floor stop at +3% ──────────────────────────
+    if (!partialDone && chgFromBuy >= PARTIAL_TARGET * 100) {
+      const halfShares    = sharesTotal / 2;
+      const partialPnlNew = (price - buyPrice) * halfShares;
+
+      updates[C.partialExitDone]  = true;
+      updates[C.partialExitPrice] = price.toFixed(4);
+      updates[C.partialExitDate]  = todayET();
+      updates[C.partialExitTime]  = timeET();
+      updates[C.partialExitPnl]   = partialPnlNew.toFixed(2);
+      updates[C.sharesOpen]       = halfShares.toFixed(6);
+      updates[C.status]           = "partial";
+      updates[C.trailingStop]     = price.toFixed(4); // lock stop at Stage 1 price
+
+      Logger.log("STAGE 1 EXIT (50%): " + ticker + " @ $" + price.toFixed(2) +
+        " | PnL: $" + partialPnlNew.toFixed(2));
+
+    // ── Stage 2: sell 25% at +5%, floor stop moves to +5% ────────────────────
+    } else if (partialDone && !partial2Done && chgFromBuy >= PARTIAL_TARGET_2 * 100) {
+      const quarterShares = sharesTotal / 4;
+      const p2PnlNew      = (price - buyPrice) * quarterShares;
+
+      updates[C.partial2Done]  = true;
+      updates[C.partial2Price] = price.toFixed(4);
+      updates[C.partial2Date]  = todayET();
+      updates[C.partial2Time]  = timeET();
+      updates[C.partial2Pnl]   = p2PnlNew.toFixed(2);
+      updates[C.sharesOpen]    = (sharesTotal / 4).toFixed(6); // final 25% remains
+      updates[C.status]        = "partial";
+      updates[C.trailingStop]  = (buyPrice * (1 + PARTIAL_TARGET_2)).toFixed(4); // floor at +5%
+
+      Logger.log("STAGE 2 EXIT (25%): " + ticker + " @ $" + price.toFixed(2) +
+        " | PnL: $" + p2PnlNew.toFixed(2));
+
+    // ── Trailing stop triggered — sell all remaining ──────────────────────────
+    } else if (price <= trailingStop) {
+      const remainderPnl = (price - buyPrice) * sharesOpen;
+      const totalPnl     = partialPnl + partial2Pnl + remainderPnl;
+      const pnlPct       = (totalPnl / invested) * 100;
+      const isWin        = totalPnl >= 0;
+
+      updates[C.status]       = isWin ? "soldprofit" : "soldloss";
+      updates[C.sellDate]     = todayET();
+      updates[C.sellTime]     = timeET();
+      updates[C.sellPrice]    = price.toFixed(4);
+      updates[C.pnl]          = totalPnl.toFixed(2);
+      updates[C.pnlPct]       = pnlPct.toFixed(2);
+      updates[C.exitReason]   = isWin ? "profit" : "loss";
+      updates[C.currentPrice] = price.toFixed(4);
+
+      Logger.log((isWin ? "TRAILING STOP (PROFIT)" : "STOP LOSS") + ": " +
+        ticker + " @ $" + price.toFixed(2) + " | PnL: $" + totalPnl.toFixed(2));
+      if (!isWin) {
+        checkDoubleStop();
+        try {
+          analyzeStopLoss({
+            ticker,
+            type:          String(data[C.type      - 1]),
+            exchange,
+            buyPrice,
+            buyDate:       String(data[C.buyDate   - 1]),
+            sellPrice:     price,
+            sellDate:      todayET(),
+            highestPrice,
+            trailingStop,
+            pnl:           totalPnl,
+            pnlPct,
+            invested,
+            probability:   parseFloat(data[C.prob  - 1]) || 0,
+            signalVersion: String(data[C.ruleVersion - 1] || '')
+          });
+        } catch(e) {
+          Logger.log('[analyzeStopLoss] error: ' + e);
+        }
+      }
+
+    // ── Stage 3: sell final 25% at +8% fixed target ───────────────────────────
+    } else if (chgFromBuy >= PROFIT_TARGET * 100) {
+      const remainderPnl = (price - buyPrice) * sharesOpen;
+      const totalPnl     = partialPnl + partial2Pnl + remainderPnl;
+      const pnlPct       = (totalPnl / invested) * 100;
+
+      updates[C.status]       = "soldprofit";
+      updates[C.sellDate]     = todayET();
+      updates[C.sellTime]     = timeET();
+      updates[C.sellPrice]    = price.toFixed(4);
+      updates[C.pnl]          = totalPnl.toFixed(2);
+      updates[C.pnlPct]       = pnlPct.toFixed(2);
+      updates[C.exitReason]   = "profit";
+      updates[C.currentPrice] = price.toFixed(4);
+
+      Logger.log("STAGE 3 EXIT (final 25%): " + ticker + " @ $" + price.toFixed(2) +
+        " | PnL: $" + totalPnl.toFixed(2));
+    }
+
+    updateTradeRow(rowIndex, updates);
+  }
+
+  syncStateToTracker();
+}
+
+// ── CONFIRM PENDING ENTRIES ───────────────────────────────────
+function confirmPendingEntries() {
+  if (!isUSMarketOpen() && !isTSXMarketOpen()) return;
+  if (isAutoTradePaused()) return;
+
+  fetchCadUsd();
+  const cadRate = getConfig("cadUsdRate") || 0.74;
+  const pending = getPendingEntries();
+
+  if (!pending.length) return;
+  const today   = todayET();
+
+  for (const p of pending) {
+    try {
+      const marketOpen = p.exchange === "TSX" ? isTSXMarketOpen() : isUSMarketOpen();
+      if (!marketOpen) continue;
+
+      const ageDays = (Date.now() - new Date(p.signalDate).getTime()) / (24 * 60 * 60 * 1000);
+      if (ageDays > 2) { removePendingEntry(p.ticker); Logger.log("Expired pending: " + p.ticker); continue; }
+
+      let rawPrice = fetchLatestPrice(p.ticker);
+      if (!rawPrice) continue;
+
+      let price = p.exchange === "TSX" ? rawPrice * cadRate : rawPrice;
+
+      if (price > p.reclaimClose) {
+        if (isAlreadyHolding(p.ticker)) { removePendingEntry(p.ticker); continue; }
+
+        const created = createLiveTrade(p.ticker, p.type, p.prob, price, p.runTime, p.reason || '');
+        if (created) {
+          removePendingEntry(p.ticker);
+          Logger.log("CONFIRMED: " + p.ticker + " @ " + price.toFixed(2));
+        }
+      }
+    } catch(e) {
+      Logger.log("confirmPendingEntries error for " + p.ticker + ": " + e);
+    }
+  }
+
+  syncStateToTracker();
+}
+
+// ── SELECTION REASON BUILDER ──────────────────────────────────
+function buildSelectionReason(ticker, type, pctBelowATH, pctAboveEMA, barsSince, volRatio, momentum20, weeklyTrendOk, rsValue, tight, pctToSwing) {
+  const parts = [];
+
+  if (type === "ath") {
+    const pct = (pctBelowATH * 100).toFixed(1);
+    parts.push("ATH Setup: price is " + pct + "% below all-time high.");
+  } else {
+    const pct = pctToSwing != null ? (pctToSwing * 100).toFixed(1) : "?";
+    parts.push("Swing Setup: price is " + pct + "% below 6-month resistance.");
+  }
+
+  const emaPct = (pctAboveEMA || 0).toFixed(1);
+  const vol    = (volRatio || 0).toFixed(1);
+  parts.push("EMA-220 reclaimed " + barsSince + " sessions ago on " + vol + "x avg volume with price " + emaPct + "% above the EMA.");
+
+  if (momentum20 != null) {
+    const mom = momentum20.toFixed(1);
+    parts.push("20-day momentum: " + (momentum20 >= 0 ? "+" : "") + mom + "%.");
+  }
+
+  if (weeklyTrendOk) parts.push("Weekly trend is rising.");
+
+  if (rsValue != null) {
+    const rs = rsValue.toFixed(0);
+    parts.push("RS vs benchmark: " + rs + ".");
+  }
+
+  if (tight) parts.push("Structure is tight (low volatility).");
+
+  return parts.join(" ");
+}
+
+// ── SCREENER RUNNER ───────────────────────────────────────────
+function runScreener(isIntradayRun) {
+  if (!isWeekdayET()) { Logger.log("Weekend — skipping screener."); return; }
+  if (isNYSEHoliday() && isTSXHoliday()) { Logger.log("Both markets holiday — skipping."); return; }
+  if (isAutoTradePaused()) { Logger.log("Auto-trade paused — skipping screener."); return; }
+
+  fetchCadUsd();
+  const cadRate = getConfig("cadUsdRate") || 0.74;
+  const regime  = checkRegime();
+  const runTime = timeET();
+
+  Logger.log("Screener start | intraday=" + isIntradayRun + " | SPY:" + regime.spyAbove + " XIU:" + regime.xiuAbove);
+
+  let tickers = ALL_TICKERS;
+  if (isNYSEHoliday() && !isTSXHoliday())  tickers = TSX_TICKERS;
+  if (!isNYSEHoliday() && isTSXHoliday())  tickers = SP500_TICKERS;
+
+  const spyOHLCV = fetchOHLCV("SPY");
+  const xiuOHLCV = fetchOHLCV("XIU.TO");
+
+  let athCount = 0, swingCount = 0, tradedCount = 0, pendingCount = 0, skippedCount = 0;
+  const qualifiedThisRun = new Set();
+
+  for (const ticker of tickers) {
+    try {
+      const ohlcv = fetchOHLCV(ticker);
+      if (!ohlcv) { skippedCount++; continue; }
+
+      const exchange   = isExchangeTSX(ticker) ? "TSX" : "US";
+      const benchOHLCV = exchange === "TSX" ? xiuOHLCV : spyOHLCV;
+
+      const res = runScreenOnOHLCV(ticker, ohlcv, benchOHLCV);
+      if (!res) { skippedCount++; continue; }
+
+      const threshold = res.type === "ath" ? ATH_PROB_THRESHOLD : SWING_PROB_THRESHOLD;
+      if (res.prob < threshold) { skippedCount++; continue; }
+
+      if (res.type === "ath") athCount++; else swingCount++;
+      qualifiedThisRun.add(ticker);
+
+      const regimeOk = exchange === "US" ? regime.spyAbove : regime.xiuAbove;
+      if (!regimeOk) { skippedCount++; continue; }
+
+      let priceUSD = res.lastClose;
+      if (exchange === "TSX") priceUSD = priceUSD * cadRate;
+
+      const reason = buildSelectionReason(
+        ticker, res.type, res.pctBelowATH, res.pctAboveEMA, res.barsSince,
+        res.volRatio, res.momentum20, res.weeklyTrendOk, res.rsValue, res.tight, res.pctToSwing
+      );
+
+      if (isIntradayRun) {
+        if (!isAlreadyHolding(ticker) && !isInCooldown(ticker) && getAvailableCapital() >= TRADE_SIZE) {
+          const created = createLiveTrade(ticker, res.type, res.prob, priceUSD, runTime, reason);
+          if (created) tradedCount++; else skippedCount++;
+        } else skippedCount++;
+      } else {
+        if (!isAlreadyHolding(ticker) && !isInCooldown(ticker)) {
+          const action = upsertPendingEntry(ticker, exchange, res.type, res.prob, res.reclaimClose, runTime, reason);
+          if (action === "added" || action === "updated") pendingCount++;
+        } else skippedCount++;
+      }
+
+      Utilities.sleep(250);
+    } catch(e) {
+      Logger.log("Screener error for " + ticker + ": " + e);
+      skippedCount++;
+    }
+  }
+
+  if (!isIntradayRun) {
+    const pending = getPendingEntries();
+    for (const p of pending) {
+      if (!qualifiedThisRun.has(p.ticker) || isAlreadyHolding(p.ticker)) {
+        removePendingEntry(p.ticker);
+      }
+    }
+  }
+
+  getSheet("ScreenerLog").appendRow([
+    todayET(), runTime, athCount, swingCount, tradedCount, pendingCount, skippedCount,
+    tickers.length, regime.spyAbove ? "✅" : "⚠️", regime.xiuAbove ? "✅" : "⚠️"
+  ]);
+
+  Logger.log(`Screener done: ATH=${athCount} Swing=${swingCount} Traded=${tradedCount} Pending=${pendingCount} Skipped=${skippedCount}`);
+  syncStateToTracker();
+}
+
+// ── TIMED ENTRY POINTS (called by triggers) ───────────────────
+function run8amScreener()  { runScreener(false); }
+function run1pmScreener()  { runScreener(true);  }
+function runMinuteTick()   { monitorPositions(); confirmPendingEntries(); }
+
+// ── BUILD STATE FOR CLIENT (reads live from sheets — no cell-size limit) ────────
+function buildStateForClient() {
+  const sh = getSheet("LiveTrades");
+  const data = sh.getDataRange().getValues();
+  const trades = [];
+  const seenTickers = new Set();
+
+  for (let i = 1; i < data.length; i++) {
+    if (!data[i][0]) continue;
+    const status = String(data[i][C.status-1]);
+    const pnl    = parseFloat(data[i][C.pnl-1]) || 0;
+    const ticker = String(data[i][C.ticker-1]);
+    if ((status.includes("sold") || status === "closedmanual") && pnl === 0) continue;
+    if (status === "live" || status === "partial") {
+      if (seenTickers.has(ticker)) {
+        const existingIdx = trades.findIndex(t => t.ticker === ticker);
+        if (existingIdx !== -1) {
+          const existingTime = `${trades[existingIdx].buyDate} ${trades[existingIdx].buyTime}`;
+          const newTime = `${data[i][C.buyDate-1]} ${data[i][C.buyTime-1]}`;
+          if (newTime > existingTime) trades[existingIdx] = buildTradeObj(data[i]);
+        }
+        continue;
+      }
+      seenTickers.add(ticker);
+    }
+    trades.push(buildTradeObj(data[i]));
+  }
+
+  const pending = getPendingEntries().map(p => ({
+    id: p.id, ticker: p.ticker, exchange: p.exchange, type: p.type,
+    prob: p.prob, reclaimClose: p.reclaimClose, signalDate: p.signalDate, runTime: p.runTime,
+    reason: p.reason || ''
+  }));
+
+  const logSh   = getSheet("ScreenerLog");
+  const logData = logSh.getDataRange().getValues();
+  const screenerRuns = [];
+  for (let i = Math.max(1, logData.length - 20); i < logData.length; i++) {
+    const r = logData[i];
+    if (!r[0]) continue;
+    const dateStr = (r[0] instanceof Date)
+      ? Utilities.formatDate(r[0], 'America/New_York', 'yyyy-MM-dd')
+      : String(r[0]).substring(0, 10);
+    let timeStr;
+    if (r[1] instanceof Date) {
+      timeStr = Utilities.formatDate(r[1], 'America/New_York', 'h:mm a') + ' EST';
+    } else {
+      const raw     = String(r[1]);
+      const isManual = raw.includes('MANUAL');
+      const cleaned = raw.replace(' (MANUAL)', '').trim();
+      if (/\b(AM|PM)\b/i.test(cleaned)) {
+        timeStr = cleaned;
+      } else {
+        const d = new Date(cleaned);
+        timeStr = (!isNaN(d.getTime()) && cleaned.length > 8)
+          ? Utilities.formatDate(d, 'America/New_York', 'h:mm a') + ' EST'
+          : cleaned;
+      }
+      if (isManual) timeStr += ' (MANUAL)';
+    }
+    screenerRuns.unshift({
+      date: dateStr, time: timeStr,
+      athCount: Number(r[2])||0, swingCount: Number(r[3])||0,
+      tradedCount: Number(r[4])||0, pendingCount: Number(r[5])||0,
+      skippedCount: Number(r[6])||0, totalScreened: Number(r[7])||0,
+      regimeUS: String(r[8]), regimeTSX: String(r[9])
+    });
+  }
+
+  return {
+    trades,
+    pendingEntries: pending,
+    screenerRuns,
+    totalCapital: TOTAL_CAPITAL,
+    autoTradePaused: getConfig("autoTradePaused") === true || getConfig("autoTradePaused") === "TRUE",
+    autoTradePauseUntil: getConfig("autoTradePauseUntil") || null,
+    ruleVersion: RULE_VERSION,
+    lastUpdated: Date.now()
+  };
+}
+
+// ── SYNC STATE TO TRACKER TAB (kept for backward compat — doGet no longer reads this) ──
+function syncStateToTracker() {
+  try {
+    const state = buildStateForClient();
+
+    // Truncate reason fields and limit runs to keep JSON under 50k cell limit
+    const compact = {
+      ...state,
+      trades: state.trades.map(t => ({ ...t, reason: (t.reason || '').substring(0, 200) })),
+      screenerRuns: state.screenerRuns.slice(-7)
+    };
+
+    const settingsSh = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("settings");
+    if (settingsSh) {
+      const sData = settingsSh.getDataRange().getValues();
+      let found = false;
+      for (let i = 0; i < sData.length; i++) {
+        if (String(sData[i][0]) === "tracker") {
+          settingsSh.getRange(i + 1, 2).setValue(JSON.stringify(compact));
+          settingsSh.getRange(i + 1, 3).setValue(new Date().toISOString());
+          found = true; break;
+        }
+      }
+      if (!found) settingsSh.appendRow(["tracker", JSON.stringify(compact), new Date().toISOString()]);
+    }
+  } catch(e) {
+    Logger.log("syncStateToTracker error: " + e);
+  }
+}
+
+function buildTradeObj(row) {
+  return {
+    id: String(row[C.id-1]), ticker: String(row[C.ticker-1]), exchange: String(row[C.exchange-1]),
+    type: String(row[C.type-1]), prob: parseFloat(row[C.prob-1])||0, status: String(row[C.status-1]),
+    buyDate: String(row[C.buyDate-1]), buyTime: String(row[C.buyTime-1]), buyPrice: String(row[C.buyPrice-1]),
+    sharesTotal: String(row[C.sharesTotal-1]), sharesOpen: String(row[C.sharesOpen-1]),
+    invested: parseFloat(row[C.invested-1])||TRADE_SIZE, currentPrice: String(row[C.currentPrice-1]),
+    highestPrice: String(row[C.highestPrice-1]), trailingStop: String(row[C.trailingStop-1]),
+    partialExitDone: row[C.partialExitDone-1]===true||String(row[C.partialExitDone-1]).toLowerCase()==="true",
+    partialExitPrice: String(row[C.partialExitPrice-1]), partialExitPnl: parseFloat(row[C.partialExitPnl-1])||null,
+    partialTarget: String(row[C.partialTarget-1]), finalTarget: String(row[C.finalTarget-1]),
+    sellDate: String(row[C.sellDate-1]), sellTime: String(row[C.sellTime-1]), sellPrice: String(row[C.sellPrice-1]),
+    pnl: String(row[C.pnl-1]), pnlPct: String(row[C.pnlPct-1]), exitReason: String(row[C.exitReason-1]),
+    ruleVersion: String(row[C.ruleVersion-1]),
+    reason: String(row[C.reason-1] || ''),
+    partial2Done:  row[C.partial2Done-1]===true||String(row[C.partial2Done-1]).toLowerCase()==="true",
+    partial2Price: String(row[C.partial2Price-1]||''),
+    partial2Pnl:   parseFloat(row[C.partial2Pnl-1])||null
+  };
+}
+
+// ── SETUP TRIGGERS (run once manually) ───────────────────────
+function setupTriggers() {
+  ScriptApp.getProjectTriggers().forEach(t => ScriptApp.deleteTrigger(t));
+
+  ScriptApp.newTrigger("run8amScreener")
+    .timeBased().atHour(8).everyDays(1)
+    .inTimezone("America/New_York").create();
+
+  ScriptApp.newTrigger("run1pmScreener")
+    .timeBased().atHour(13).everyDays(1)
+    .inTimezone("America/New_York").create();
+
+  ScriptApp.newTrigger("runMinuteTick")
+    .timeBased().everyMinutes(1).create();
+
+  Logger.log("✅ All triggers created successfully.");
+}
+
+// ── SETUP SHEETS HEADERS (run once manually) ─────────────────
+function setupSheetHeaders() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+
+  let sh = ss.getSheetByName("LiveTrades");
+  if (!sh) sh = ss.insertSheet("LiveTrades");
+  if (sh.getLastRow() === 0) {
+    sh.appendRow([
+      "id","ticker","exchange","type","prob","status",
+      "buyDate","buyTime","buyPrice","sharesTotal","sharesOpen","invested",
+      "currentPrice","highestPrice","trailingStop",
+      "partialExitDone","partialExitPrice","partialExitDate","partialExitTime","partialExitPnl",
+      "partialTarget","finalTarget",
+      "sellDate","sellTime","sellPrice","pnl","pnlPct","exitReason",
+      "ruleVersion","screenerRunDate","screenerRunTime","selectionReason"
+    ]);
+  }
+
+  sh = ss.getSheetByName("ScreenerLog");
+  if (!sh) sh = ss.insertSheet("ScreenerLog");
+  if (sh.getLastRow() === 0) {
+    sh.appendRow(["date","time","athCount","swingCount","tradedCount","pendingCount","skippedCount","totalScreened","regimeUS","regimeTSX"]);
+  }
+
+  sh = ss.getSheetByName("Config");
+  if (!sh) sh = ss.insertSheet("Config");
+  if (sh.getLastRow() === 0) {
+    sh.appendRow(["key","value"]);
+    sh.appendRow(["totalCapital", 10000]);
+    sh.appendRow(["autoTradePaused", false]);
+    sh.appendRow(["autoTradePauseUntil", ""]);
+    sh.appendRow(["ruleVersion", "v4"]);
+    sh.appendRow(["cadUsdRate", 0.74]);
+  }
+
+  Logger.log("✅ All sheet headers created.");
+}
+
+// ── ONE-TIME FIX: correct mislabelled historical records ──────
+function fixHistoricalRecords() {
+  const sh   = getSheet("LiveTrades");
+  const data = sh.getDataRange().getValues();
+  let fixed  = 0;
+
+  for (let i = 1; i < data.length; i++) {
+    const status     = String(data[i][C.status     - 1]);
+    const exitReason = String(data[i][C.exitReason - 1]);
+    const pnl        = parseFloat(data[i][C.pnl    - 1]);
+
+    if (status !== "soldloss")  continue;
+    if (exitReason !== "loss")  continue;
+    if (isNaN(pnl) || pnl < 0) continue;
+
+    sh.getRange(i + 1, C.status,     1, 1).setValue("soldprofit");
+    sh.getRange(i + 1, C.exitReason, 1, 1).setValue("profit");
+    fixed++;
+    Logger.log("Fixed row " + (i + 1) + ": " + String(data[i][1]) +
+      " | PnL: $" + pnl.toFixed(2) + " → exitReason: profit");
+  }
+
+  Logger.log("✅ fixHistoricalRecords complete. Rows fixed: " + fixed);
+  syncStateToTracker();
+  SpreadsheetApp.getUi().alert("Done! Fixed " + fixed + " mislabelled record(s) and synced to website. Refresh your dashboard.");
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// ── STOP LOSS AUTO-ANALYSIS ────────────────────────────────────────────────
+// Automatically generates a structured learning note whenever a stop loss
+// fires in monitorPositions(). The analysis is stored in the 'sl_analyses'
+// key of the settings tab and fetched by the dashboard to render analysis cards.
+// ══════════════════════════════════════════════════════════════════════════════
+
+/**
+ * One-time setup: store your NewsAPI key.
+ * 1. Sign up free at https://newsapi.org (no credit card needed, 100 req/day)
+ * 2. In Apps Script editor: run setNewsApiKey() once after replacing YOUR_KEY_HERE
+ */
+function setNewsApiKey() {
+  PropertiesService.getScriptProperties().setProperty('NEWSAPI_KEY', '7e8609f8d4994e67a4f8b3f808a77e7e');
+  Logger.log('[setNewsApiKey] Done — replace YOUR_KEY_HERE with your actual key, then run again.');
+}
+
+function getNewsApiKey() {
+  return PropertiesService.getScriptProperties().getProperty('NEWSAPI_KEY') || null;
+}
+
+// ── MAIN ORCHESTRATOR ─────────────────────────────────────────────────────────
+/**
+ * Called from monitorPositions() when a stop loss fires.
+ * Fetches price history + news, generates analysis, stores it.
+ * @param {Object} tradeInfo — { ticker, type, exchange, buyPrice, buyDate,
+ *                               sellPrice, sellDate, highestPrice, trailingStop,
+ *                               pnl, pnlPct, invested, probability, signalVersion }
+ */
+function analyzeStopLoss(tradeInfo) {
+  Logger.log('[analyzeStopLoss] START for ' + tradeInfo.ticker);
+  const days = fetchPriceHistoryForAnalysis(tradeInfo.ticker, tradeInfo.buyDate, tradeInfo.sellDate);
+  const news = fetchNewsApiHeadlines(tradeInfo.ticker, tradeInfo.buyDate, tradeInfo.sellDate);
+  const note = generateAnalysisNote(tradeInfo, days, news);
+  appendSlAnalysis(note);
+  Logger.log('[analyzeStopLoss] DONE — analysis stored for ' + tradeInfo.ticker);
+}
+
+// ── PRICE HISTORY ─────────────────────────────────────────────────────────────
+/**
+ * Fetch up to 90 days of daily adjusted closes from Yahoo Finance.
+ * Returns array of { date, close, volume } or null on failure.
+ */
+function fetchPriceHistoryForAnalysis(ticker, fromDate, toDate) {
+  try {
+    const url = 'https://query2.finance.yahoo.com/v8/finance/chart/' +
+      encodeURIComponent(ticker) + '?interval=1d&range=90d';
+    const resp = UrlFetchApp.fetch(url, { muteHttpExceptions: true });
+    if (resp.getResponseCode() !== 200) return null;
+    const json   = JSON.parse(resp.getContentText());
+    const result = json.chart?.result?.[0];
+    if (!result) return null;
+
+    const timestamps = result.timestamp                       || [];
+    const closes     = result.indicators?.adjclose?.[0]?.adjclose || [];
+    const volumes    = result.indicators?.quote?.[0]?.volume  || [];
+
+    // Include 10 days before entry for extension calculation context
+    const fromTs = new Date(fromDate).getTime() / 1000 - 86400 * 10;
+    const toTs   = new Date(toDate).getTime()   / 1000 + 86400 * 3;
+
+    const days = [];
+    for (let i = 0; i < timestamps.length; i++) {
+      if (timestamps[i] < fromTs || timestamps[i] > toTs) continue;
+      if (closes[i] == null) continue;
+      days.push({
+        date:   new Date(timestamps[i] * 1000).toISOString().split('T')[0],
+        close:  closes[i],
+        volume: volumes[i] || 0
+      });
+    }
+    return days;
+  } catch(e) {
+    Logger.log('[fetchPriceHistoryForAnalysis] ' + ticker + ': ' + e);
+    return null;
+  }
+}
+
+// ── NEWS API ──────────────────────────────────────────────────────────────────
+/**
+ * Fetch up to 5 recent headlines from newsapi.org for the trade window.
+ * Returns array of { title, source, date } or empty array.
+ */
+function fetchNewsApiHeadlines(ticker, fromDate, toDate) {
+  try {
+    const key = getNewsApiKey();
+    if (!key || key === 'YOUR_KEY_HERE') {
+      Logger.log('[fetchNewsApiHeadlines] No API key set — skipping. Run setNewsApiKey() first.');
+      return [];
+    }
+    const from = _slOffsetDate(fromDate, -2);
+    const to   = _slOffsetDate(toDate,    2);
+    const url  = 'https://newsapi.org/v2/everything?q=' +
+      encodeURIComponent(ticker) +
+      '&from=' + from + '&to=' + to +
+      '&sortBy=publishedAt&pageSize=5&language=en&apiKey=' + key;
+    const resp = UrlFetchApp.fetch(url, { muteHttpExceptions: true });
+    if (resp.getResponseCode() !== 200) {
+      Logger.log('[fetchNewsApiHeadlines] HTTP ' + resp.getResponseCode() + ': ' + resp.getContentText().substring(0, 200));
+      return [];
+    }
+    const json = JSON.parse(resp.getContentText());
+    return (json.articles || []).slice(0, 5).map(a => ({
+      title:  a.title            || '',
+      source: a.source?.name     || '',
+      date:   (a.publishedAt || '').substring(0, 10)
+    }));
+  } catch(e) {
+    Logger.log('[fetchNewsApiHeadlines] ' + ticker + ': ' + e);
+    return [];
+  }
+}
+
+/** Offset a YYYY-MM-DD date string by N days */
+function _slOffsetDate(dateStr, days) {
+  const d = new Date(dateStr);
+  d.setDate(d.getDate() + days);
+  return d.toISOString().split('T')[0];
+}
+
+// ── ANALYSIS NOTE GENERATOR ───────────────────────────────────────────────────
+/**
+ * Builds a structured analysis note from trade data + price history + news.
+ * All "why" text is in plain English aimed at an 18-20 year old learning to trade.
+ */
+function generateAnalysisNote(tradeInfo, days, news) {
+  const {
+    ticker, type, exchange,
+    buyPrice, sellPrice, highestPrice, trailingStop,
+    pnl, pnlPct, invested, probability,
+    buyDate, sellDate, signalVersion
+  } = tradeInfo;
+
+  // ── Derived stats ─────────────────────────────────────────────
+  const maxGainPct = highestPrice > buyPrice
+    ? ((highestPrice - buyPrice)  / buyPrice)  * 100 : 0;
+  const gavePct    = highestPrice > sellPrice
+    ? ((highestPrice - sellPrice) / highestPrice) * 100 : 0;
+  const daysHeld   = Math.max(1,
+    Math.round((new Date(sellDate).getTime() - new Date(buyDate).getTime()) / 86400000));
+
+  // Extension at entry: how far above SMA20 was the entry price?
+  let extAtEntryPct = null;
+  let sma20AtEntry  = null;
+  if (days && days.length >= 20) {
+    const entryIdx = days.findIndex(d => d.date >= buyDate);
+    if (entryIdx >= 20) {
+      const window20 = days.slice(entryIdx - 20, entryIdx).map(d => d.close);
+      sma20AtEntry   = window20.reduce((a, b) => a + b, 0) / 20;
+      extAtEntryPct  = ((buyPrice - sma20AtEntry) / sma20AtEntry) * 100;
+    }
+  }
+
+  // Volume spike on exit day
+  let volumeSpike = null;
+  if (days && days.length >= 5) {
+    const exitDay = days.find(d => d.date === sellDate);
+    if (exitDay && exitDay.volume > 0) {
+      const recent10 = days.slice(-10);
+      const avgVol   = recent10.reduce((a, d) => a + d.volume, 0) / recent10.length;
+      if (avgVol > 0) volumeSpike = exitDay.volume / avgVol;
+    }
+  }
+
+  // ── "Why it happened" plain English ──────────────────────────
+  const typeLabel = type === 'ath' ? 'ATH breakout' : 'swing';
+  const parts     = [];
+
+  parts.push(
+    'This was a ' + typeLabel + ' trade on ' + ticker + ' (' + exchange + '), entered at $' +
+    buyPrice.toFixed(2) + ' on ' + buyDate + ' with a ' + probability + '% probability signal. ' +
+    'The trade was held for ' + daysHeld + ' day' + (daysHeld !== 1 ? 's' : '') +
+    ' and exited at $' + sellPrice.toFixed(2) +
+    ' when the trailing stop was hit, resulting in a loss of $' +
+    Math.abs(pnl).toFixed(2) + ' (' + Math.abs(pnlPct).toFixed(1) + '% of the trade value).'
+  );
+
+  if (maxGainPct > 0.5) {
+    parts.push(
+      'At its best point, the stock reached $' + highestPrice.toFixed(2) +
+      ', which was +' + maxGainPct.toFixed(1) + '% above our entry. ' +
+      'It then reversed and gave back ' + gavePct.toFixed(1) +
+      '% from the peak before the trailing stop at $' + trailingStop.toFixed(2) + ' was triggered. ' +
+      'This is called a "whipsaw" — the stock briefly went our way then turned against us.'
+    );
+  } else {
+    parts.push(
+      'The stock never moved meaningfully in our favour after entry (max gain: +' +
+      maxGainPct.toFixed(2) + '%). ' +
+      'It dropped almost straight away from the entry, which suggests the breakout was a false move — ' +
+      'it looked like a breakout on the chart but didn\'t follow through with real buying momentum.'
+    );
+  }
+
+  if (extAtEntryPct !== null) {
+    if (extAtEntryPct > 4) {
+      parts.push(
+        'At the time we entered, ' + ticker + ' was ' + extAtEntryPct.toFixed(1) +
+        '% above its 20-day moving average ($' + sma20AtEntry.toFixed(2) + '). ' +
+        'This is considered "extended" — when a stock is stretched too far above its average price, ' +
+        'it often snaps back (pulls back) before going higher. ' +
+        'Buying at extended levels makes stop losses more likely to get hit during normal pullbacks.'
+      );
+    } else if (extAtEntryPct < -1) {
+      parts.push(
+        'The entry was ' + Math.abs(extAtEntryPct).toFixed(1) +
+        '% below the 20-day moving average, meaning the stock was already in a weak position at entry. ' +
+        'Breakout trades work best when the stock is near — not below — its average trend.'
+      );
+    }
+  }
+
+  if (volumeSpike !== null && volumeSpike > 1.5) {
+    parts.push(
+      'On the day the stop was hit (' + sellDate + '), trading volume was ' +
+      volumeSpike.toFixed(1) + '× the recent 10-day average. ' +
+      'High volume on a down day often means big institutions (hedge funds, banks) were selling heavily — ' +
+      '"big money" exiting a stock quickly can push prices down faster than our stop can adjust.'
+    );
+  }
+
+  if (news && news.length > 0) {
+    parts.push(
+      'There were also news events around this trade period that may have moved the price. ' +
+      'Check the Headlines section below — news catalysts (earnings surprises, macro events, sector news) ' +
+      'can trigger drops that technical signals don\'t predict in advance.'
+    );
+  }
+
+  const why = parts.join(' ');
+
+  // ── "What we missed" bullets ──────────────────────────────────
+  const missed = [];
+
+  if (extAtEntryPct !== null && extAtEntryPct > 4) {
+    missed.push(
+      'Extended entry: ' + ticker + ' was ' + extAtEntryPct.toFixed(1) +
+      '% above the 20-day MA at entry. Extended entries have a higher failure rate because ' +
+      'the stock needs a larger move to profit before a normal pullback hits our stop.'
+    );
+  }
+  if (maxGainPct < 1 && daysHeld <= 2) {
+    missed.push(
+      'No follow-through in ' + daysHeld + ' day(s): price never gained more than ' +
+      maxGainPct.toFixed(1) + '% after entry. ' +
+      'Strong breakouts typically gain >2% within the first 1-2 days — lack of momentum is an early warning sign.'
+    );
+  }
+  if (volumeSpike !== null && volumeSpike > 2) {
+    missed.push(
+      'Volume spike on exit day (' + volumeSpike.toFixed(1) + '× average): ' +
+      'unusually heavy selling pressure hit the stock, overwhelming normal stop placement.'
+    );
+  }
+  if (probability < 75) {
+    missed.push(
+      'Signal probability was ' + probability + '% — below the 75% threshold. ' +
+      'Lower-confidence signals have historically higher stop loss rates in this system.'
+    );
+  }
+  if (type === 'ath' && maxGainPct < 2 && daysHeld > 3) {
+    missed.push(
+      'ATH breakout stalled — the stock failed to trend higher after breaking out. ' +
+      'Valid ATH breakouts typically maintain momentum (>2% gain within 3 days). ' +
+      'A stall is a signal that the breakout lacked real buying conviction.'
+    );
+  }
+  if (missed.length === 0) {
+    missed.push(
+      'No single obvious failure point identified — this may be a normal loss within expected probability range. ' +
+      'Review the trade against the current rule version (' + (signalVersion || 'latest') + ') to confirm it met all entry criteria.'
+    );
+  }
+
+  // ── Recommended code / process fixes ─────────────────────────
+  const fixes = [];
+  let fid     = 1;
+
+  if (extAtEntryPct !== null && extAtEntryPct > 4) {
+    fixes.push({
+      id:   'f' + fid++,
+      text: 'Add an extension filter: skip entries where price is >4% above the 20-day MA at the time of the signal. ' +
+            'This can be added to the buildSelectionReason() / signal scoring logic in the screener.',
+      done: false
+    });
+  }
+  if (maxGainPct < 1 && daysHeld <= 2) {
+    fixes.push({
+      id:   'f' + fid++,
+      text: 'Consider a time-stop rule: if a trade has not gained >1% by end of day 2, exit at market close ' +
+            'rather than waiting for the trailing stop. This cuts losses earlier on failed breakouts.',
+      done: false
+    });
+  }
+  if (volumeSpike !== null && volumeSpike > 2) {
+    fixes.push({
+      id:   'f' + fid++,
+      text: 'Add an intraday volume alert: if volume exceeds 2× the 10-day average before 2 PM, flag the position ' +
+            'for manual review — heavy volume on a down day is an early signal to tighten the stop or exit.',
+      done: false
+    });
+  }
+  if (probability < 75) {
+    fixes.push({
+      id:   'f' + fid++,
+      text: 'Consider raising the minimum probability threshold to 78%+ to filter out lower-confidence setups. ' +
+            'Review the prob scoring weights in the screener to see which factors drove the lower score.',
+      done: false
+    });
+  }
+  fixes.push({
+    id:   'f' + fid++,
+    text: 'Review this analysis and apply any relevant code change above (extension filter, time-stop rule, volume alert, or probability threshold). ' +
+          'Check this box once the code fix has been implemented in the Apps Script screener. ' +
+          'Pattern recognition across 5-10 stop losses is the fastest way to improve rule parameters.',
+    done: false
+  });
+
+  // ── Final note object ─────────────────────────────────────────
+  return {
+    _type:  'sl_analysis',
+    v:      1,
+    id:     ticker + '_' + sellDate + '_' + Date.now(),
+    ts:     new Date().toISOString(),
+    summary: {
+      ticker, type, exchange,
+      entryPrice:   buyPrice,
+      entryDate:    buyDate,
+      exitPrice:    sellPrice,
+      exitDate:     sellDate,
+      highestPrice,
+      trailingStop,
+      pnl:          parseFloat(pnl.toFixed(2)),
+      pnlPct:       parseFloat(pnlPct.toFixed(2)),
+      invested,
+      probability
+    },
+    priceStats: {
+      maxGainPct:    parseFloat(maxGainPct.toFixed(2)),
+      gavePct:       parseFloat(gavePct.toFixed(2)),
+      daysHeld,
+      extAtEntryPct: extAtEntryPct !== null ? parseFloat(extAtEntryPct.toFixed(2)) : null,
+      volumeSpike:   volumeSpike   !== null ? parseFloat(volumeSpike.toFixed(2))   : null
+    },
+    why,
+    missed,
+    fixes,
+    headlines: news || []
+  };
+}
+
+// ── STORAGE ───────────────────────────────────────────────────────────────────
+/**
+ * Append a new analysis to the 'sl_analyses' array in the settings tab.
+ * Keeps the most recent 50 entries.
+ */
+function appendSlAnalysis(note) {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sh = ss.getSheetByName('settings');
+  if (!sh) { Logger.log('[appendSlAnalysis] settings tab not found'); return; }
+
+  const existing = readPath(sh, 'sl_analyses');
+  const arr      = Array.isArray(existing) ? existing : [];
+
+  // Deduplicate: skip if same ticker + exitDate already exists (one analysis per stock per day)
+  const exitDate = note.summary?.exitDate || '';
+  const ticker   = note.summary?.ticker   || '';
+  const isDupe   = arr.some(a => a.summary?.ticker === ticker && a.summary?.exitDate === exitDate);
+  if (isDupe) {
+    Logger.log('[appendSlAnalysis] Skipped duplicate: ' + ticker + ' on ' + exitDate);
+    return;
+  }
+
+  arr.push(note);
+  writePath(sh, 'sl_analyses', arr.slice(-50)); // keep last 50
+  Logger.log('[appendSlAnalysis] Stored. Total: ' + Math.min(arr.length, 50));
+}
+
+/**
+ * Manual helper: view all stored stop loss analyses in Logger.
+ */
+function viewSlAnalyses() {
+  const ss   = SpreadsheetApp.getActiveSpreadsheet();
+  const sh   = ss.getSheetByName('settings');
+  const arr  = readPath(sh, 'sl_analyses') || [];
+  Logger.log('[viewSlAnalyses] ' + arr.length + ' analyses stored:');
+  arr.forEach((a, i) => Logger.log((i + 1) + '. ' + a.summary?.ticker + ' | ' + a.summary?.exitDate + ' | PnL: ' + a.summary?.pnl));
+}
+
+/**
+ * Manual helper: clear all stored stop loss analyses (useful for testing).
+ */
+function clearSlAnalyses() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sh = ss.getSheetByName('settings');
+  if (sh) writePath(sh, 'sl_analyses', []);
+  Logger.log('[clearSlAnalyses] Cleared.');
+}
+
+/**
+ * Manual test: generate a fake stop loss analysis to verify the feature works.
+ * Run this from the Apps Script editor to test without waiting for a real stop loss.
+ */
+function testAnalyzeStopLoss() {
+  const fakeTradeInfo = {
+    ticker:        'NVDA',
+    type:          'ath',
+    exchange:      'US',
+    buyPrice:      875.00,
+    buyDate:       _slOffsetDate(todayET(), -5),
+    sellPrice:     846.50,
+    sellDate:      todayET(),
+    highestPrice:  882.30,
+    trailingStop:  846.50,
+    pnl:           -57.00,
+    pnlPct:        -2.85,
+    invested:      2000,
+    probability:   79,
+    signalVersion: 'v4'
+  };
+  Logger.log('[testAnalyzeStopLoss] Running with fake trade: ' + JSON.stringify(fakeTradeInfo));
+  analyzeStopLoss(fakeTradeInfo);
+  Logger.log('[testAnalyzeStopLoss] Done. Run viewSlAnalyses() to confirm storage.');
+}
