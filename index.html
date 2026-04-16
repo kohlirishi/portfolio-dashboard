@@ -5389,46 +5389,74 @@ async function runScreenerNow() {
   const originalHTML     = btn ? btn.innerHTML  : '';
   const originalDisabled = btn ? btn.disabled   : false;
 
-  if (btn)  { btn.disabled = true; btn.innerHTML = '⏳ Running…'; }
-  if (stop) stop.style.display = 'inline-block';
+  if (btn)  { btn.disabled = true; btn.innerHTML = '⏳ Queuing…'; }
+  if (stop) stop.style.display = 'none'; // stop button not applicable for async
 
-  _startProgressBar();
-  showNotification('Screener triggered — running on backend. This takes 2–3 minutes…', 'info');
-
-  let success = false;
   try {
-    // POST to backend — text/plain bypasses CORS preflight for Google Apps Script
+    // POST returns in ~1 sec — backend immediately schedules a 1-min trigger
     const res = await fetch(PORTFOLIO_WEBAPP_URL, {
       method:  'POST',
       headers: { 'Content-Type': 'text/plain;charset=utf-8' },
       body:    JSON.stringify({ action: 'runManualScreener' }),
-      signal:  AbortSignal.timeout(270000) // 4.5-minute safety timeout
+      signal:  AbortSignal.timeout(15000) // 15s — just for the queue response
     });
 
-    const json = await res.json().catch(() => ({}));
+    const json = await res.json().catch(() => null);
 
-    if (json.success !== false) {
-      success = true;
-      _stopProgressBar(true);
-      showNotification('✅ Screener complete! Refreshing dashboard…', 'success');
-      await fetchPortfolioState(); // re-renders all tables
+    if (json && json.success === true) {
+      // Screener is queued — start progress bar and poll for completion
+      _startProgressBar();
+      if (btn) btn.innerHTML = '⏳ Running…';
+      showNotification('✅ Screener queued — runs in ~1 min. Auto-refreshing every 30s…', 'success');
+      _pollForNewRun((portfolioState?.screenerRuns || []).length);
     } else {
-      _stopProgressBar(false);
-      showNotification(`❌ Screener failed: ${json.error || json.message || 'Unknown error'}`, 'error');
+      const errMsg = (json && (json.error || json.message)) || 'Unknown error';
+      showNotification(`❌ Could not queue screener: ${errMsg}`, 'error');
+      if (btn)  { btn.innerHTML = originalHTML; btn.disabled = originalDisabled; }
+      _isScreenerRunning = false;
     }
 
   } catch (err) {
-    console.error('[RunNow] Screener trigger error:', err);
     _stopProgressBar(false);
     const msg = err.name === 'TimeoutError'
-      ? '⏱ Screener timed out (>4.5 min). Check backend execution logs.'
-      : '❌ Network error reaching backend. Check console & retry.';
+      ? '❌ No response from backend (15s). Check Apps Script deployment.'
+      : '❌ Network error reaching backend. Check connection & retry.';
     showNotification(msg, 'error');
-  } finally {
     if (btn)  { btn.innerHTML = originalHTML; btn.disabled = originalDisabled; }
-    if (stop) stop.style.display = 'none';
     _isScreenerRunning = false;
   }
+}
+
+// Polls fetchPortfolioState every 30s until a new screener run log entry appears
+let _pollInterval = null;
+function _pollForNewRun(startCount) {
+  if (_pollInterval) clearInterval(_pollInterval);
+  let attempts = 0;
+  const maxAttempts = 10; // 10 × 30s = 5 minutes max
+
+  _pollInterval = setInterval(async () => {
+    attempts++;
+    await fetchPortfolioState();
+    const newCount = (portfolioState?.screenerRuns || []).length;
+
+    if (newCount > startCount) {
+      // New run detected
+      clearInterval(_pollInterval); _pollInterval = null;
+      _stopProgressBar(true);
+      const btn = document.getElementById('runNowBtn');
+      if (btn) { btn.innerHTML = '▶ Run Now'; btn.disabled = false; }
+      _isScreenerRunning = false;
+      showNotification('✅ Screener complete! Dashboard updated.', 'success');
+    } else if (attempts >= maxAttempts) {
+      // Timed out waiting
+      clearInterval(_pollInterval); _pollInterval = null;
+      _stopProgressBar(false);
+      const btn = document.getElementById('runNowBtn');
+      if (btn) { btn.innerHTML = '▶ Run Now'; btn.disabled = false; }
+      _isScreenerRunning = false;
+      showNotification('⏱ Screener may still be running. Click Refresh to check.', 'warning');
+    }
+  }, 30000); // every 30 seconds
 }
 
 function stopScreenerRun() {
