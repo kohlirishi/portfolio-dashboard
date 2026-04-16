@@ -5569,15 +5569,156 @@ function stopScreenerRun() {
 <script>
 // ═══ SCREENER JS ═══
 
-// RULE_VERSION, NYSE_HOLIDAYS, TSX_HOLIDAYS, EMA_PERIOD, MA_BUFFER, ATH_THRESHOLD,
-// MAX_RECLAIM_BARS, MAX_BELOW_BARS, SWING_HIGH_MIN/MAX_BARS, SWING_NEAR_MIN/MAX,
-// S2_ATH_MAX_DRAWDOWN — all declared in short-term block above
-// VOLUME_CONFIRM_RATIO, WEEKLY_EMA_PERIOD, WEEKLY_TREND_PENALTY declared in short-term block above
+// ── Screener constants ───────────────────────────────────────────────────────
+const RULE_VERSION        = 'v2.3';
+const EMA_PERIOD          = 220;    // 220-day EMA
+const MA_BUFFER           = 0.02;   // 2% EMA band
+const ATH_THRESHOLD       = 0.10;   // qualify if within 10% of ATH
+const MAX_RECLAIM_BARS    = 5;
+const MAX_BELOW_BARS      = 120;
+const SWING_HIGH_MAX_BARS = 504;    // ~2 years of trading days
+const SWING_HIGH_MIN_BARS = 21;     // at least 1 month back
+const SWING_NEAR_MIN      = 0.03;   // at least 3% below swing high
+const SWING_NEAR_MAX      = 0.20;   // at most 20% below swing high
+const S2_ATH_MAX_DRAWDOWN = 0.30;   // max 30% from ATH for swing setup
+const VOLUME_CONFIRM_RATIO  = 1.4;  // short-term portfolio volume threshold
+const WEEKLY_EMA_PERIOD     = 8;    // 8-period weekly EMA
+const WEEKLY_TREND_PENALTY  = 15;   // probability penalty for broken weekly trend
+
+// ── Holiday sets ─────────────────────────────────────────────────────────────
+// NYSE_HOLIDAYS — reuses getUSMarketHolidays() defined in the main script block
+const NYSE_HOLIDAYS = new Set(
+  [2024,2025,2026,2027].flatMap(y => (typeof getUSMarketHolidays === 'function' ? getUSMarketHolidays(y) : []))
+);
+function _buildTSXHolidays(year) {
+  const base = typeof getUSMarketHolidays === 'function' ? getUSMarketHolidays(year) : [];
+  const fmt  = d => d.toISOString().split('T')[0];
+  const extra = [];
+  // Victoria Day: last Monday on or before May 24
+  let vd = new Date(Date.UTC(year, 4, 25));
+  while (vd.getUTCDay() !== 1) vd.setUTCDate(vd.getUTCDate() - 1);
+  extra.push(fmt(vd));
+  // Canada Day (July 1, nearest weekday)
+  let cd = new Date(Date.UTC(year, 6, 1));
+  if (cd.getUTCDay() === 0) cd.setUTCDate(2);
+  else if (cd.getUTCDay() === 6) cd.setUTCDate(cd.getUTCDate() + 2);
+  extra.push(fmt(cd));
+  // Civic Holiday: first Monday of August
+  let ch = new Date(Date.UTC(year, 7, 1));
+  while (ch.getUTCDay() !== 1) ch.setUTCDate(ch.getUTCDate() + 1);
+  extra.push(fmt(ch));
+  // Canadian Thanksgiving: second Monday of October
+  let th = new Date(Date.UTC(year, 9, 1));
+  while (th.getUTCDay() !== 1) th.setUTCDate(th.getUTCDate() + 1);
+  th.setUTCDate(th.getUTCDate() + 7);
+  extra.push(fmt(th));
+  // Remembrance Day: Nov 11 if weekday
+  const rd = new Date(Date.UTC(year, 10, 11));
+  if (rd.getUTCDay() >= 1 && rd.getUTCDay() <= 5) extra.push(fmt(rd));
+  return [...base, ...extra];
+}
+const TSX_HOLIDAYS = new Set([2024,2025,2026,2027].flatMap(y => _buildTSXHolidays(y)));
+
+// ── Ticker lists ─────────────────────────────────────────────────────────────
+const SP500_TICKERS = [
+  'MMM','AOS','ABT','ABBV','ACN','ADBE','AMD','AES','AFL','A','APD','ABNB',
+  'AKAM','ALB','ARE','ALGN','ALLE','LNT','ALL','GOOGL','GOOG','MO','AMZN',
+  'AMCR','AEE','AAL','AEP','AXP','AIG','AMT','AWK','AMP','AME','AMGN','APH',
+  'ADI','ANSS','AON','APA','AAPL','AMAT','APTV','ACGL','ADM','ANET','AJG',
+  'AIZ','T','ATO','ADSK','ADP','AZO','AVB','AVY','AXON','BKR','BALL','BAC',
+  'BK','BBWI','BAX','BDX','BBY','TECH','BIO','BIIB','BLK','BX','BA','BWA',
+  'BR','AVGO','BRK-B','BSX','BMY','CHRW','CDNS','CZR','CPT','CPB','COF',
+  'CAH','KMX','CCL','CARR','CAT','CBOE','CBRE','CDW','CE','COR','CNC','CNP',
+  'CF','CHTR','CVX','CMG','CB','CHD','CI','CINF','CTAS','CSCO','C','CFG',
+  'CLX','CME','CMS','KO','CTSH','CL','CMCSA','CAG','COP','ED','STZ','CEG',
+  'COO','CPRT','GLW','CTVA','CSGP','COST','CTRA','CRWD','CCI','CSX','CMI',
+  'CVS','DHI','DHR','DRI','DVA','DAY','DE','DELL','DAL','DVN','DXCM','FANG',
+  'DIS','DG','DLTR','D','DPZ','DOV','DOW','DTE','DUK','DD','EMN','ETN',
+  'EBAY','ECL','EIX','EW','EA','ELV','LLY','EMR','ENPH','ETR','EOG','EPAM',
+  'EQT','EFX','EQIX','EQR','ESS','EL','ETSY','EG','ES','EXC','EXPE','EXPD',
+  'EXR','XOM','FFIV','FDS','FICO','FAST','FRT','FDX','FIS','FITB','FSLR',
+  'FE','FI','FMC','F','FTNT','FTV','FOXA','FOX','BEN','FCX','GRMN','IT',
+  'GE','GEHC','GEV','GEN','GNRC','GD','GIS','GM','GPC','GILD','GS','HAL',
+  'HIG','HAS','HCA','DOC','HSIC','HSY','HES','HPE','HLT','HOLX','HD','HON',
+  'HRL','HST','HWM','HPQ','HUBB','HUM','HII','IBM','IEX','IDXX','ITW','INCY',
+  'IR','PODD','INTC','ICE','IFF','IP','IPG','INTU','ISRG','IVZ','INVH','IQV',
+  'IRM','JBHT','JBL','JKHY','J','JNJ','JCI','JPM','JNPR','K','KVUE','KDP',
+  'KEY','KEYS','KMB','KIM','KMI','KLAC','KHC','KR','LHX','LH','LRCX','LW',
+  'LVS','LDOS','LEN','LII','LIN','LKQ','LMT','L','LOW','LULU','LYB','MTB',
+  'MRO','MPC','MKTX','MAR','MMC','MLM','MAS','MA','MTCH','MKC','MCD','MCK',
+  'MDT','MRK','META','MET','MTD','MGM','MCHP','MU','MSFT','MAA','MRNA','MHK',
+  'TAP','MDLZ','MPWR','MNST','MCO','MS','MOS','MSI','MSCI','NDAQ','NTAP',
+  'NFLX','NEM','NWSA','NWS','NEE','NKE','NI','NDSN','NSC','NTRS','NOC',
+  'NCLH','NRG','NUE','NVDA','NVR','NXPI','ORLY','OXY','ODFL','OMC','ON',
+  'OKE','ORCL','OTIS','PCAR','PKG','PANW','PARA','PH','PAYX','PAYC','PYPL',
+  'PNR','PEP','PFE','PCG','PM','PSX','PNW','PNC','POOL','PPG','PPL','PFG',
+  'PG','PGR','PRU','PEG','PTC','PSA','PHM','QRVO','PWR','QCOM','DGX','RL',
+  'RJF','RTX','O','REG','REGN','RF','RSG','RMD','RVTY','ROK','ROL','ROP',
+  'ROST','RCL','SPGI','CRM','SBAC','SLB','STX','SEE','SRE','NOW','SHW',
+  'SPG','SWKS','SJM','SW','SNA','SOLV','SO','LUV','SWK','SBUX','STT','STLD',
+  'STE','SYK','SYF','SNPS','SYY','TMUS','TROW','TTWO','TPR','TRGP','TGT',
+  'TEL','TDY','TFX','TER','TSLA','TXN','TXT','TMO','TSCO','TT','TDG','TRMB',
+  'TFC','TYL','TSN','USB','UBER','UDR','ULTA','UNP','UAL','UPS','URI','UNH',
+  'UHS','VLO','VTR','VLTO','VRSN','VRSK','VZ','VRTX','VTRS','V','VST',
+  'WRB','GWW','WAB','WBA','WMT','WBD','WM','WAT','WEC','WFC','WELL','WST',
+  'WDC','WY','WHR','WMB','WTW','WDAY','WYNN','XEL','XYL','YUM','ZBRA','ZBH',
+  'ZTS','PLTR','SMCI','TJX','KKR','VICI','DECK','NVT','WSM','GDDY','GPN',
+  'HBAN','ARM','VST','MTDR','EG','ERIE','MOH','HWM','VLTO',
+];
+
+const TSX_TICKERS = [
+  'RY.TO','TD.TO','BNS.TO','BMO.TO','CM.TO','MFC.TO','SLF.TO','GWO.TO',
+  'POW.TO','CNR.TO','CP.TO','ENB.TO','TRP.TO','CNQ.TO','SU.TO','IMO.TO',
+  'CVE.TO','NTR.TO','WPM.TO','FNV.TO','SHOP.TO','AEM.TO','XIU.TO',
+];
+
+const TICKERS     = [...SP500_TICKERS, ...TSX_TICKERS];
+const EXCHANGE_MAP = Object.fromEntries([
+  ...SP500_TICKERS.map(t => [t, 'US']),
+  ...TSX_TICKERS.map(t => [t, 'TSX']),
+]);
+const COMPANY_NAMES = {
+  'AAPL':'Apple','MSFT':'Microsoft','NVDA':'NVIDIA','AMZN':'Amazon',
+  'META':'Meta Platforms','GOOGL':'Alphabet A','GOOG':'Alphabet C',
+  'JPM':'JPMorgan Chase','V':'Visa','MA':'Mastercard','UNH':'UnitedHealth',
+  'LLY':'Eli Lilly','AVGO':'Broadcom','XOM':'ExxonMobil','TSLA':'Tesla',
+  'JNJ':'Johnson & Johnson','WMT':'Walmart','PG':'Procter & Gamble',
+  'COST':'Costco','HD':'Home Depot','MRK':'Merck','ABBV':'AbbVie',
+  'BAC':'Bank of America','KO':'Coca-Cola','PEP':'PepsiCo','CVX':'Chevron',
+  'CSCO':'Cisco','TMO':'Thermo Fisher','ACN':'Accenture','ABT':'Abbott',
+  'AMD':'Advanced Micro Devices','GS':'Goldman Sachs','NFLX':'Netflix',
+  'TXN':'Texas Instruments','QCOM':'Qualcomm','MS':'Morgan Stanley',
+  'INTU':'Intuit','RTX':'RTX Corp','CAT':'Caterpillar','LOW':"Lowe's",
+  'BX':'Blackstone','DE':'Deere & Co','CRM':'Salesforce',
+  'ISRG':'Intuitive Surgical','GE':'GE Aerospace','IBM':'IBM',
+  'NOW':'ServiceNow','PLTR':'Palantir','SPGI':'S&P Global',
+  'BLK':'BlackRock','VRTX':'Vertex Pharma','AXP':'American Express',
+  'T':'AT&T','ELV':'Elevance Health','SYK':'Stryker','PFE':'Pfizer',
+  'MDT':'Medtronic','HON':'Honeywell','C':'Citigroup','BA':'Boeing',
+  'SBUX':'Starbucks','MCO':"Moody's",'GILD':'Gilead Sciences',
+  'GD':'General Dynamics','AMAT':'Applied Materials','LRCX':'Lam Research',
+  'ADI':'Analog Devices','MU':'Micron Technology','AMT':'American Tower',
+  'WFC':'Wells Fargo','DIS':'Walt Disney','INTC':'Intel','F':'Ford',
+  'GM':'General Motors','DAL':'Delta Air Lines','UAL':'United Airlines',
+  'PCAR':'PACCAR','TJX':'TJX Companies','KKR':'KKR & Co','VICI':'VICI Properties',
+  'BRK-B':'Berkshire Hathaway','UBER':'Uber','SMCI':'Super Micro Computer',
+  'RY.TO':'Royal Bank of Canada','TD.TO':'TD Bank',
+  'BNS.TO':'Scotiabank','BMO.TO':'Bank of Montreal','CM.TO':'CIBC',
+  'MFC.TO':'Manulife Financial','SLF.TO':'Sun Life Financial',
+  'CNR.TO':'Canadian National Railway','CP.TO':'CP Kansas City',
+  'ENB.TO':'Enbridge','TRP.TO':'TC Energy',
+  'CNQ.TO':'Canadian Natural Resources','SU.TO':'Suncor Energy',
+  'SHOP.TO':'Shopify','NTR.TO':'Nutrien',
+  'WPM.TO':'Wheaton Precious Metals','FNV.TO':'Franco-Nevada',
+  'GWO.TO':'Great-West Lifeco','POW.TO':'Power Corp','IMO.TO':'Imperial Oil',
+  'CVE.TO':'Cenovus Energy','AEM.TO':'Agnico Eagle',
+  'XIU.TO':'iShares S&P/TSX 60 ETF',
+};
+
 // Screener uses 1.2x volume threshold (short-term uses 1.4x — stored separately)
 const SCR_VOLUME_CONFIRM_RATIO = 1.2;  // Screener-specific: 1.2x volume threshold
 const EMA_EXTENSION_MAX   = 25;        // reject if price > 25% above EMA(220)
 const PROXIMITY_52W_MAX   = 0.25;      // reject if price > 25% below 52-week high
-// SP500_TICKERS, TSX_TICKERS, TICKERS, EXCHANGE_MAP, COMPANY_NAMES declared above
 
 // ─── STATE ────────────────────────────────────────────────────────────────────
 let running = false, stopRequested = false;
