@@ -5941,25 +5941,34 @@ function formatBreakdown(bd) {
 }
 
 // ─── FETCH WITH EXPONENTIAL BACKOFF ──────────────────────────────────────────
-async function fetchWithBackoff(url, opts = {}, maxRetries = 3) {
+async function fetchWithBackoff(url, opts = {}, maxRetries = 4) {
+  // Rotate through multiple proxies so one failure doesn't block everything
   const proxies = [
     u => `https://corsproxy.io/?url=${encodeURIComponent(u)}`,
     u => `https://api.allorigins.win/raw?url=${encodeURIComponent(u)}`,
+    u => `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(u)}`,
+    u => `https://thingproxy.freeboard.io/fetch/${encodeURIComponent(u)}`,
   ];
   let lastErr;
   for (let attempt = 0; attempt < maxRetries; attempt++) {
-    const proxyFn = attempt < 2 ? proxies[0] : proxies[1];
+    const proxyFn = proxies[attempt % proxies.length];
     try {
-      const res = await fetch(proxyFn(url), { signal: AbortSignal.timeout(15000), ...opts });
-      if (res.status === 429) {
-        await new Promise(r => setTimeout(r, Math.pow(2, attempt) * 1000 + Math.random() * 500));
-        lastErr = new Error('Rate limited'); continue;
-      }
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      return await res.json();
+      // 7s per attempt (down from 15s) — fail faster, try next proxy sooner
+      const controller = new AbortController();
+      const tid = setTimeout(() => controller.abort(), 7000);
+      try {
+        const res = await fetch(proxyFn(url), { signal: controller.signal, ...opts });
+        clearTimeout(tid);
+        if (res.status === 429) {
+          await new Promise(r => setTimeout(r, Math.pow(2, attempt) * 800 + Math.random() * 400));
+          lastErr = new Error('Rate limited'); continue;
+        }
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        return await res.json();
+      } finally { clearTimeout(tid); }
     } catch (e) {
       lastErr = e;
-      if (attempt < maxRetries - 1) await new Promise(r => setTimeout(r, Math.pow(2, attempt) * 600 + Math.random() * 300));
+      if (attempt < maxRetries - 1) await new Promise(r => setTimeout(r, 200 + Math.random() * 200));
     }
   }
   throw lastErr;
@@ -6327,7 +6336,19 @@ async function runBacktest() {
 
 // ─── MAIN LOOP ────────────────────────────────────────────────────────────────
 async function startScreen() {
-  if (running) return;
+  // Force-reset if stuck (running=true for >30s means a previous run crashed)
+  if (running) {
+    if (startTime && Date.now() - startTime > 30000) {
+      running = false;
+      clearInterval(timerInterval);
+      const _rb = document.getElementById('runBtn');
+      const _sb = document.getElementById('stopBtn');
+      if (_rb) _rb.disabled = false;
+      if (_sb) { _sb.style.display = 'none'; _sb.disabled = false; _sb.textContent = '■ Stop'; }
+      document.getElementById('currentTicker').textContent = 'Reset — click Run again';
+    }
+    return;
+  }
   running = true; stopRequested = false;
   t1Results = []; t2Results = [];
   screenedCount = 0; errorCount = 0; failedTickers = 0;
@@ -6349,56 +6370,65 @@ async function startScreen() {
     document.getElementById('elapsedTime').textContent = s < 60 ? s + 's' : Math.floor(s/60) + 'm ' + (s%60) + 's';
   }, 1000);
 
-  await checkRegime();
-
-  const skipUS  = isUSHolidayToday();
-  const skipTSX = isTSXHolidayToday();
   let tickersToRun = TICKERS;
-  if (skipUS && !skipTSX)       tickersToRun = TSX_TICKERS;
-  else if (!skipUS && skipTSX)  tickersToRun = SP500_TICKERS;
+  try {
+    document.getElementById('currentTicker').textContent = 'Checking market regime…';
+    await checkRegime();
 
-  const BATCH = 5;
-  for (let i = 0; i < tickersToRun.length && !stopRequested; i += BATCH) {
-    const batch = tickersToRun.slice(i, i + BATCH);
-    updateProgress(i, batch[0]);
-    await Promise.all(batch.map(async (ticker) => {
-      if (stopRequested) return;
-      try {
-        const item = await processTicker(ticker);
-        screenedCount++;
-        if (item) {
-          const exchange = EXCHANGE_MAP[ticker];
-          if ((exchange === 'US'  && regimeCache && !regimeCache.spyAbove) ||
-              (exchange === 'TSX' && regimeCache && !regimeCache.xiuAbove)) {
-            item.result.regimeCaution = true;
+    const skipUS  = isUSHolidayToday();
+    const skipTSX = isTSXHolidayToday();
+    tickersToRun = TICKERS;
+    if (skipUS && !skipTSX)       tickersToRun = TSX_TICKERS;
+    else if (!skipUS && skipTSX)  tickersToRun = SP500_TICKERS;
+
+    const BATCH = 5;
+    for (let i = 0; i < tickersToRun.length && !stopRequested; i += BATCH) {
+      const batch = tickersToRun.slice(i, i + BATCH);
+      updateProgress(i, batch[0]);
+      await Promise.all(batch.map(async (ticker) => {
+        if (stopRequested) return;
+        try {
+          const item = await processTicker(ticker);
+          screenedCount++;
+          if (item) {
+            const exchange = EXCHANGE_MAP[ticker];
+            if ((exchange === 'US'  && regimeCache && !regimeCache.spyAbove) ||
+                (exchange === 'TSX' && regimeCache && !regimeCache.xiuAbove)) {
+              item.result.regimeCaution = true;
+            }
+            if (item.type === 'ath') { t1Results.push(item); insertSorted(document.getElementById('t1Body'), item); }
+            else                     { t2Results.push(item); insertSorted(document.getElementById('t2Body'), item); }
           }
-          if (item.type === 'ath') { t1Results.push(item); insertSorted(document.getElementById('t1Body'), item); }
-          else                     { t2Results.push(item); insertSorted(document.getElementById('t2Body'), item); }
+          updateStats(); updateProgress(screenedCount, ticker);
+        } catch (e) {
+          screenedCount++; errorCount++;
+          if (String(e).includes('fetch') || String(e).includes('timeout')) failedTickers++;
+          updateStats();
         }
-        updateStats(); updateProgress(screenedCount, ticker);
-      } catch (e) {
-        screenedCount++; errorCount++;
-        if (String(e).includes('fetch') || String(e).includes('timeout')) failedTickers++;
-        updateStats();
-      }
-    }));
-    if (!stopRequested && i + BATCH < tickersToRun.length) await new Promise(r => setTimeout(r, 300));
+      }));
+      if (!stopRequested && i + BATCH < tickersToRun.length) await new Promise(r => setTimeout(r, 300));
+    }
+
+    if (!t1Results.length) document.getElementById('t1Body').innerHTML = `<tr><td colspan="4"><div class="empty-state"><p>No stocks matched the ATH criteria</p></div></td></tr>`;
+    if (!t2Results.length) document.getElementById('t2Body').innerHTML = `<tr><td colspan="4"><div class="empty-state"><p>No stocks matched the Swing criteria</p></div></td></tr>`;
+
+    updateProgress(tickersToRun.length, '');
+    document.getElementById('progressFill').style.width = '100%';
+    document.getElementById('progressPct').textContent = '100%';
+    document.getElementById('currentTicker').textContent = stopRequested ? 'Stopped' : 'Done ✓';
+    const nowStr = new Date().toLocaleString('en-US', { timeZone: 'America/New_York', month:'short', day:'numeric', hour:'2-digit', minute:'2-digit' });
+    document.getElementById('lastRunStat').textContent = nowStr + ' EST';
+    localStorage.setItem('screener_last_run', nowStr + ' EST');
+    cloudWrite('screener/lastRun', nowStr + ' EST');
+  } catch (e) {
+    console.error('Screener error:', e);
+    document.getElementById('currentTicker').textContent = 'Error — check console';
+  } finally {
+    running = false;
+    clearInterval(timerInterval);
+    if (runBtn)  { runBtn.disabled = false; }
+    if (stopBtn) { stopBtn.style.display = 'none'; stopBtn.disabled = false; stopBtn.textContent = '■ Stop'; }
   }
-
-  if (!t1Results.length) document.getElementById('t1Body').innerHTML = `<tr><td colspan="4"><div class="empty-state"><p>No stocks matched the ATH criteria</p></div></td></tr>`;
-  if (!t2Results.length) document.getElementById('t2Body').innerHTML = `<tr><td colspan="4"><div class="empty-state"><p>No stocks matched the Swing criteria</p></div></td></tr>`;
-
-  running = false; clearInterval(timerInterval);
-  updateProgress(tickersToRun.length, '');
-  document.getElementById('progressFill').style.width = '100%';
-  document.getElementById('progressPct').textContent = '100%';
-  document.getElementById('currentTicker').textContent = stopRequested ? 'Stopped' : 'Done ✓';
-  if (runBtn)  { runBtn.disabled = false; }
-  if (stopBtn) { stopBtn.style.display = 'none'; }
-  const nowStr = new Date().toLocaleString('en-US', { timeZone: 'America/New_York', month:'short', day:'numeric', hour:'2-digit', minute:'2-digit' });
-  document.getElementById('lastRunStat').textContent = nowStr + ' EST';
-  localStorage.setItem('screener_last_run', nowStr + ' EST');
-  cloudWrite('screener/lastRun', nowStr + ' EST');
 }
 
 function stopScreen() {
