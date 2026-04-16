@@ -3663,6 +3663,7 @@ async function loadAllRatings(){
   <div class="cap-stat">Deployed: <strong id="deployedCap">$0.00</strong></div>
   <div class="cap-stat">Available: <strong id="availCap">$10,000.00</strong></div>
   <div class="cap-stat">Realized P&amp;L: <strong id="totalPnl" class="neutral">$0.00</strong></div>
+  <div class="cap-stat">Portfolio Return: <strong id="portfolioRetPct" class="neutral">0.00%</strong></div>
   <div class="cap-stat">Unrealized P&amp;L: <strong id="unrealPnl" class="neutral">$0.00</strong></div>
   <div class="currency-note">All values in USD · TSX prices converted at live CAD-USD Rate · Paper trading simulation · $100/trade · 5% TP · 2% SL · <span id="stSyncStatus" style="color:#3fb950">Connecting…</span></div>
 </div>
@@ -3681,6 +3682,7 @@ async function loadAllRatings(){
     <div class="card red"><div class="card-val" id="lossCount">0</div><div class="card-label">Stop Losses</div></div>
     <div class="card blue"><div class="card-val" id="winRate">—</div><div class="card-label">Win Rate</div></div>
     <div class="card blue"><div class="card-val" id="winRate5">—</div><div class="card-label">Win Rate (Last 10)</div></div>
+    <div class="card blue"><div class="card-val" id="pnl14dVal">—</div><div class="card-label">P&amp;L (Last 14 Days)</div></div>
   </div>
 
   <!-- AUTO SCREENER -->
@@ -4562,6 +4564,19 @@ function _renderCapitalBar() {
   setClass('totalPnl',  realized);
   setClass('unrealPnl', unrealized);
 
+  // Portfolio Return % = Realized P&L / Deployed * 100
+  const retEl = document.getElementById('portfolioRetPct');
+  if (retEl) {
+    if (deployed > 0) {
+      const pct = (realized / deployed) * 100;
+      retEl.textContent = (pct >= 0 ? '+' : '') + pct.toFixed(2) + '%';
+      retEl.className   = pct > 0 ? 'positive' : pct < 0 ? 'negative' : 'neutral';
+    } else {
+      retEl.textContent = '0.00%';
+      retEl.className   = 'neutral';
+    }
+  }
+
   // CAD-USD: try to read from portfolioState or show last known
   const cad = portfolioState.cadUsdRate;
   if (cad) { const el = document.getElementById('cadUsdDisplay'); if (el) el.textContent = parseFloat(cad).toFixed(4); }
@@ -4607,6 +4622,24 @@ function _renderCards() {
   const last10Win   = last10.filter(t => t.exitReason === 'profit').length;
   const wr5         = last10.length > 0 ? Math.round(last10Win / last10.length * 100) + '%' : '—';
 
+  // P&L Last 14 Days: sum P&L and invested for trades closed in last 14 days
+  const cutoff14    = Date.now() - 14 * 24 * 60 * 60 * 1000;
+  const last14d     = validClosed.filter(t => {
+    if (!t.sellDate) return false;
+    const parts = String(t.sellDate).trim().split('-');
+    const d = parts.length === 3
+      ? new Date(Date.UTC(parseInt(parts[0]), parseInt(parts[1]) - 1, parseInt(parts[2]), 12, 0, 0))
+      : new Date(t.sellDate);
+    return d.getTime() >= cutoff14;
+  });
+  const pnl14sum    = last14d.reduce((s, t) => s + (parseFloat(t.pnl) || 0), 0);
+  const inv14sum    = last14d.reduce((s, t) => s + (parseFloat(t.invested) || 0), 0);
+  let pnl14Str      = '—';
+  if (last14d.length > 0) {
+    const pctStr = inv14sum > 0 ? ` (${pnl14sum >= 0 ? '+' : ''}${(pnl14sum / inv14sum * 100).toFixed(1)}%)` : '';
+    pnl14Str = `${pnl14sum >= 0 ? '+$' : '-$'}${_fmtUSD(Math.abs(pnl14sum))}${pctStr}`;
+  }
+
   const closedTotal = profits + losses; // Wins + Stop Losses only (excludes $0 breakevens)
 
   const set = (id, val) => { const el = document.getElementById(id); if (el) el.textContent = val; };
@@ -4617,6 +4650,12 @@ function _renderCards() {
   set('lossCount',        losses);
   set('winRate',          wr);
   set('winRate5',         wr5);
+
+  const pnl14El = document.getElementById('pnl14dVal');
+  if (pnl14El) {
+    pnl14El.textContent = pnl14Str;
+    pnl14El.className   = 'card-val ' + (pnl14sum > 0 ? 'positive' : pnl14sum < 0 ? 'negative' : 'neutral');
+  }
 }
 
 // ─── PENDING ENTRIES ──────────────────────────────────────────────────────────
