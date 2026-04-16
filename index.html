@@ -5689,6 +5689,63 @@ const COMPANY_NAMES = {
 
 // Screener uses 1.2x volume threshold (short-term uses 1.4x — stored separately)
 const SCR_VOLUME_CONFIRM_RATIO = 1.2;  // Screener-specific: 1.2x volume threshold
+
+// ── Load tickers dynamically from MajorList tab ───────────────────────────────
+async function loadMajorListTickers() {
+  const url = `https://docs.google.com/spreadsheets/d/${SID}/gviz/tq?tqx=out:json&sheet=MajorList`;
+  try {
+    const res = await fetch(url);
+    const txt = await res.text();
+    const data = JSON.parse(txt.replace(/^[^\(]+\(/, '').replace(/\);\s*$/, ''));
+    const rows = (data.table && data.table.rows) || [];
+
+    const newTickers = [], newUS = [], newTSX = [];
+    const newExchangeMap = {}, newNames = {};
+
+    for (const row of rows) {
+      const c = row.c || [];
+      const v = i => (c[i] && c[i].v != null) ? String(c[i].v).trim() : '';
+      const n = i => (c[i] && c[i].v != null) ? parseFloat(c[i].v) : NaN;
+
+      const symbol    = v(0); // Column A: symbol
+      const name      = v(1); // Column B: name
+      const exchange  = v(2); // Column C: exchange
+      const assetType = v(3); // Column D: assetType
+      const mktCap    = n(7); // Column H: MktCap
+
+      if (!symbol) continue;
+      if (assetType.toLowerCase() !== 'stock') continue;
+      if (isNaN(mktCap) || mktCap <= 0.999228846) continue;
+
+      const exch = exchange.toUpperCase() === 'TSX' ? 'TSX' : 'US';
+      newTickers.push(symbol);
+      newExchangeMap[symbol] = exch;
+      if (name) newNames[symbol] = name;
+      if (exch === 'TSX') newTSX.push(symbol); else newUS.push(symbol);
+    }
+
+    if (newTickers.length === 0) throw new Error('No tickers passed filters in MajorList');
+
+    // Mutate the live arrays/maps so all references stay valid
+    SP500_TICKERS.length = 0; SP500_TICKERS.push(...newUS);
+    TSX_TICKERS.length   = 0; TSX_TICKERS.push(...newTSX);
+    TICKERS.length       = 0; TICKERS.push(...newTickers);
+    Object.keys(EXCHANGE_MAP).forEach(k => delete EXCHANGE_MAP[k]);
+    Object.assign(EXCHANGE_MAP, newExchangeMap);
+    // Merge names — MajorList names take priority
+    Object.assign(COMPANY_NAMES, newNames);
+
+    console.log(`[MajorList] Loaded ${newTickers.length} tickers (${newUS.length} US, ${newTSX.length} TSX)`);
+    return true;
+  } catch (e) {
+    console.error('[MajorList] Failed to load tickers:', e);
+    showNotification(
+      `⚠️ Could not load ticker list from MajorList sheet: ${e.message}. Falling back to built-in list (${TICKERS.length} stocks).`,
+      'error'
+    );
+    return false;
+  }
+}
 const EMA_EXTENSION_MAX   = 25;        // reject if price > 25% above EMA(220)
 const PROXIMITY_52W_MAX   = 0.25;      // reject if price > 25% below 52-week high
 
@@ -6353,8 +6410,9 @@ function updateStats() {
   document.getElementById('tsxMarketStatus').textContent = tsxOpen ? 'Open' : isTSXHolidayToday() ? 'Holiday' : 'Closed';
 }
 
-function updateProgress(idx, ticker) {
-  const pct = Math.round((idx / TICKERS.length) * 100);
+function updateProgress(idx, ticker, total) {
+  const tot = total || TICKERS.length || 1;
+  const pct = Math.round((idx / tot) * 100);
   document.getElementById('progressFill').style.width = pct + '%';
   document.getElementById('progressPct').textContent = pct + '%';
   document.getElementById('currentTicker').textContent = ticker || '—';
@@ -6412,6 +6470,12 @@ async function startScreen() {
 
   let tickersToRun = TICKERS;
   try {
+    // ── Step 1: load ticker list from MajorList sheet ──────────────────────
+    document.getElementById('currentTicker').textContent = 'Loading ticker list from MajorList…';
+    await loadMajorListTickers(); // mutates TICKERS/EXCHANGE_MAP/COMPANY_NAMES in place; shows error+fallback on failure
+    updateStats(); // refresh totalCount display with the loaded list size
+
+    // ── Step 2: check market regime ────────────────────────────────────────
     document.getElementById('currentTicker').textContent = 'Checking market regime…';
     await checkRegime();
 
@@ -6424,7 +6488,7 @@ async function startScreen() {
     const BATCH = 5;
     for (let i = 0; i < tickersToRun.length && !stopRequested; i += BATCH) {
       const batch = tickersToRun.slice(i, i + BATCH);
-      updateProgress(i, batch[0]);
+      updateProgress(i, batch[0], tickersToRun.length);
       await Promise.all(batch.map(async (ticker) => {
         if (stopRequested) return;
         try {
@@ -6439,7 +6503,7 @@ async function startScreen() {
             if (item.type === 'ath') { t1Results.push(item); insertSorted(document.getElementById('t1Body'), item); }
             else                     { t2Results.push(item); insertSorted(document.getElementById('t2Body'), item); }
           }
-          updateStats(); updateProgress(screenedCount, ticker);
+          updateStats(); updateProgress(screenedCount, ticker, tickersToRun.length);
         } catch (e) {
           screenedCount++; errorCount++;
           if (String(e).includes('fetch') || String(e).includes('timeout')) failedTickers++;
@@ -6452,7 +6516,7 @@ async function startScreen() {
     if (!t1Results.length) document.getElementById('t1Body').innerHTML = `<tr><td colspan="4"><div class="empty-state"><p>No stocks matched the ATH criteria</p></div></td></tr>`;
     if (!t2Results.length) document.getElementById('t2Body').innerHTML = `<tr><td colspan="4"><div class="empty-state"><p>No stocks matched the Swing criteria</p></div></td></tr>`;
 
-    updateProgress(tickersToRun.length, '');
+    updateProgress(tickersToRun.length, '', tickersToRun.length);
     document.getElementById('progressFill').style.width = '100%';
     document.getElementById('progressPct').textContent = '100%';
     document.getElementById('currentTicker').textContent = stopRequested ? 'Stopped' : 'Done ✓';
