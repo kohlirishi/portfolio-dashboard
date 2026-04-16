@@ -3682,7 +3682,7 @@ async function loadAllRatings(){
     <div class="card red"><div class="card-val" id="lossCount">0</div><div class="card-label">Stop Losses</div></div>
     <div class="card blue"><div class="card-val" id="winRate">—</div><div class="card-label">Win Rate</div></div>
     <div class="card blue"><div class="card-val" id="winRate5">—</div><div class="card-label">Win Rate (Last 10)</div></div>
-    <div class="card blue"><div class="card-val" id="pnl14dVal">—</div><div class="card-label">P&amp;L (Last 14 Days)</div></div>
+    <div class="card blue" id="pnl14dCard" title="" style="cursor:default"><div class="card-val" id="pnl14dVal">—</div><div class="card-label">P&amp;L (Last 14 Days)</div></div>
   </div>
 
   <!-- AUTO SCREENER -->
@@ -4634,10 +4634,13 @@ function _renderCards() {
   });
   const pnl14sum    = last14d.reduce((s, t) => s + (parseFloat(t.pnl) || 0), 0);
   const inv14sum    = last14d.reduce((s, t) => s + (parseFloat(t.invested) || 0), 0);
-  let pnl14Str      = '—';
+  const pnl14wins   = last14d.filter(t => t.exitReason === 'profit').length;
+  const pnl14loss   = last14d.filter(t => t.exitReason === 'loss').length;
+  let pnl14Str = '—', pnl14Tip = '';
   if (last14d.length > 0) {
-    const pctStr = inv14sum > 0 ? ` (${pnl14sum >= 0 ? '+' : ''}${(pnl14sum / inv14sum * 100).toFixed(1)}%)` : '';
-    pnl14Str = `${pnl14sum >= 0 ? '+$' : '-$'}${_fmtUSD(Math.abs(pnl14sum))}${pctStr}`;
+    const pct = inv14sum > 0 ? (pnl14sum / inv14sum * 100).toFixed(1) : '0.0';
+    pnl14Str  = `${pnl14sum >= 0 ? '+' : ''}${pct}%`;
+    pnl14Tip  = `${last14d.length} trade${last14d.length !== 1 ? 's' : ''} · ${pnl14wins}W / ${pnl14loss}L · P&L: ${pnl14sum >= 0 ? '+$' : '-$'}${_fmtUSD(Math.abs(pnl14sum))} · Invested: $${_fmtUSD(inv14sum)}`;
   }
 
   const closedTotal = profits + losses; // Wins + Stop Losses only (excludes $0 breakevens)
@@ -4651,11 +4654,13 @@ function _renderCards() {
   set('winRate',          wr);
   set('winRate5',         wr5);
 
-  const pnl14El = document.getElementById('pnl14dVal');
+  const pnl14El   = document.getElementById('pnl14dVal');
+  const pnl14Card = document.getElementById('pnl14dCard');
   if (pnl14El) {
     pnl14El.textContent = pnl14Str;
     pnl14El.className   = 'card-val ' + (pnl14sum > 0 ? 'positive' : pnl14sum < 0 ? 'negative' : 'neutral');
   }
+  if (pnl14Card) pnl14Card.title = pnl14Tip;
 }
 
 // ─── PENDING ENTRIES ──────────────────────────────────────────────────────────
