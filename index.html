@@ -716,27 +716,6 @@ table.div-ht tfoot td{padding:10px 14px;font-size:13px;font-weight:700;backgroun
 #pg-screener /* MAIN CONTENT */
   .main { padding: 20px; max-width: 1400px; margin: 0 auto; }
 #pg-screener /* BACKTEST PANEL */
-  .backtest-panel {
-    background: #152032;
-    border: 1px solid #1e3250;
-    border-radius: 10px;
-    margin-bottom: 24px;
-    overflow: hidden;
-  }
-#pg-screener .backtest-header {
-    display: flex; align-items: center; justify-content: space-between;
-    padding: 10px 16px; border-bottom: 1px solid #1e3250;
-    font-weight: 600; font-size: 13px; color: #8aaccc;
-    flex-wrap: wrap; gap: 8px;
-  }
-#pg-screener .backtest-header span { color: #e2ecf7; }
-#pg-screener .backtest-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 1px; background: #1e3250; }
-#pg-screener .bt-cell { background: #152032; padding: 10px 14px; text-align: center; }
-#pg-screener .bt-val { font-size: 22px; font-weight: 700; letter-spacing: -.5px; color: #e2ecf7; }
-#pg-screener .bt-label { font-size: 10px; color: #8aaccc; text-transform: uppercase; letter-spacing: 0.5px; margin-top: 2px; }
-#pg-screener .bt-val.green { color: #3fb950; }
-#pg-screener .bt-val.yellow { color: #d4a017; }
-#pg-screener .bt-val.red { color: #f85149; }
 #pg-screener /* TABLE SECTIONS */
   .table-section { margin-bottom: 40px; }
 #pg-screener .table-header {
@@ -3921,26 +3900,6 @@ async function loadAllRatings(){
 <div class="main">
 
   <!-- BACKTEST PANEL -->
-  <div class="backtest-panel" id="backtestPanel">
-    <div class="backtest-header">
-      <span>📊 Backtest Validation <small style="color:#4a6a8a;font-weight:400">(2-year simulated · last run: <span id="btLastRun">never</span>)</small></span>
-      <div style="display:flex;gap:8px">
-        <button onclick="runBacktest()" style="background:#111d2c;border:1px solid #1e3250;color:#8aaccc;padding:5px 12px;border-radius:5px;font-size:12px;cursor:pointer" id="btRunBtn">Run Backtest</button>
-        <button onclick="togglePanel('bt')" style="background:#111d2c;border:1px solid #1e3250;color:#8aaccc;padding:5px 8px;border-radius:5px;font-size:12px;cursor:pointer" id="btMinBtn">−</button>
-      </div>
-    </div>
-    <div id="btWrap">
-      <div class="backtest-grid" id="btGrid">
-        <div class="bt-cell"><div class="bt-val" id="btWinRate">—</div><div class="bt-label">Win Rate (ATH)</div></div>
-        <div class="bt-cell"><div class="bt-val" id="btWinRateSw">—</div><div class="bt-label">Win Rate (Swing)</div></div>
-        <div class="bt-cell"><div class="bt-val" id="btAvgReturn">—</div><div class="bt-label">Avg Return</div></div>
-        <div class="bt-cell"><div class="bt-val" id="btSignals">—</div><div class="bt-label">Signals Tested</div></div>
-        <div class="bt-cell"><div class="bt-val" id="btCalib">—</div><div class="bt-label">Calibration</div></div>
-      </div>
-      <div id="btCalibTable" style="padding:10px 16px;font-size:12px;color:#8aaccc;display:none"></div>
-    </div>
-  </div>
-
   <!-- TABLE 1 -->
   <div class="table-section" id="t1Section">
     <div class="table-header">
@@ -6402,79 +6361,6 @@ function checkRuleVersion() {
 }
 
 // ─── BACKTEST ─────────────────────────────────────────────────────────────────
-let btData = null;
-function loadBtData() {
-  try { const raw = localStorage.getItem('screener_backtest'); if (raw) btData = JSON.parse(raw); } catch {}
-  if (btData) renderBtPanel();
-  cloudRead('screener/backtest', null).then(d => {
-    if (d && (!btData || (d.runDate || '') > (btData.runDate || ''))) {
-      btData = d;
-      try { localStorage.setItem('screener_backtest', JSON.stringify(d)); } catch {}
-      renderBtPanel();
-    }
-  });
-}
-function saveBtData(d) {
-  btData = d;
-  try { localStorage.setItem('screener_backtest', JSON.stringify(d)); } catch {}
-  cloudWrite('screener/backtest', d);
-  renderBtPanel();
-}
-function renderBtPanel() {
-  if (!btData) return;
-  const el = id => document.getElementById(id);
-  if (!el('btLastRun')) return;
-  el('btLastRun').textContent   = btData.runDate || 'never';
-  el('btWinRate').textContent   = btData.athWinRate != null ? btData.athWinRate + '%' : '—';
-  el('btWinRate').className     = 'bt-val ' + (btData.athWinRate >= 55 ? 'green' : btData.athWinRate >= 45 ? 'yellow' : 'red');
-  el('btWinRateSw').textContent = btData.swWinRate != null ? btData.swWinRate + '%' : '—';
-  el('btWinRateSw').className   = 'bt-val ' + (btData.swWinRate >= 55 ? 'green' : btData.swWinRate >= 45 ? 'yellow' : 'red');
-  el('btAvgReturn').textContent = btData.avgReturn != null ? (btData.avgReturn > 0 ? '+' : '') + btData.avgReturn + '%' : '—';
-  el('btAvgReturn').className   = 'bt-val ' + (btData.avgReturn > 0 ? 'green' : 'red');
-  el('btSignals').textContent   = btData.totalSignals || '—';
-  el('btCalib').textContent     = btData.calibration || '—';
-}
-async function runBacktest() {
-  const btn = document.getElementById('btRunBtn');
-  btn.textContent = 'Running…'; btn.disabled = true;
-  const testTickers = ['AAPL','MSFT','NVDA','AMZN','META','GOOGL','JPM','V','MA','UNH','RY.TO','TD.TO','ENB.TO','CNR.TO','SHOP.TO'];
-  let athWins = 0, athTotal = 0, swWins = 0, swTotal = 0, totalReturn = 0;
-  for (const ticker of testTickers) {
-    try {
-      const ohlcv = await fetchOHLCV(ticker);
-      const cutoff = ohlcv.length - 500;
-      for (let s = Math.max(EMA_PERIOD + 30, cutoff); s < ohlcv.length - 10; s++) {
-        const slice = ohlcv.slice(0, s);
-        const athRes = screenATH(slice, null);
-        const type = athRes ? 'ath' : null;
-        const res = athRes || screenSwing(slice, null);
-        if (!res) continue;
-        const entryPrice = ohlcv[s + 1]?.close;
-        if (!entryPrice) continue;
-        let outcome = 'open';
-        for (let f = s + 2; f < Math.min(ohlcv.length, s + 12); f++) {
-          const pct = (ohlcv[f].close - entryPrice) / entryPrice * 100;
-          if (pct >= 5) { outcome = 'profit'; break; }
-          if (pct <= -2) { outcome = 'loss'; break; }
-        }
-        const ret = outcome === 'profit' ? 5 : outcome === 'loss' ? -2 : 0;
-        totalReturn += ret;
-        if (type === 'ath') { athTotal++; if (outcome === 'profit') athWins++; }
-        else { swTotal++; if (outcome === 'profit') swWins++; }
-      }
-    } catch {}
-  }
-  saveBtData({
-    runDate: new Date().toISOString().split('T')[0],
-    athWinRate: athTotal > 0 ? Math.round(athWins / athTotal * 100) : null,
-    swWinRate:  swTotal  > 0 ? Math.round(swWins  / swTotal  * 100) : null,
-    avgReturn:  (athTotal + swTotal) > 0 ? parseFloat((totalReturn / (athTotal + swTotal)).toFixed(2)) : null,
-    totalSignals: athTotal + swTotal,
-    calibration: (athTotal + swTotal) > 0 ? (Math.round((athWins + swWins) / (athTotal + swTotal) * 100) + '%') : '—',
-  });
-  btn.textContent = 'Run Backtest'; btn.disabled = false;
-}
-
 // ─── MAIN LOOP ────────────────────────────────────────────────────────────────
 async function startScreen() {
   // Force-reset if stuck (running=true for >30s means a previous run crashed)
@@ -6628,7 +6514,6 @@ function togglePanel(id) {
 // ─── INIT ─────────────────────────────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', () => {
   checkRuleVersion();
-  loadBtData();
   updateStats();
   const lr = localStorage.getItem('screener_last_run');
   if (lr) document.getElementById('lastRunStat').textContent = lr;
@@ -6652,7 +6537,6 @@ function initScreener() {
 function scInit() {
   try { cloudInit(); } catch(e) {}
   try { if(typeof checkRuleVersion === 'function') checkRuleVersion(); } catch(e) {}
-  try { if(typeof loadBtData === 'function') loadBtData(); } catch(e) {}
   try { if(typeof updateStats === 'function') updateStats(); } catch(e) {}
   const lr = localStorage.getItem('screener_last_run');
   if (lr) { const el = document.getElementById('lastRunStat'); if(el) el.textContent = lr; }
