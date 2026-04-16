@@ -540,6 +540,7 @@ table.div-ht tfoot td{padding:10px 14px;font-size:13px;font-weight:700;backgroun
 #pg-short .badge-profit { background: #1a3a1a; color: #3fb950; border: 1px solid #238636; padding: 2px 7px; border-radius: 4px; font-size: 11px; font-weight: 600; }
 #pg-short .badge-loss { background: #2a1a1a; color: #f85149; border: 1px solid #6e1a1a; padding: 2px 7px; border-radius: 4px; font-size: 11px; font-weight: 600; }
 #pg-short .badge-manual { background: #2a2a1a; color: #e3b341; border: 1px solid #6e5a1a; padding: 2px 7px; border-radius: 4px; font-size: 11px; font-weight: 600; }
+#pg-short .badge-timestop { background: #1a1a2e; color: #a78bfa; border: 1px solid #5b3fb5; padding: 2px 7px; border-radius: 4px; font-size: 11px; font-weight: 600; }
 #pg-short .badge-pending { background: #1a1a2a; color: #79c0ff; border: 1px solid #1f6feb; padding: 2px 7px; border-radius: 4px; font-size: 11px; font-weight: 600; }
 #pg-short .prob-badge { padding: 3px 8px; border-radius: 4px; font-size: 12px; font-weight: 700; }
 #pg-short .prob-green { background: #1a3a1a; color: #3fb950; }
@@ -4616,7 +4617,7 @@ function _renderCards() {
   });
 
   const profits = validClosed.filter(t => t.exitReason === 'profit').length;
-  const losses  = validClosed.filter(t => t.exitReason === 'loss').length;
+  const losses  = validClosed.filter(t => t.exitReason === 'loss' || t.exitReason === 'timestop').length;
   const total   = profits + losses;
   const wr      = total > 0 ? Math.round(profits / total * 100) + '%' : '—';
 
@@ -4638,7 +4639,7 @@ function _renderCards() {
   const pnl14sum    = last14d.reduce((s, t) => s + (parseFloat(t.pnl) || 0), 0);
   const inv14sum    = last14d.reduce((s, t) => s + (parseFloat(t.invested) || 0), 0);
   const pnl14wins   = last14d.filter(t => t.exitReason === 'profit').length;
-  const pnl14loss   = last14d.filter(t => t.exitReason === 'loss').length;
+  const pnl14loss   = last14d.filter(t => t.exitReason === 'loss' || t.exitReason === 'timestop').length;
   let pnl14Str = '—', pnl14Tip = '';
   if (last14d.length > 0) {
     const pct = inv14sum > 0 ? (pnl14sum / inv14sum * 100).toFixed(1) : '0.0';
@@ -4967,9 +4968,10 @@ function _renderClosed() {
     const pnlPct = parseFloat(t.pnlPct) || 0;
     const cls    = pnl >= 0 ? 'positive' : 'negative';
     let reasonBadge = '';
-    if (t.exitReason === 'profit')      reasonBadge = '<span class="badge-profit">✓ Profit</span>';
-    else if (t.exitReason === 'loss')   reasonBadge = '<span class="badge-loss">✗ Stop Loss</span>';
-    else                                reasonBadge = '<span class="badge-manual">Manual</span>';
+    if (t.exitReason === 'profit')         reasonBadge = '<span class="badge-profit">✓ Profit</span>';
+    else if (t.exitReason === 'loss')      reasonBadge = '<span class="badge-loss">✗ Stop Loss</span>';
+    else if (t.exitReason === 'timestop') reasonBadge = '<span class="badge-timestop">⏱ Time Stop</span>';
+    else                                   reasonBadge = '<span class="badge-manual">Manual</span>';
     const partNote = (t.partialExitDone===true || t.partialExitDone==='true')
       ? `<br><small style="color:#e3b341">⚡ 50% @ $${_fmtUSD(t.partialExitPrice)} (+$${_fmtUSD(t.partialExitPnl)})</small>` : '';
     const name = (window.COMPANY_NAMES && COMPANY_NAMES[t.ticker]) || '';
