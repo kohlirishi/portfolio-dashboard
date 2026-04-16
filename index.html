@@ -3724,7 +3724,7 @@ async function loadAllRatings(){
       <table>
         <thead><tr>
           <th>Ticker</th><th>Type</th><th>Prob</th>
-          <th>Signal Date</th><th>Reclaim Close</th>
+          <th>Signal Date</th><th>Reclaim Close <span style="font-size:9px;font-weight:400;opacity:.6">(native currency)</span></th>
           <th>Confirm At</th><th>Action</th><th>Why Selected</th>
         </tr></thead>
         <tbody id="pendingBody">
@@ -4688,8 +4688,8 @@ function _renderPending() {
       <td>${_typeBadge(p.type)}</td>
       <td>${_pBadge(p.prob)}</td>
       <td>${_fmtDate(p.signalDate)}<br><small style="color:#8aaccc">${p.runTime ? _fmtTime(p.runTime) : '—'}</small></td>
-      <td>$${_fmtUSD(p.reclaimClose)}</td>
-      <td style="color:#58a6ff;font-size:12px">Next session close above $${_fmtUSD(p.reclaimClose)}</td>
+      <td>$${_fmtUSD(p.reclaimClose)} <span style="font-size:10px;color:#4a6a8a;font-weight:600">${(p.exchange||'').toUpperCase()==='TSX'?'CAD':'USD'}</span></td>
+      <td style="color:#58a6ff;font-size:12px">Next session close above $${_fmtUSD(p.reclaimClose)} <span style="font-size:10px;color:#4a6a8a">${(p.exchange||'').toUpperCase()==='TSX'?'CAD':'USD'}</span></td>
       <td><span class="badge-pending">⏳ Pending</span></td>
       <td class="why-selected-cell">${p.reason ? p.reason.replace(/</g,'&lt;') : '—'}</td>
     </tr>`;
