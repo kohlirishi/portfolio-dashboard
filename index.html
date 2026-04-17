@@ -3866,7 +3866,7 @@ async function loadAllRatings(){
 </div>
 <!-- STATS BAR -->
 <div class="stats-bar">
-  <div class="stat">Screened: <strong id="screenedCount">0</strong> / <strong id="totalCount">515</strong> <span id="tickerSource" style="font-size:11px;color:#8aaccc;margin-left:4px" title="Ticker list source">⏳ loading…</span></div>
+  <div class="stat">Screened: <strong id="screenedCount">0</strong> / <strong id="totalCount">523</strong> <span id="tickerSource" style="font-size:11px;color:#8aaccc;margin-left:4px" title="Ticker list source">Built-in (523 stocks)</span></div>
   <span class="stat-divider">|</span>
   <div class="stat">Table 1 (ATH): <strong id="t1Count">0</strong></div>
   <div class="stat">Table 2 (Swing): <strong id="t2Count">0</strong></div>
@@ -6374,8 +6374,9 @@ function buildRow(item) {
     : '';
 
   const rowStyle = rowHighlightStyle(prob, r.tight, r.rsOk);
+  const safeId   = ticker.replace(/\./g, '_');
 
-  return `<tr data-prob="${Math.round(prob)}"${rowStyle}>
+  return `<tr data-prob="${Math.round(prob)}" id="scr-row-${safeId}"${rowStyle}>
     <td>
       <div class="stock-ticker">${flag} ${ticker}</div>
       <div class="stock-name">${name}</div>
@@ -6389,6 +6390,10 @@ function buildRow(item) {
       <div style="margin-top:6px">${strengthBadge(prob)}</div>
       ${bdTooltip}
       ${capTooltip}
+      <button id="sentBtn-${safeId}" onclick="loadSentiment('${ticker}')"
+        style="margin-top:10px;width:100%;padding:5px 8px;background:#0d1f35;border:1px solid #2d4a6a;color:#8aaccc;border-radius:5px;cursor:pointer;font-size:11px;font-weight:600;transition:all .2s">
+        📊 Sentiment
+      </button>
     </td>
   </tr>`;
 }
@@ -6404,6 +6409,196 @@ function insertSorted(tbody, item) {
     if (parseInt(row.dataset.prob) < newProb) { tbody.insertBefore(tr, row); inserted = true; break; }
   }
   if (!inserted) tbody.appendChild(tr);
+}
+
+// ─── SENTIMENT ANALYSIS ──────────────────────────────────────────────────────
+async function fetchStockTwitsSentiment(ticker) {
+  const sym = ticker.replace('.TO','').replace(/\./g,'-');
+  const url  = `https://api.stocktwits.com/api/2/streams/symbol/${sym}.json`;
+  const res  = await fetch(`https://corsproxy.io/?url=${encodeURIComponent(url)}`,
+                           { signal: AbortSignal.timeout(8000) });
+  const data = await res.json();
+  if (!data.messages) return null;
+  let bull = 0, bear = 0;
+  for (const m of data.messages.slice(0,30)) {
+    const s = m.entities?.sentiment?.basic;
+    if (s === 'Bullish') bull++; else if (s === 'Bearish') bear++;
+  }
+  const total = data.messages.slice(0,30).length;
+  return { bull, bear, neutral: total-bull-bear, total,
+           bullPct: total ? Math.round(bull/total*100) : 0,
+           bearPct: total ? Math.round(bear/total*100) : 0 };
+}
+
+async function fetchRedditSentiment(ticker) {
+  const sym = ticker.replace('.TO','');
+  const url  = `https://www.reddit.com/search.json?q=${encodeURIComponent(sym)}&sort=new&limit=20`;
+  const res  = await fetch(`https://corsproxy.io/?url=${encodeURIComponent(url)}`,
+                           { signal: AbortSignal.timeout(8000) });
+  const data = await res.json();
+  const posts = data.data?.children || [];
+  const POS = ['bull','buy','calls','moon','up','long','growth','strong','beat','surge','breakout','gain','rocket'];
+  const NEG = ['bear','sell','puts','down','short','crash','weak','miss','drop','fall','dump','decline','loss'];
+  let pos = 0, neg = 0;
+  const recent = [];
+  for (const c of posts.slice(0,15)) {
+    const p = c.data;
+    const t = ((p.title||'')+(p.selftext||'')).toLowerCase();
+    const pScore = POS.filter(w=>t.includes(w)).length;
+    const nScore = NEG.filter(w=>t.includes(w)).length;
+    pos += pScore; neg += nScore;
+    if (recent.length < 3) recent.push({ title: p.title, sub: p.subreddit, score: p.score });
+  }
+  return { pos, neg, total: posts.length, recent };
+}
+
+async function fetchYahooNews(ticker) {
+  const url = `https://query1.finance.yahoo.com/v1/finance/search?q=${encodeURIComponent(ticker)}&newsCount=10&quotesCount=0`;
+  const res  = await fetch(`https://corsproxy.io/?url=${encodeURIComponent(url)}`,
+                           { signal: AbortSignal.timeout(8000) });
+  const data = await res.json();
+  const items = (data.news || []).slice(0,8);
+  const POS = ['surge','gain','beat','rise','strong','growth','profit','boost','upgrade','bullish','record','exceeds'];
+  const NEG = ['fall','drop','miss','decline','weak','loss','cut','downgrade','bearish','warn','concern','below'];
+  let posN = 0, negN = 0;
+  const headlines = [];
+  for (const n of items) {
+    const t = (n.title||'').toLowerCase();
+    const isP = POS.some(w=>t.includes(w)), isN = NEG.some(w=>t.includes(w));
+    if (isP && !isN) posN++; else if (isN && !isP) negN++;
+    headlines.push({ title: n.title, pub: n.publisher,
+                     sent: isP&&!isN ? 'pos' : isN&&!isP ? 'neg' : 'neu' });
+  }
+  return { posN, negN, total: items.length, headlines };
+}
+
+function computeSentimentSignal(st, rd, nw) {
+  let score = 0, w = 0;
+  if (st && st.total > 5) { score += (st.bullPct - 50) * 0.4; w += 0.4; }
+  if (rd && (rd.pos + rd.neg) > 0) {
+    const pct = rd.pos / (rd.pos + rd.neg) * 100;
+    score += (pct - 50) * 0.3; w += 0.3;
+  }
+  if (nw && (nw.posN + nw.negN) > 0) {
+    const pct = nw.posN / (nw.posN + nw.negN) * 100;
+    score += (pct - 50) * 0.3; w += 0.3;
+  }
+  const s = w > 0 ? Math.max(-100, Math.min(100, Math.round(score / w * 2))) : 0;
+  if (s >= 15)  return { signal:'BULLISH', score:s, color:'#3fb950', icon:'📈' };
+  if (s <= -15) return { signal:'BEARISH', score:s, color:'#f85149', icon:'📉' };
+  return { signal:'NEUTRAL', score:s, color:'#d4a017', icon:'➡️' };
+}
+
+function renderSentimentHTML(ticker, st, rd, nw, sig) {
+  const col = c => `style="background:#0d1f35;border:1px solid #1e3250;border-radius:6px;padding:10px"`;
+  let h = `<div style="font-size:12px">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+      <span style="color:#c9d1d9;font-weight:600;font-size:13px">📊 Sentiment — ${ticker}</span>
+      <span style="background:${sig.color}22;border:1px solid ${sig.color};color:${sig.color};padding:3px 14px;border-radius:4px;font-weight:700">
+        ${sig.icon} ${sig.signal} &nbsp;(${sig.score > 0?'+':''}${sig.score}/100)
+      </span>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px">`;
+
+  // StockTwits
+  h += `<div ${col()}>
+    <div style="color:#8aaccc;font-weight:600;margin-bottom:6px">🐦 StockTwits</div>`;
+  if (st && st.total > 0) {
+    h += `<div style="display:flex;gap:8px;margin-bottom:5px">
+      <span style="color:#3fb950;font-weight:700">${st.bullPct}% Bull</span>
+      <span style="color:#f85149;font-weight:700">${st.bearPct}% Bear</span>
+    </div>
+    <div style="height:5px;background:#1e3250;border-radius:3px;overflow:hidden">
+      <div style="height:100%;width:${st.bullPct}%;background:#3fb950;border-radius:3px"></div>
+    </div>
+    <div style="color:#4a6a8a;font-size:10px;margin-top:4px">${st.total} msgs · ${st.bull} bull / ${st.bear} bear</div>`;
+  } else h += `<div style="color:#4a6a8a;font-size:11px">No data</div>`;
+  h += `</div>`;
+
+  // Reddit
+  h += `<div ${col()}>
+    <div style="color:#8aaccc;font-weight:600;margin-bottom:6px">🤖 Reddit</div>`;
+  if (rd) {
+    h += `<div style="display:flex;gap:8px;margin-bottom:5px">
+      <span style="color:#3fb950;font-weight:700">+${rd.pos} positive</span>
+      <span style="color:#f85149;font-weight:700">−${rd.neg} negative</span>
+    </div>
+    <div style="color:#4a6a8a;font-size:10px;margin-bottom:5px">${rd.total} posts scanned</div>`;
+    for (const p of rd.recent)
+      h += `<div style="font-size:10px;color:#4a6a8a;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:2px" title="${p.title}">
+        r/${p.sub}: ${p.title.slice(0,48)}${p.title.length>48?'…':''}</div>`;
+  } else h += `<div style="color:#4a6a8a;font-size:11px">No data</div>`;
+  h += `</div>`;
+
+  // News
+  h += `<div ${col()}>
+    <div style="color:#8aaccc;font-weight:600;margin-bottom:6px">📰 Yahoo Finance News</div>`;
+  if (nw && nw.total > 0) {
+    h += `<div style="display:flex;gap:8px;margin-bottom:5px">
+      <span style="color:#3fb950;font-weight:700">↑${nw.posN} positive</span>
+      <span style="color:#f85149;font-weight:700">↓${nw.negN} negative</span>
+    </div>`;
+    for (const n of nw.headlines.slice(0,4)) {
+      const c = n.sent==='pos'?'#3fb950':n.sent==='neg'?'#f85149':'#4a6a8a';
+      const icon = n.sent==='pos'?'↑':n.sent==='neg'?'↓':'·';
+      h += `<div style="font-size:10px;color:${c};white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:3px;line-height:1.4" title="${n.title}">
+        ${icon} ${n.title.slice(0,55)}${n.title.length>55?'…':''}</div>`;
+    }
+  } else h += `<div style="color:#4a6a8a;font-size:11px">No news found</div>`;
+  h += `</div>`;
+
+  h += `</div>
+    <div style="margin-top:8px;font-size:10px;color:#4a6a8a;border-top:1px solid #1e3250;padding-top:6px">
+      Weights: StockTwits 40% · Reddit 30% · News 30% &nbsp;|&nbsp; Keyword-based NLP · Not financial advice
+    </div></div>`;
+  return h;
+}
+
+async function loadSentiment(ticker) {
+  const safeId = ticker.replace(/\./g,'_');
+  const btn = document.getElementById('sentBtn-' + safeId);
+  const existing = document.getElementById('sentRow-' + safeId);
+
+  // Toggle off
+  if (existing) {
+    existing.remove();
+    if (btn) { btn.textContent = '📊 Sentiment'; btn.style.background = '#0d1f35'; }
+    return;
+  }
+
+  if (btn) { btn.textContent = '⏳ Loading…'; btn.disabled = true; }
+
+  const parentRow = document.getElementById('scr-row-' + safeId);
+  if (!parentRow) return;
+
+  const sentRow = document.createElement('tr');
+  sentRow.id = 'sentRow-' + safeId;
+  sentRow.innerHTML = `<td colspan="4" style="padding:14px 18px;background:#060f1e;border-top:1px solid #1e3250">
+    <span style="color:#8aaccc;font-size:12px">⏳ Fetching StockTwits · Reddit · Yahoo Finance News…</span>
+  </td>`;
+  parentRow.insertAdjacentElement('afterend', sentRow);
+
+  try {
+    const [stRes, rdRes, nwRes] = await Promise.allSettled([
+      fetchStockTwitsSentiment(ticker),
+      fetchRedditSentiment(ticker),
+      fetchYahooNews(ticker)
+    ]);
+    const st = stRes.status==='fulfilled' ? stRes.value : null;
+    const rd = rdRes.status==='fulfilled' ? rdRes.value : null;
+    const nw = nwRes.status==='fulfilled' ? nwRes.value : null;
+    const sig = computeSentimentSignal(st, rd, nw);
+
+    sentRow.innerHTML = `<td colspan="4" style="padding:14px 18px;background:#060f1e;border-top:1px solid #1e3250;border-bottom:2px solid ${sig.color}44">
+      ${renderSentimentHTML(ticker, st, rd, nw, sig)}
+    </td>`;
+    if (btn) { btn.textContent = '📊 Hide Sentiment'; btn.disabled = false; btn.style.background = '#0d2a1a'; }
+  } catch(e) {
+    sentRow.innerHTML = `<td colspan="4" style="padding:10px 18px;background:#060f1e;color:#f85149;font-size:12px">
+      Error loading sentiment: ${e.message}
+    </td>`;
+    if (btn) { btn.textContent = '📊 Sentiment'; btn.disabled = false; }
+  }
 }
 
 function updateStats() {
@@ -6482,14 +6677,7 @@ async function startScreen() {
 
   let tickersToRun = TICKERS;
   try {
-    // ── Step 1: load ticker list from MajorList sheet ──────────────────────
-    const srcEl = document.getElementById('tickerSource');
-    if (srcEl) { srcEl.textContent = '⏳ loading…'; srcEl.style.color = '#8aaccc'; }
-    document.getElementById('currentTicker').textContent = 'Loading ticker list from MajorList…';
-    await loadMajorListTickers(); // mutates TICKERS/EXCHANGE_MAP/COMPANY_NAMES in place; shows error+fallback on failure
-    updateStats(); // refresh totalCount display with the loaded list size
-
-    // ── Step 2: check market regime ────────────────────────────────────────
+    // ── Step 1: check market regime ────────────────────────────────────────
     document.getElementById('currentTicker').textContent = 'Checking market regime…';
     await checkRegime();
 
