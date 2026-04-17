@@ -5259,7 +5259,7 @@ function _renderSlAnalyses() {
 
     return `<div id="${cardId}" style="border:1px solid #2a1515;border-left:3px solid #f85149;border-radius:8px;margin-bottom:8px;overflow:hidden">
       <!-- Collapsed header (always visible) — click to expand -->
-      <div onclick="slToggleCard('${cardId}')" style="background:#120a0a;padding:10px 14px;display:flex;align-items:center;justify-content:space-between;cursor:pointer;gap:8px;flex-wrap:wrap"
+      <div onclick="slToggleCard('${cardId}','${esc(s.ticker||'')}','${esc(s.exitDate||'')}')" style="background:#120a0a;padding:10px 14px;display:flex;align-items:center;justify-content:space-between;cursor:pointer;gap:8px;flex-wrap:wrap"
         onmouseover="this.style.background='#1a0d0d'" onmouseout="this.style.background='#120a0a'">
         <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;flex:1;min-width:0">
           <span id="${cardId}_arrow" style="color:#4a6a8a;font-size:12px;flex-shrink:0">▶</span>
@@ -5294,10 +5294,15 @@ function _renderSlAnalyses() {
           ${fixesHtml}
         </div>
 
-        <!-- Headlines -->
+        <!-- News & Market Context (live-fetched on expand) -->
         <div style="padding:0 16px 14px;border-top:1px solid #1e3250;padding-top:12px">
-          <div style="font-size:11px;font-weight:700;color:#8aaccc;text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px">Headlines around trade</div>
-          ${headlinesHtml}
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+            <span style="font-size:11px;font-weight:700;color:#e3b341;text-transform:uppercase;letter-spacing:.05em">📰 News Context — Why did this stop fire?</span>
+            <span style="font-size:10px;color:#4a6a8a">· ±7 days around trade exit date</span>
+          </div>
+          <div id="${cardId}_headlines">
+            <div style="color:#4a6a8a;font-size:12px;padding:4px 0">⏳ Loading news around trade date…</div>
+          </div>
         </div>
       </div>
     </div>`;
@@ -5314,14 +5319,112 @@ function _renderSlAnalyses() {
   if (searchBox && _slSearch) { searchBox.focus(); searchBox.setSelectionRange(9999,9999); }
 }
 
-/** Toggle individual card open/closed */
-function slToggleCard(cardId) {
+/** Toggle individual card open/closed, auto-fetch news on first open */
+function slToggleCard(cardId, ticker, exitDate) {
   const body  = document.getElementById(cardId + '_body');
   const arrow = document.getElementById(cardId + '_arrow');
   if (!body) return;
   const isOpen = body.style.display !== 'none';
   body.style.display  = isOpen ? 'none' : 'block';
   if (arrow) arrow.textContent = isOpen ? '▶' : '▼';
+
+  // Auto-fetch news context on first open
+  if (!isOpen && ticker) {
+    fetchNewsForStopLoss(ticker, exitDate, cardId);
+  }
+}
+
+/** Fetch and render news context for a stop-loss entry */
+async function fetchNewsForStopLoss(ticker, exitDateStr, cardId) {
+  const el = document.getElementById(cardId + '_headlines');
+  if (!el) return;
+  if (el.dataset.loaded === '1') return; // already fetched
+  el.dataset.loaded = '1';
+
+  el.innerHTML = '<div style="color:#4a6a8a;font-size:12px;padding:4px 0">⏳ Fetching news around trade date…</div>';
+
+  try {
+    // Calculate ±7 day window (in Unix seconds) around the exit date
+    const exitMs    = exitDateStr ? new Date(exitDateStr).getTime() : Date.now();
+    const winStart  = exitMs > 0 ? (exitMs / 1000) - 7 * 86400 : (Date.now() / 1000) - 14 * 86400;
+    const winEnd    = exitMs > 0 ? (exitMs / 1000) + 7 * 86400 : (Date.now() / 1000);
+
+    const sym = ticker.replace('.TO','');
+    const url = `https://query1.finance.yahoo.com/v1/finance/search?q=${encodeURIComponent(sym)}&newsCount=20&quotesCount=0`;
+    const res = await fetch(`https://corsproxy.io/?url=${encodeURIComponent(url)}`, { signal: AbortSignal.timeout(12000) });
+    const data = await res.json();
+    const allNews = data.news || [];
+
+    // Primary: filter to ±7 days around exit date
+    let items = allNews.filter(n => n.providerPublishTime >= winStart && n.providerPublishTime <= winEnd);
+
+    // Fallback: if fewer than 3 results, show all available (up to 10)
+    if (items.length < 3) items = allNews.slice(0, 10);
+
+    if (!items.length) {
+      el.innerHTML = `<div style="color:#4a6a8a;font-size:12px;padding:4px 0">No news found for ${ticker} around this period.</div>`;
+      return;
+    }
+
+    const POS = ['surge','gain','beat','rise','strong','growth','profit','boost','upgrade','bullish','record','exceeds','outperform'];
+    const NEG = ['fall','drop','miss','decline','weak','loss','cut','downgrade','bearish','warn','concern','below','underperform','decline'];
+
+    // Count bearish vs bullish to add a summary line
+    let posCount = 0, negCount = 0;
+    const rows = items.map(n => {
+      const t    = (n.title || '').toLowerCase();
+      const isP  = POS.some(w => t.includes(w)) && !NEG.some(w => t.includes(w));
+      const isN  = NEG.some(w => t.includes(w)) && !POS.some(w => t.includes(w));
+      const sent = isP ? 'pos' : isN ? 'neg' : 'neu';
+      if (sent === 'pos') posCount++; else if (sent === 'neg') negCount++;
+      const sentColor  = sent === 'pos' ? '#3fb950' : sent === 'neg' ? '#f85149' : '#4a6a8a';
+      const impactIcon = sent === 'pos' ? '▲' : sent === 'neg' ? '▼' : '●';
+      const impactLbl  = sent === 'pos' ? 'Positive' : sent === 'neg' ? 'Negative Impact' : 'Neutral';
+      const cat        = typeof classifyNewsTitle === 'function' ? classifyNewsTitle(n.title) : null;
+      const catHtml    = cat
+        ? `<span style="background:${cat.color}22;border:1px solid ${cat.color};color:${cat.color};padding:1px 7px;border-radius:4px;font-size:10px;font-weight:600;white-space:nowrap;flex-shrink:0">${cat.tag}</span>`
+        : `<span style="background:#1e3250;color:#4a6a8a;padding:1px 7px;border-radius:4px;font-size:10px;white-space:nowrap;flex-shrink:0">📰 Market</span>`;
+      const age = (typeof _timeAgo === 'function' && n.providerPublishTime) ? _timeAgo(n.providerPublishTime) : '';
+      return `<div style="display:flex;align-items:flex-start;gap:8px;padding:7px 0;border-top:1px solid #111d2c">
+        ${catHtml}
+        <div style="flex:1;min-width:0">
+          <div style="color:#c9d1d9;font-size:12px;line-height:1.45">${n.title || ''}</div>
+          <div style="display:flex;align-items:center;gap:8px;margin-top:3px">
+            <span style="color:#4a6a8a;font-size:10px">${n.publisher || ''} · ${age}</span>
+            <span style="color:${sentColor};font-size:10px;font-weight:600">${impactIcon} ${impactLbl}</span>
+          </div>
+        </div>
+      </div>`;
+    }).join('');
+
+    // Summary bar: was this stop loss news-driven?
+    const majority   = negCount > posCount ? 'negative' : posCount > negCount ? 'positive' : 'mixed';
+    const sumColor   = majority === 'negative' ? '#f85149' : majority === 'positive' ? '#3fb950' : '#d4a017';
+    const sumIcon    = majority === 'negative' ? '📉' : majority === 'positive' ? '📈' : '➡️';
+    const verdictTxt = majority === 'negative'
+      ? `${negCount} bearish headlines found — likely news-driven stop loss`
+      : majority === 'positive'
+        ? `${posCount} bullish headlines — stop may be technical, not news-driven`
+        : `Mixed signals — stop loss may be due to broader market weakness`;
+
+    const summary = `<div style="background:${sumColor}11;border:1px solid ${sumColor}44;border-radius:6px;padding:8px 12px;margin-bottom:8px;display:flex;align-items:center;gap:8px">
+      <span style="font-size:15px">${sumIcon}</span>
+      <div>
+        <div style="color:${sumColor};font-weight:700;font-size:12px">News Verdict</div>
+        <div style="color:#c9d1d9;font-size:11px;margin-top:1px">${verdictTxt}</div>
+      </div>
+    </div>`;
+
+    const dateNote = items[0]?.providerPublishTime >= winStart && items[0]?.providerPublishTime <= winEnd
+      ? `Showing ${items.length} articles within ±7 days of exit date`
+      : `Showing ${items.length} most recent articles (no news found in ±7 day window)`;
+
+    el.innerHTML = `${summary}<div style="font-size:10px;color:#4a6a8a;margin-bottom:6px">${dateNote}</div>${rows}`;
+
+  } catch(e) {
+    el.dataset.loaded = '0'; // allow retry on next open
+    el.innerHTML = `<div style="color:#f85149;font-size:12px;padding:4px 0">Failed to load news — check connection. (${e.message})</div>`;
+  }
 }
 
 /** Search/filter handlers */
