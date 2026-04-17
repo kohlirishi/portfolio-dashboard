@@ -6761,6 +6761,80 @@ async function loadSentiment(ticker) {
       ${renderSentimentHTML(ticker, st, rd, nw, sig)}
     </td>`;
     if (btn) { btn.textContent = '📊 Hide Sentiment'; btn.disabled = false; btn.style.background = '#0d2a1a'; }
+
+    // ── Update probability score & strength badge with sentiment ──────────────
+    // Find which result item this ticker belongs to
+    const allRes = [...(t1Results||[]), ...(t2Results||[])];
+    const item = allRes.find(r => r.ticker === ticker);
+    if (item) {
+      const sentAdj = Math.round(sig.score / 100 * 5);
+      const minProb = item.type === 'ath' ? 40 : 35;
+      const maxProb = item.type === 'ath' ? 96 : 90;
+      const baseProb = item.adjProb != null ? item.adjProb : item.prob; // use already-adjusted if available
+      const adjProb  = Math.max(minProb, Math.min(maxProb, item.prob + sentAdj));
+      item.sentScore = sig.score; item.sentAdj = sentAdj; item.adjProb = adjProb;
+
+      const row = document.getElementById('scr-row-' + safeId);
+      if (row) {
+        const probEl = row.querySelector('.prob-badge');
+        if (probEl) {
+          probEl.className = `prob-badge ${adjProb >= 70 ? 'prob-green' : adjProb >= 50 ? 'prob-yellow' : 'prob-orange'}`;
+          probEl.textContent = adjProb + '%';
+        }
+        const strEl = row.querySelector('.strength-badge');
+        if (strEl) {
+          if (adjProb >= 80)      { strEl.className = 'strength-badge strength-strong';   strEl.textContent = 'Strong'; }
+          else if (adjProb >= 60) { strEl.className = 'strength-badge strength-moderate'; strEl.textContent = 'Moderate'; }
+          else                    { strEl.className = 'strength-badge strength-weak';     strEl.textContent = 'Weak'; }
+        }
+      }
+
+      // Update or add sentiment adjustment + news tags in the prob column
+      const probCol = document.getElementById('probCol-' + safeId);
+      if (probCol) {
+        // Remove old indicators so we don't double-add
+        probCol.querySelectorAll('.sent-adj-tag,.news-tags-div,.sentSpinner').forEach(el => el.remove());
+
+        // News category tags
+        if (nw && nw.headlines && nw.headlines.length) {
+          const seenTags = new Set();
+          const tagEls = [];
+          for (const h of nw.headlines) {
+            const cat = classifyNewsTitle(h.title);
+            if (cat && !seenTags.has(cat.tag)) {
+              seenTags.add(cat.tag);
+              tagEls.push(`<span style="display:inline-block;background:${cat.color}22;border:1px solid ${cat.color};color:${cat.color};padding:1px 7px;border-radius:4px;font-size:10px;font-weight:600;margin:2px 2px 0 0;white-space:nowrap">${cat.tag}</span>`);
+            }
+          }
+          if (tagEls.length) {
+            const tagsDiv = document.createElement('div');
+            tagsDiv.className = 'news-tags-div';
+            tagsDiv.style.cssText = 'margin-top:6px;line-height:1.6';
+            tagsDiv.innerHTML = tagEls.join('');
+            probCol.appendChild(tagsDiv);
+          }
+        }
+
+        // Sentiment adjustment line
+        const ind = document.createElement('div');
+        ind.className = 'sent-adj-tag';
+        if (sentAdj > 0) {
+          ind.style.cssText = 'margin-top:5px;font-size:10px;font-weight:700;color:#3fb950;text-align:center';
+          ind.title = `Sentiment: ${sig.signal} (${sig.score > 0 ? '+' : ''}${sig.score}/100) → +${sentAdj} pts`;
+          ind.textContent = `📈 +${sentAdj} sentiment`;
+        } else if (sentAdj < 0) {
+          ind.style.cssText = 'margin-top:5px;font-size:10px;font-weight:700;color:#f85149;text-align:center';
+          ind.title = `Sentiment: ${sig.signal} (${sig.score}/100) → ${sentAdj} pts`;
+          ind.textContent = `📉 ${sentAdj} sentiment`;
+        } else {
+          ind.style.cssText = 'margin-top:5px;font-size:10px;color:#4a6a8a;text-align:center';
+          ind.textContent = '➡ neutral sentiment';
+        }
+        probCol.appendChild(ind);
+      }
+    }
+    // ─────────────────────────────────────────────────────────────────────────
+
   } catch(e) {
     sentRow.innerHTML = `<td colspan="4" style="padding:10px 18px;background:#060f1e;color:#f85149;font-size:12px">
       Error loading sentiment: ${e.message}
