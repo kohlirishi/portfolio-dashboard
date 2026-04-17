@@ -6421,6 +6421,8 @@ function _timeAgo(ts) {
   return Math.round(mins/1440) + 'd ago';
 }
 
+const SENTIMENT_CUTOFF_DAYS = 14; // only include posts/news from last 14 days
+
 async function fetchStockTwitsSentiment(ticker) {
   const sym = ticker.replace('.TO','').replace(/\./g,'-');
   const url  = `https://api.stocktwits.com/api/2/streams/symbol/${sym}.json`;
@@ -6428,8 +6430,10 @@ async function fetchStockTwitsSentiment(ticker) {
                            { signal: AbortSignal.timeout(8000) });
   const data = await res.json();
   if (!data.messages) return null;
+  const cutoff = Date.now() - SENTIMENT_CUTOFF_DAYS * 86400 * 1000;
+  // Filter to last 14 days only
+  const msgs = data.messages.filter(m => new Date(m.created_at).getTime() >= cutoff).slice(0,30);
   let bull = 0, bear = 0;
-  const msgs = data.messages.slice(0,30);
   for (const m of msgs) {
     const s = m.entities?.sentiment?.basic;
     if (s === 'Bullish') bull++; else if (s === 'Bearish') bear++;
@@ -6451,7 +6455,10 @@ async function fetchRedditSentiment(ticker) {
   const res  = await fetch(`https://corsproxy.io/?url=${encodeURIComponent(url)}`,
                            { signal: AbortSignal.timeout(8000) });
   const data = await res.json();
-  const posts = data.data?.children || [];
+  const allPosts = data.data?.children || [];
+  const cutoff = (Date.now() / 1000) - SENTIMENT_CUTOFF_DAYS * 86400; // unix seconds
+  // Filter to last 14 days only
+  const posts = allPosts.filter(c => (c.data.created_utc || 0) >= cutoff);
   const POS = ['bull','buy','calls','moon','breakout','gain','rocket','strong','beat','surge','growth','long','oversold'];
   const NEG = ['bear','sell','puts','crash','drop','fall','dump','decline','loss','weak','miss','short','overbought'];
   let pos = 0, neg = 0;
@@ -6474,7 +6481,11 @@ async function fetchYahooNews(ticker) {
   const res  = await fetch(`https://corsproxy.io/?url=${encodeURIComponent(url)}`,
                            { signal: AbortSignal.timeout(8000) });
   const data = await res.json();
-  const items = (data.news || []).slice(0,8);
+  const cutoffSec = (Date.now() / 1000) - SENTIMENT_CUTOFF_DAYS * 86400; // unix seconds
+  // Filter to last 14 days only
+  const items = (data.news || [])
+    .filter(n => !n.providerPublishTime || n.providerPublishTime >= cutoffSec)
+    .slice(0, 8);
   const POS = ['surge','gain','beat','rise','strong','growth','profit','boost','upgrade','bullish','record','exceeds','outperform'];
   const NEG = ['fall','drop','miss','decline','weak','loss','cut','downgrade','bearish','warn','concern','below','underperform'];
   let posN = 0, negN = 0;
