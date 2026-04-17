@@ -5336,85 +5336,155 @@ function slToggleCard(cardId, ticker, entryDate, exitDate) {
   }
 }
 
-/** Fetch news published between entry and exit date, render with categories + recommendations */
+/** Robust date parser — handles "14th April 2026", "2026-04-14", "Apr 14, 2026" etc. */
+function _parseTradeDate(str) {
+  if (!str) return 0;
+  // Strip ordinal suffixes: "14th" → "14", "1st" → "1", "2nd" → "2", "3rd" → "3"
+  let s = String(str).replace(/(\d+)(st|nd|rd|th)\b/gi, '$1').trim();
+  let d = new Date(s);
+  if (!isNaN(d.getTime())) return d.getTime();
+  // Try rearranging "14 April 2026" → "April 14, 2026"
+  const m = s.match(/^(\d{1,2})\s+([A-Za-z]+)\s+(\d{4})$/);
+  if (m) { d = new Date(`${m[2]} ${m[1]}, ${m[3]}`); if (!isNaN(d.getTime())) return d.getTime(); }
+  return 0;
+}
+
+/** Fetch news from Yahoo Finance + Reddit + StockTwits during the holding period */
 async function fetchNewsForStopLoss(ticker, entryDateStr, exitDateStr, cardId) {
   const el     = document.getElementById(cardId + '_headlines');
   const recsEl = document.getElementById(cardId + '_newsRecs');
   if (!el) return;
-  if (el.dataset.loaded === '1') return; // already fetched
+  if (el.dataset.loaded === '1') return;
   el.dataset.loaded = '1';
 
-  el.innerHTML = '<div style="color:#4a6a8a;font-size:12px;padding:4px 0">⏳ Fetching news between entry and exit dates…</div>';
+  el.innerHTML = '<div style="color:#4a6a8a;font-size:12px;padding:4px 0">⏳ Fetching from Yahoo Finance · Reddit · StockTwits…</div>';
 
   try {
-    // Window = entry date → exit date (exact holding period)
-    const entryMs  = entryDateStr ? new Date(entryDateStr).getTime() : 0;
-    const exitMs   = exitDateStr  ? new Date(exitDateStr).getTime()  : Date.now();
-    // Fallback: if dates can't parse, use last 14 days
+    // ── Date window ──────────────────────────────────────────────────────────
+    const entryMs  = _parseTradeDate(entryDateStr);
+    const exitMs   = _parseTradeDate(exitDateStr);
+    // Cap winEnd to now (don't show future news)
     const winStart = entryMs > 0 ? entryMs / 1000 : (Date.now() / 1000) - 14 * 86400;
-    const winEnd   = exitMs  > 0 ? exitMs  / 1000 : Date.now() / 1000;
+    const winEnd   = exitMs  > 0 ? Math.min(exitMs / 1000, Date.now() / 1000) : Date.now() / 1000;
 
-    const sym = ticker.replace('.TO','');
-    const url = `https://query1.finance.yahoo.com/v1/finance/search?q=${encodeURIComponent(sym)}&newsCount=25&quotesCount=0`;
-    const res = await fetch(`https://corsproxy.io/?url=${encodeURIComponent(url)}`, { signal: AbortSignal.timeout(12000) });
-    const data = await res.json();
-    const allNews = data.news || [];
+    const entryLabel = entryMs > 0 ? new Date(entryMs).toLocaleDateString('en-US',{month:'short',day:'numeric'}) : '—';
+    const exitLabel  = exitMs  > 0 ? new Date(exitMs ).toLocaleDateString('en-US',{month:'short',day:'numeric'}) : '—';
 
-    // Filter strictly to entry→exit window
-    const items = allNews.filter(n =>
-      n.providerPublishTime && n.providerPublishTime >= winStart && n.providerPublishTime <= winEnd
-    );
+    const sym  = ticker.replace('.TO','').replace(/\./g,'-');
+    const POS  = ['surge','gain','beat','rise','strong','growth','profit','boost','upgrade','bullish','record','exceeds','outperform'];
+    const NEG  = ['fall','drop','miss','decline','weak','loss','cut','downgrade','bearish','warn','concern','below','underperform'];
 
-    const entryLabel = entryDateStr ? new Date(entryMs).toLocaleDateString('en-US',{month:'short',day:'numeric'}) : '—';
-    const exitLabel  = exitDateStr  ? new Date(exitMs ).toLocaleDateString('en-US',{month:'short',day:'numeric'}) : '—';
+    // ── Fetch all 3 sources in parallel ─────────────────────────────────────
+    const [yhRes, rdRes, stRes] = await Promise.allSettled([
+      // Yahoo Finance
+      (async () => {
+        const url = `https://query1.finance.yahoo.com/v1/finance/search?q=${encodeURIComponent(ticker)}&newsCount=25&quotesCount=0`;
+        const r   = await fetch(`https://corsproxy.io/?url=${encodeURIComponent(url)}`, { signal: AbortSignal.timeout(10000) });
+        const d   = await r.json();
+        return (d.news || [])
+          .filter(n => n.providerPublishTime && n.providerPublishTime >= winStart && n.providerPublishTime <= winEnd)
+          .map(n => {
+            const t   = (n.title||'').toLowerCase();
+            const isP = POS.some(w=>t.includes(w)) && !NEG.some(w=>t.includes(w));
+            const isN = NEG.some(w=>t.includes(w)) && !POS.some(w=>t.includes(w));
+            return { source:'yahoo', ts: n.providerPublishTime, title: n.title||'', pub: n.publisher||'',
+                     sent: isP?'pos':isN?'neg':'neu', cat: classifyNewsTitle(n.title) };
+          });
+      })(),
+      // Reddit — finance subs, filter by created_utc to holding window
+      (async () => {
+        const subs = 'wallstreetbets+stocks+investing+StockMarket+options+SecurityAnalysis';
+        const url  = `https://www.reddit.com/r/${subs}/search.json?q=${encodeURIComponent(sym)}&sort=new&t=month&restrict_sr=true&limit=25`;
+        const r    = await fetch(`https://corsproxy.io/?url=${encodeURIComponent(url)}`, { signal: AbortSignal.timeout(10000) });
+        const d    = await r.json();
+        return ((d.data||{}).children||[])
+          .filter(c => c.data.created_utc >= winStart && c.data.created_utc <= winEnd)
+          .map(c => {
+            const t   = ((c.data.title||'')+(c.data.selftext||'')).toLowerCase();
+            const isP = POS.some(w=>t.includes(w)) && !NEG.some(w=>t.includes(w));
+            const isN = NEG.some(w=>t.includes(w)) && !POS.some(w=>t.includes(w));
+            return { source:'reddit', ts: c.data.created_utc, title: c.data.title||'',
+                     pub: 'r/'+c.data.subreddit, sent: isP?'pos':isN?'neg':'neu', cat: null };
+          });
+      })(),
+      // StockTwits — latest stream, filter by created_at to holding window
+      (async () => {
+        const url = `https://api.stocktwits.com/api/2/streams/symbol/${sym}.json`;
+        const r   = await fetch(`https://corsproxy.io/?url=${encodeURIComponent(url)}`, { signal: AbortSignal.timeout(10000) });
+        const d   = await r.json();
+        return ((d.messages)||[])
+          .filter(m => {
+            const ts = new Date(m.created_at).getTime() / 1000;
+            return ts >= winStart && ts <= winEnd;
+          })
+          .map(m => {
+            const ts   = new Date(m.created_at).getTime() / 1000;
+            const bull = m.entities?.sentiment?.basic === 'Bullish';
+            const bear = m.entities?.sentiment?.basic === 'Bearish';
+            return { source:'stocktwits', ts, title: m.body||'', pub:'StockTwits',
+                     sent: bull?'pos':bear?'neg':'neu', cat: null };
+          });
+      })()
+    ]);
 
-    if (!items.length) {
-      el.innerHTML = `<div style="background:#0d1f35;border:1px solid #1e3250;border-radius:6px;padding:10px 12px;font-size:12px;color:#4a6a8a">
-        No news articles found for <strong style="color:#c9d1d9">${ticker}</strong> between <strong style="color:#c9d1d9">${entryLabel}</strong> and <strong style="color:#c9d1d9">${exitLabel}</strong>.
-        <div style="margin-top:4px;font-size:11px">Yahoo Finance may not have historical articles for this date range. Try checking manually on financial news sites.</div>
-      </div>`;
-      return;
-    }
+    // ── Merge, sort oldest→newest ────────────────────────────────────────────
+    const all = [];
+    if (yhRes.status==='fulfilled') all.push(...yhRes.value);
+    if (rdRes.status==='fulfilled') all.push(...rdRes.value);
+    if (stRes.status==='fulfilled') all.push(...stRes.value);
+    all.sort((a,b) => a.ts - b.ts); // chronological — see the story unfold
 
-    const POS = ['surge','gain','beat','rise','strong','growth','profit','boost','upgrade','bullish','record','exceeds','outperform'];
-    const NEG = ['fall','drop','miss','decline','weak','loss','cut','downgrade','bearish','warn','concern','below','underperform'];
-
+    // Source counts for verdict
     let posCount = 0, negCount = 0;
-    const rows = items.map(n => {
-      const t   = (n.title || '').toLowerCase();
-      const isP = POS.some(w => t.includes(w)) && !NEG.some(w => t.includes(w));
-      const isN = NEG.some(w => t.includes(w)) && !POS.some(w => t.includes(w));
-      const sent = isP ? 'pos' : isN ? 'neg' : 'neu';
-      if (sent === 'pos') posCount++; else if (sent === 'neg') negCount++;
-      const sentColor  = sent === 'pos' ? '#3fb950' : sent === 'neg' ? '#f85149' : '#4a6a8a';
-      const impactIcon = sent === 'pos' ? '▲' : sent === 'neg' ? '▼' : '●';
-      const impactLbl  = sent === 'pos' ? 'Positive' : sent === 'neg' ? 'Negative' : 'Neutral';
-      const cat     = typeof classifyNewsTitle === 'function' ? classifyNewsTitle(n.title) : null;
-      const catHtml = cat
-        ? `<span style="background:${cat.color}22;border:1px solid ${cat.color};color:${cat.color};padding:1px 7px;border-radius:4px;font-size:10px;font-weight:600;white-space:nowrap;flex-shrink:0">${cat.tag}</span>`
-        : `<span style="background:#1e3250;color:#4a6a8a;padding:1px 7px;border-radius:4px;font-size:10px;white-space:nowrap;flex-shrink:0">📰 Market</span>`;
-      const age = (typeof _timeAgo === 'function' && n.providerPublishTime) ? _timeAgo(n.providerPublishTime) : '';
+    all.forEach(n => { if(n.sent==='pos') posCount++; else if(n.sent==='neg') negCount++; });
+
+    // ── Source badges ────────────────────────────────────────────────────────
+    const srcIcon = { yahoo:'📰', reddit:'🤖', stocktwits:'🐦' };
+    const srcColor= { yahoo:'#8aaccc', reddit:'#ff6314', stocktwits:'#1da1f2' };
+
+    const rows = all.map(n => {
+      const sentColor  = n.sent==='pos'?'#3fb950':n.sent==='neg'?'#f85149':'#4a6a8a';
+      const impactIcon = n.sent==='pos'?'▲':n.sent==='neg'?'▼':'●';
+      const impactLbl  = n.sent==='pos'?'Positive':n.sent==='neg'?'Negative':'Neutral';
+      const catHtml    = n.cat
+        ? `<span style="background:${n.cat.color}22;border:1px solid ${n.cat.color};color:${n.cat.color};padding:1px 7px;border-radius:4px;font-size:10px;font-weight:600;white-space:nowrap;flex-shrink:0">${n.cat.tag}</span>`
+        : `<span style="color:${srcColor[n.source]||'#4a6a8a'};font-size:12px;flex-shrink:0">${srcIcon[n.source]||'📰'}</span>`;
+      const age = typeof _timeAgo==='function' ? _timeAgo(n.ts) : '';
       return `<div style="display:flex;align-items:flex-start;gap:8px;padding:7px 0;border-top:1px solid #111d2c">
         ${catHtml}
         <div style="flex:1;min-width:0">
-          <div style="color:#c9d1d9;font-size:12px;line-height:1.45">${n.title || ''}</div>
+          <div style="color:#c9d1d9;font-size:12px;line-height:1.45">${n.title}</div>
           <div style="display:flex;align-items:center;gap:8px;margin-top:3px">
-            <span style="color:#4a6a8a;font-size:10px">${n.publisher || ''} · ${age}</span>
+            <span style="color:#4a6a8a;font-size:10px">${n.pub} · ${age}</span>
             <span style="color:${sentColor};font-size:10px;font-weight:600">${impactIcon} ${impactLbl}</span>
           </div>
         </div>
       </div>`;
     }).join('');
 
-    // News verdict
+    // ── Verdict ──────────────────────────────────────────────────────────────
     const majority   = negCount > posCount ? 'negative' : posCount > negCount ? 'positive' : 'mixed';
-    const sumColor   = majority === 'negative' ? '#f85149' : majority === 'positive' ? '#3fb950' : '#d4a017';
-    const sumIcon    = majority === 'negative' ? '📉' : majority === 'positive' ? '📈' : '➡️';
-    const verdictTxt = majority === 'negative'
-      ? `${negCount} bearish article${negCount!==1?'s':''} during hold — stop loss likely news-driven`
-      : majority === 'positive'
-        ? `${posCount} bullish article${posCount!==1?'s':''} during hold — stop was likely technical, not news-driven`
-        : `Mixed coverage during hold — broader market conditions may have caused the stop`;
+    const sumColor   = majority==='negative'?'#f85149':majority==='positive'?'#3fb950':'#d4a017';
+    const sumIcon    = majority==='negative'?'📉':majority==='positive'?'📈':'➡️';
+    const verdictTxt = majority==='negative'
+      ? `${negCount} bearish signal${negCount!==1?'s':''} during hold — stop loss likely news/sentiment-driven`
+      : majority==='positive'
+        ? `${posCount} bullish signal${posCount!==1?'s':''} during hold — stop was likely technical, not news-driven`
+        : `Mixed signals during hold — broader market conditions may have caused the stop`;
+
+    const srcSummary = [
+      yhRes.status==='fulfilled' && yhRes.value.length ? `${yhRes.value.length} Yahoo News` : null,
+      rdRes.status==='fulfilled' && rdRes.value.length ? `${rdRes.value.length} Reddit posts` : null,
+      stRes.status==='fulfilled' && stRes.value.length ? `${stRes.value.length} StockTwits msgs` : null,
+    ].filter(Boolean).join(' · ') || 'No data found in holding period';
+
+    if (!all.length) {
+      el.innerHTML = `<div style="background:#0d1f35;border:1px solid #1e3250;border-radius:6px;padding:10px 12px;font-size:12px;color:#4a6a8a">
+        No articles, posts or messages found for <strong style="color:#c9d1d9">${ticker}</strong> between <strong style="color:#c9d1d9">${entryLabel} → ${exitLabel}</strong> across Yahoo Finance, Reddit &amp; StockTwits.
+        <div style="margin-top:4px;font-size:11px">APIs may not retain historical data for this date range. This is expected for trades older than ~30 days.</div>
+      </div>`;
+      return;
+    }
 
     const summary = `<div style="background:${sumColor}11;border:1px solid ${sumColor}44;border-radius:6px;padding:8px 12px;margin-bottom:8px;display:flex;align-items:center;gap:10px">
       <span style="font-size:18px;flex-shrink:0">${sumIcon}</span>
@@ -5425,39 +5495,36 @@ async function fetchNewsForStopLoss(ticker, entryDateStr, exitDateStr, cardId) {
     </div>`;
 
     el.innerHTML = `${summary}
-      <div style="font-size:10px;color:#4a6a8a;margin-bottom:6px">📅 ${items.length} article${items.length!==1?'s':''} published between ${entryLabel} → ${exitLabel}</div>
+      <div style="font-size:10px;color:#4a6a8a;margin-bottom:6px">📅 ${entryLabel} → ${exitLabel} &nbsp;·&nbsp; ${srcSummary} &nbsp;·&nbsp; sorted oldest→newest</div>
       ${rows}`;
 
-    // ── Inject news-based recommendations into the Fixes section ─────────────
+    // ── News-based recommendations ────────────────────────────────────────────
     if (recsEl && !recsEl.dataset.loaded) {
       recsEl.dataset.loaded = '1';
       const newsRecs = [];
-
       if (majority === 'negative') {
-        newsRecs.push('News check before entry: ' + negCount + ' bearish article' + (negCount!==1?'s were':' was') + ' published during this hold. Add a news sentiment check before entering — if Yahoo/StockTwits sentiment is bearish at entry, skip or reduce size.');
-        newsRecs.push('Consider a shorter trailing stop (1% instead of 2%) when negative news is present in the days around entry.');
+        newsRecs.push(`${negCount} bearish signal${negCount!==1?'s were':' was'} detected during this hold (Yahoo + Reddit + StockTwits). Add a news/sentiment check before entering — if overall sentiment is bearish at entry time, skip or reduce position size.`);
+        newsRecs.push('Consider a tighter trailing stop (1% instead of 2%) when entering against a bearish news backdrop.');
       }
       if (majority === 'positive') {
-        newsRecs.push('This stop was likely technical — news during the hold was mostly bullish (' + posCount + ' positive article' + (posCount!==1?'s':'')+  '). Review the price action: was the stop too tight relative to normal volatility?');
+        newsRecs.push(`News was mostly bullish (${posCount} positive signal${posCount!==1?'s':''}) during the hold. This stop was likely technical. Review the price action chart — was the 2% trailing stop too tight relative to the stock\'s normal daily range?`);
       }
       if (majority === 'mixed') {
-        newsRecs.push('Mixed news during hold (' + posCount + ' positive, ' + negCount + ' negative). The stop may have been caused by a single negative catalyst. Consider adding a "pause on major negative news" rule.');
+        newsRecs.push(`Mixed signals during hold (${posCount} positive, ${negCount} negative). A single negative catalyst may have caused the stop. Consider adding a rule: pause trading a stock for 48h after any strong negative news event.`);
       }
-
-      // Category-specific recs
-      const hasEarnings = items.some(n => /earnings|quarterly results|eps/i.test(n.title || ''));
-      const hasMacro    = items.some(n => /fed|rate|inflation|gdp|payroll/i.test(n.title || ''));
-      const hasDowngrade= items.some(n => /downgrade|underweight|reduce|sell rating/i.test(n.title || ''));
-
-      if (hasEarnings) newsRecs.push('Earnings event detected during hold. Consider avoiding entries within 5 trading days of an earnings report — earnings volatility often triggers stops even on bullish setups.');
-      if (hasMacro)    newsRecs.push('Macro event (Fed/inflation/GDP) detected during hold. Macro-driven selloffs can override technical setups. Check the macro calendar before entering new positions.');
-      if (hasDowngrade) newsRecs.push('Analyst downgrade found during hold period. Downgrades often have multi-day price impact. Consider filtering out stocks with recent downgrades in the screener.');
+      const allTitles = all.map(n=>n.title);
+      if (allTitles.some(t => /earnings|quarterly results|eps/i.test(t)))
+        newsRecs.push('Earnings event detected during hold. Avoid entries within 5 trading days of an earnings report — earnings volatility frequently triggers trailing stops even on bullish technical setups.');
+      if (allTitles.some(t => /fed|rate hike|interest rate|inflation|gdp|payroll/i.test(t)))
+        newsRecs.push('Macro event (Fed/inflation/GDP) detected during hold. Macro-driven selloffs override technical setups. Check the macro calendar before entering new positions.');
+      if (allTitles.some(t => /downgrade|underweight|reduce|sell rating/i.test(t)))
+        newsRecs.push('Analyst downgrade found during hold. Downgrades often cause multi-day price pressure. Consider filtering out stocks with recent downgrades before entering.');
 
       if (newsRecs.length) {
         recsEl.innerHTML = `
           <div style="margin-top:10px;padding-top:10px;border-top:1px solid #1a2a1a">
             <div style="font-size:10px;font-weight:700;color:#e3b341;text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px">📰 News-Based Recommendations</div>
-            ${newsRecs.map(r => `
+            ${newsRecs.map(r=>`
               <div style="display:flex;gap:10px;align-items:flex-start;padding:6px 0;border-top:1px solid #111d2c">
                 <span style="color:#e3b341;font-size:13px;flex-shrink:0;margin-top:1px">→</span>
                 <span style="font-size:12px;color:#c9d1d9;line-height:1.5">${r}</span>
@@ -5468,7 +5535,7 @@ async function fetchNewsForStopLoss(ticker, entryDateStr, exitDateStr, cardId) {
 
   } catch(e) {
     el.dataset.loaded = '0';
-    el.innerHTML = `<div style="color:#f85149;font-size:12px;padding:4px 0">Failed to load news — check connection. (${e.message})</div>`;
+    el.innerHTML = `<div style="color:#f85149;font-size:12px;padding:4px 0">Failed to load — check connection. (${e.message})</div>`;
   }
 }
 
