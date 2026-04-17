@@ -3887,20 +3887,6 @@ async function loadAllRatings(){
   <div class="stat">Last run: <strong id="lastRunStat">never</strong></div>
 </div>
 
-<!-- KEY NEWS PANEL -->
-<div id="keyNewsPanel" style="margin:12px 20px 0;background:#0d1f35;border:1px solid #1e3250;border-radius:8px;overflow:hidden">
-  <div style="padding:10px 16px;background:#152032;border-bottom:1px solid #1e3250;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:6px">
-    <span style="font-weight:700;font-size:13px;color:#e2ecf7">📰 Key Market Developments</span>
-    <div style="display:flex;align-items:center;gap:10px">
-      <span id="newsLastUpdated" style="font-size:11px;color:#4a6a8a"></span>
-      <button onclick="loadMarketNews(true)" style="background:transparent;border:1px solid #1e3250;color:#8aaccc;padding:2px 10px;border-radius:4px;font-size:11px;cursor:pointer;font-family:inherit">↻ Refresh</button>
-    </div>
-  </div>
-  <div id="keyNewsContent" style="padding:12px 16px;font-size:12px;color:#8aaccc">
-    ⏳ Loading today's top market developments…
-  </div>
-</div>
-
 <!-- PROGRESS -->
 <div class="progress-wrap" id="progressWrap">
   <div class="progress-row">
@@ -4228,9 +4214,6 @@ function showScreener() {
   document.getElementById('btn-more-nav')?.classList.add('active');
   window.scrollTo(0,0);
   if(typeof initScreener === 'function') initScreener();
-  // Auto-load market news when screener page opens (refresh max once every 10 min)
-  const _newsAge = Date.now() - (_lastNewsLoad || 0);
-  if (_newsAge > 600000) loadMarketNews(false);
 }
 
 function showLongTerm() {
@@ -6402,7 +6385,7 @@ function buildRow(item) {
     </td>
     <td><ul class="metrics">${metricHTML}</ul></td>
     <td>${qualityHTML}</td>
-    <td>
+    <td id="probCol-${safeId}">
       ${probBadge(prob)}
       <div style="margin-top:6px">${strengthBadge(prob)}</div>
       ${bdTooltip}
@@ -6604,82 +6587,17 @@ function renderSentimentHTML(ticker, st, rd, nw, sig) {
   return h;
 }
 
-// ─── KEY MARKET NEWS ─────────────────────────────────────────────────────────
-let _lastNewsLoad = 0;
-
-async function loadMarketNews(forceRefresh) {
-  const el = document.getElementById('keyNewsContent');
-  const upd = document.getElementById('newsLastUpdated');
-  if (!el) return;
-  if (!forceRefresh && _lastNewsLoad && Date.now() - _lastNewsLoad < 600000) return; // cached
-
-  el.innerHTML = '⏳ Fetching latest market developments…';
-  if (upd) upd.textContent = '';
-
-  // Fetch multiple Yahoo Finance queries in parallel to cover different news types
-  const queries = [
-    'stock market today earnings beat',
-    'block deal bulk deal order win contract win',
-    'fed rates inflation macro economy',
-    'analyst upgrade downgrade target price',
-    'acquisition merger takeover'
-  ];
-
-  const cutoffSec = (Date.now() / 1000) - SENTIMENT_CUTOFF_DAYS * 86400;
-  const allNews = [];
-
-  const fetches = queries.map(async q => {
-    try {
-      const url = `https://query1.finance.yahoo.com/v1/finance/search?q=${encodeURIComponent(q)}&newsCount=6&quotesCount=0`;
-      const res = await fetch(`https://corsproxy.io/?url=${encodeURIComponent(url)}`, { signal: AbortSignal.timeout(8000) });
-      const data = await res.json();
-      return (data.news || []).filter(n => !n.providerPublishTime || n.providerPublishTime >= cutoffSec);
-    } catch(e) { return []; }
-  });
-
-  const results = await Promise.allSettled(fetches);
-  for (const r of results) if (r.status === 'fulfilled') allNews.push(...r.value);
-
-  // Deduplicate by uuid
-  const seen = new Set();
-  const unique = allNews.filter(n => { if (seen.has(n.uuid)) return false; seen.add(n.uuid); return true; });
-
-  // Sort newest first
-  unique.sort((a, b) => (b.providerPublishTime || 0) - (a.providerPublishTime || 0));
-  const top = unique.slice(0, 10);
-
-  if (!top.length) {
-    el.innerHTML = '<span style="color:#4a6a8a;font-size:12px">No recent market news found. Try refreshing.</span>';
-    return;
-  }
-
-  const classifyNews = title => {
-    const t = (title || '').toLowerCase();
-    if (/block deal|bulk deal/.test(t))                                          return { tag: '💰 Block Deal',  color: '#d4a017' };
-    if (/order win|contract win|bags order|wins contract|wins order|secures deal/.test(t)) return { tag: '📦 Order Win',   color: '#3fb950' };
-    if (/earnings|results|revenue|profit|quarterly|eps|q[1-4]\s|beat estimate/.test(t))   return { tag: '📊 Earnings',    color: '#58a6ff' };
-    if (/acquisition|merger|takeover|acquire|buyout/.test(t))                    return { tag: '🤝 M&A',          color: '#a371f7' };
-    if (/fed|rate hike|interest rate|inflation|gdp|jobs report|payroll/.test(t)) return { tag: '🌐 Macro',        color: '#8aaccc' };
-    if (/upgrade|downgrade|target|analyst|price target|outperform|overweight/.test(t))    return { tag: '🎯 Analyst',     color: '#e3b341' };
-    if (/ipo|listing|debut/.test(t))                                              return { tag: '🚀 IPO',          color: '#a371f7' };
-    return { tag: '📰 Market', color: '#4a6a8a' };
-  };
-
-  el.innerHTML = top.map((n, i) => {
-    const { tag, color } = classifyNews(n.title);
-    const age = n.providerPublishTime ? _timeAgo(n.providerPublishTime) : '';
-    const border = i < top.length - 1 ? 'border-bottom:1px solid #0d2040;' : '';
-    return `<div style="display:flex;align-items:flex-start;gap:10px;padding:8px 0;${border}">
-      <span style="background:${color}22;border:1px solid ${color};color:${color};padding:1px 8px;border-radius:4px;font-size:10px;font-weight:600;white-space:nowrap;flex-shrink:0;margin-top:1px">${tag}</span>
-      <div style="flex:1;min-width:0">
-        <div style="color:#c9d1d9;line-height:1.45;font-size:12px">${n.title || ''}</div>
-        <div style="color:#4a6a8a;font-size:10px;margin-top:2px">${n.publisher || ''} · ${age}</div>
-      </div>
-    </div>`;
-  }).join('');
-
-  _lastNewsLoad = Date.now();
-  if (upd) upd.textContent = 'Updated just now';
+// ─── NEWS CLASSIFIER (shared) ─────────────────────────────────────────────────
+function classifyNewsTitle(title) {
+  const t = (title || '').toLowerCase();
+  if (/block deal|bulk deal/.test(t))                                                    return { tag: '💰 Block Deal', color: '#d4a017' };
+  if (/order win|contract win|bags order|wins contract|wins order|secures (deal|contract|order)/.test(t)) return { tag: '📦 Order Win',  color: '#3fb950' };
+  if (/earnings|quarterly results|revenue|eps beat|profit (rise|jump|surge)|beat estimate/.test(t))       return { tag: '📊 Earnings',   color: '#58a6ff' };
+  if (/acquisition|merger|takeover|acquire|buyout|combines with/.test(t))               return { tag: '🤝 M&A',         color: '#a371f7' };
+  if (/fed|rate hike|interest rate|inflation|gdp|jobs report|payroll|central bank/.test(t)) return { tag: '🌐 Macro',     color: '#8aaccc' };
+  if (/upgrade|downgrade|price target|outperform|overweight|underweight|initiated/.test(t)) return { tag: '🎯 Analyst',   color: '#e3b341' };
+  if (/ipo|listing|debut|goes public/.test(t))                                           return { tag: '🚀 IPO',         color: '#a371f7' };
+  return null; // no special tag — generic market news
 }
 
 // ─── AUTO SENTIMENT FETCH AFTER SCREENER ─────────────────────────────────────
@@ -6689,23 +6607,41 @@ async function autoFetchAllSentiments() {
 
   const tickerEl = document.getElementById('currentTicker');
 
-  // Process in batches of 3 to avoid hammering APIs
-  for (let i = 0; i < allResults.length; i += 3) {
-    const batch = allResults.slice(i, i + 3);
-    if (tickerEl) tickerEl.textContent = `Sentiment ${i+1}–${Math.min(i+3, allResults.length)} / ${allResults.length}…`;
-    await Promise.allSettled(batch.map(item => autoFetchSentimentForItem(item)));
-    if (i + 3 < allResults.length) await new Promise(r => setTimeout(r, 1500));
+  // Show spinner on each result row so user knows it's loading
+  for (const item of allResults) {
+    const safeId = item.ticker.replace(/\./g, '_');
+    const probCol = document.getElementById('probCol-' + safeId);
+    if (probCol) {
+      const spinner = document.createElement('div');
+      spinner.id = 'sentSpinner-' + safeId;
+      spinner.style.cssText = 'margin-top:6px;font-size:10px;color:#4a6a8a;text-align:center';
+      spinner.textContent = '⏳ loading news…';
+      probCol.appendChild(spinner);
+    }
   }
-  if (tickerEl) tickerEl.textContent = 'Done ✓ (scores include sentiment)';
+
+  // Process ONE stock at a time with 2s gap to avoid rate-limiting
+  for (let i = 0; i < allResults.length; i++) {
+    const item = allResults[i];
+    if (tickerEl) tickerEl.textContent = `News/sentiment ${i+1} / ${allResults.length}: ${item.ticker}`;
+    await autoFetchSentimentForItem(item);
+    if (i + 1 < allResults.length) await new Promise(r => setTimeout(r, 2000));
+  }
+  if (tickerEl) tickerEl.textContent = `Done ✓ — scores updated with news sentiment`;
 }
 
 async function autoFetchSentimentForItem(item) {
   const { ticker, type } = item;
   const safeId = ticker.replace(/\./g, '_');
-  const row = document.getElementById('scr-row-' + safeId);
+  const row     = document.getElementById('scr-row-' + safeId);
+  const probCol = document.getElementById('probCol-' + safeId);
   if (!row) return;
 
+  // Remove spinner
+  const spinner = document.getElementById('sentSpinner-' + safeId);
+
   try {
+    // Fetch all 3 sources; use longer timeout to handle post-screener API load
     const [stRes, rdRes, nwRes] = await Promise.allSettled([
       fetchStockTwitsSentiment(ticker),
       fetchRedditSentiment(ticker),
@@ -6716,7 +6652,7 @@ async function autoFetchSentimentForItem(item) {
     const nw = nwRes.status === 'fulfilled' ? nwRes.value : null;
     const sig = computeSentimentSignal(st, rd, nw);
 
-    // Sentiment adjustment: ±5 max, capped within setup type bounds
+    // ── Score adjustment ±5 ───────────────────────────────────────────────────
     const sentAdj = Math.round(sig.score / 100 * 5);
     const minProb = type === 'ath' ? 40 : 35;
     const maxProb = type === 'ath' ? 96 : 90;
@@ -6726,7 +6662,7 @@ async function autoFetchSentimentForItem(item) {
     item.sentAdj   = sentAdj;
     item.adjProb   = adjProb;
 
-    // Update probability badge
+    // Update probability badge (look inside the row, not document-wide)
     const probEl = row.querySelector('.prob-badge');
     if (probEl) {
       probEl.className = `prob-badge ${adjProb >= 70 ? 'prob-green' : adjProb >= 50 ? 'prob-yellow' : 'prob-orange'}`;
@@ -6736,48 +6672,54 @@ async function autoFetchSentimentForItem(item) {
     // Update strength badge
     const strEl = row.querySelector('.strength-badge');
     if (strEl) {
-      if (adjProb >= 80) { strEl.className = 'strength-badge strength-strong'; strEl.textContent = 'Strong'; }
+      if (adjProb >= 80)      { strEl.className = 'strength-badge strength-strong';   strEl.textContent = 'Strong'; }
       else if (adjProb >= 60) { strEl.className = 'strength-badge strength-moderate'; strEl.textContent = 'Moderate'; }
-      else { strEl.className = 'strength-badge strength-weak'; strEl.textContent = 'Weak'; }
+      else                    { strEl.className = 'strength-badge strength-weak';     strEl.textContent = 'Weak'; }
     }
 
-    // Add sentiment adjustment indicator below strength badge
-    if (!row.querySelector('.sent-adj-tag')) {
-      const btn = document.getElementById('sentBtn-' + safeId);
-      if (btn && sentAdj !== 0) {
-        const ind = document.createElement('div');
-        ind.className = 'sent-adj-tag';
-        ind.style.cssText = `margin-top:4px;font-size:10px;font-weight:600;text-align:center;color:${sentAdj > 0 ? '#3fb950' : '#f85149'}`;
-        ind.title = `Sentiment score: ${sig.signal} (${sig.score > 0 ? '+' : ''}${sig.score}/100)`;
-        ind.textContent = (sentAdj > 0 ? '📈 +' : '📉 ') + sentAdj + ' news adj';
-        btn.insertAdjacentElement('beforebegin', ind);
-      } else if (btn && sentAdj === 0) {
-        const ind = document.createElement('div');
-        ind.className = 'sent-adj-tag';
-        ind.style.cssText = 'margin-top:4px;font-size:10px;color:#4a6a8a;text-align:center';
-        ind.textContent = '➡ neutral news';
-        btn.insertAdjacentElement('beforebegin', ind);
-      }
-    }
-
-    // Tag row if news-driven (block deal, order win, earnings etc.)
-    if (nw && nw.headlines && nw.headlines.length) {
-      const newsDrivenKeywords = /block deal|bulk deal|order win|contract win|bags order|secures deal|earnings beat|revenue beat|profit jump|record revenue/i;
-      const isNewsDriven = nw.headlines.some(h => newsDrivenKeywords.test(h.title || ''));
-      if (isNewsDriven && !row.querySelector('.news-driven-tag')) {
-        const tickerDiv = row.querySelector('.stock-ticker');
-        if (tickerDiv) {
-          const tag = document.createElement('span');
-          tag.className = 'news-driven-tag';
-          tag.style.cssText = 'display:inline-block;background:#2a1f00;border:1px solid #e3b341;color:#e3b341;padding:1px 6px;border-radius:4px;font-size:10px;font-weight:600;margin-left:6px;vertical-align:middle';
-          tag.textContent = '📰 News';
-          tag.title = 'News-driven move detected (block deal / order win / earnings)';
-          tickerDiv.appendChild(tag);
+    // ── News category tags ────────────────────────────────────────────────────
+    // Collect unique category tags from Yahoo news headlines
+    if (probCol && nw && nw.headlines && nw.headlines.length) {
+      const seenTags = new Set();
+      const tagEls = [];
+      for (const h of nw.headlines) {
+        const cat = classifyNewsTitle(h.title);
+        if (cat && !seenTags.has(cat.tag)) {
+          seenTags.add(cat.tag);
+          tagEls.push(`<span style="display:inline-block;background:${cat.color}22;border:1px solid ${cat.color};color:${cat.color};padding:1px 7px;border-radius:4px;font-size:10px;font-weight:600;margin:2px 2px 0 0;white-space:nowrap">${cat.tag}</span>`);
         }
       }
+      if (tagEls.length) {
+        const tagsDiv = document.createElement('div');
+        tagsDiv.style.cssText = 'margin-top:6px;line-height:1.6';
+        tagsDiv.innerHTML = tagEls.join('');
+        if (spinner) spinner.replaceWith(tagsDiv);
+        else probCol.appendChild(tagsDiv);
+      } else if (spinner) spinner.remove();
+    } else if (spinner) spinner.remove();
+
+    // ── Sentiment adjustment indicator ────────────────────────────────────────
+    if (probCol && !probCol.querySelector('.sent-adj-tag')) {
+      const ind = document.createElement('div');
+      ind.className = 'sent-adj-tag';
+      if (sentAdj > 0) {
+        ind.style.cssText = 'margin-top:5px;font-size:10px;font-weight:700;color:#3fb950;text-align:center';
+        ind.title = `Sentiment: ${sig.signal} (${sig.score > 0 ? '+' : ''}${sig.score}/100) → +${sentAdj} pts`;
+        ind.textContent = `📈 +${sentAdj} sentiment`;
+      } else if (sentAdj < 0) {
+        ind.style.cssText = 'margin-top:5px;font-size:10px;font-weight:700;color:#f85149;text-align:center';
+        ind.title = `Sentiment: ${sig.signal} (${sig.score}/100) → ${sentAdj} pts`;
+        ind.textContent = `📉 ${sentAdj} sentiment`;
+      } else {
+        ind.style.cssText = 'margin-top:5px;font-size:10px;color:#4a6a8a;text-align:center';
+        ind.textContent = '➡ neutral sentiment';
+      }
+      probCol.appendChild(ind);
     }
 
-  } catch(e) { /* silent — don't break screener if sentiment fails */ }
+  } catch(e) {
+    if (spinner) spinner.remove();
+  }
 }
 
 async function loadSentiment(ticker) {
@@ -6949,9 +6891,9 @@ async function startScreen() {
     document.getElementById('progressPct').textContent = '100%';
     document.getElementById('currentTicker').textContent = stopRequested ? 'Stopped' : 'Done ✓';
 
-    // Auto-fetch sentiment for all results and adjust scores (runs in background after screener)
+    // Auto-fetch sentiment + news for all results (3s delay lets screener API calls settle first)
     if (!stopRequested && (t1Results.length + t2Results.length) > 0) {
-      setTimeout(() => autoFetchAllSentiments(), 500);
+      setTimeout(() => autoFetchAllSentiments(), 3000);
     }
     const nowStr = new Date().toLocaleString('en-US', { timeZone: 'America/New_York', month:'short', day:'numeric', hour:'2-digit', minute:'2-digit' });
     document.getElementById('lastRunStat').textContent = nowStr + ' EST';
