@@ -3715,6 +3715,7 @@ async function loadAllRatings(){
       </div>
     </div>
     <div id="pending-body" class="sec-body minimized">
+    <div id="pendingRegimeBanner" style="display:none;background:#2a1a00;border:1px solid #d4a01766;border-radius:6px;padding:8px 14px;margin-bottom:10px;font-size:12px;color:#d4a017;align-items:center;gap:8px;flex-wrap:wrap"></div>
     <div class="table-wrap">
       <table>
         <thead><tr>
@@ -4381,6 +4382,9 @@ async function _fetchOneBreakout(elId, symbol, label) {
     const above    = price > ema21;
     const pctDiff  = ((price - ema21) / ema21 * 100);
     const pctStr   = (above ? '+' : '') + pctDiff.toFixed(2) + '% vs 21 EMA';
+    // Save state globally so live positions + learning notes can read it
+    const stateKey = elId === 'breakout-spx' ? 'US' : elId === 'breakout-tsx' ? 'CA' : null;
+    if (stateKey) { window._mktEmaState = window._mktEmaState || {}; window._mktEmaState[stateKey] = { above, price, ema21, pctDiff }; }
     const color    = above ? '#3fb950' : '#f85149';
     const bgColor  = above ? '#071a0f' : '#1a0707';
     const icon     = above ? '📈' : '📉';
@@ -4423,6 +4427,9 @@ async function fetchBreakoutConditions() {
     _fetchOneBreakout('breakout-ndx', '^NDX',    'NASDAQ 100'),
     _fetchOneBreakout('breakout-tsx', '^GSPTSE', 'TSX Composite'),
   ]);
+  // Re-render pending + live so weak-mkt badges/banners update
+  if (typeof _renderPending === 'function') _renderPending();
+  if (typeof _renderLive    === 'function') _renderLive();
 }
 
 let _breakoutRefreshTimer = null;
@@ -4732,16 +4739,48 @@ function _renderPending() {
     return;
   }
 
+  // Check market regime for pending entries
+  const _pMktUS = window._mktEmaState?.US;
+  const _pMktCA = window._mktEmaState?.CA;
+  const _pWeakUS = _pMktUS && !_pMktUS.above && _pMktUS.pctDiff < -1; // >1% below 21 EMA
+  const _pWeakCA = _pMktCA && !_pMktCA.above && _pMktCA.pctDiff < -1;
+
+  // Show regime warning banner above table if any relevant market is weak
+  const pendingBannerEl = document.getElementById('pendingRegimeBanner');
+  if (pendingBannerEl) {
+    if (_pWeakUS && _pWeakCA) {
+      pendingBannerEl.style.display = 'flex';
+      pendingBannerEl.innerHTML = `⚠ <strong>Weak Market:</strong> SPY is ${Math.abs(_pMktUS.pctDiff).toFixed(2)}% below 21 EMA &amp; TSX is ${Math.abs(_pMktCA.pctDiff).toFixed(2)}% below 21 EMA — entries are flagged. Confirm manually only if you have a strong conviction.`;
+    } else if (_pWeakUS) {
+      pendingBannerEl.style.display = 'flex';
+      pendingBannerEl.innerHTML = `⚠ <strong>Weak Market:</strong> SPY is ${Math.abs(_pMktUS.pctDiff).toFixed(2)}% below 21 EMA — US entries are flagged. Confirm manually only if you have strong conviction.`;
+    } else if (_pWeakCA) {
+      pendingBannerEl.style.display = 'flex';
+      pendingBannerEl.innerHTML = `⚠ <strong>Weak Market:</strong> TSX is ${Math.abs(_pMktCA.pctDiff).toFixed(2)}% below 21 EMA — CA entries are flagged. Confirm manually only if you have strong conviction.`;
+    } else {
+      pendingBannerEl.style.display = 'none';
+    }
+  }
+
   tbody.innerHTML = pends.map(p => {
-    const name = (window.COMPANY_NAMES && COMPANY_NAMES[p.ticker]) || '';
-    return `<tr>
+    const name     = (window.COMPANY_NAMES && COMPANY_NAMES[p.ticker]) || '';
+    const isTSX    = (p.exchange||'').toUpperCase() === 'TSX';
+    const isWeak   = isTSX ? _pWeakCA : _pWeakUS;
+    const mktState = isTSX ? _pMktCA : _pMktUS;
+    const blockedBadge = isWeak
+      ? `<span style="background:#2a1a00;color:#d4a017;border:1px solid #d4a01766;padding:1px 6px;border-radius:4px;font-size:10px;font-weight:700;margin-left:6px">⚠ Weak Mkt — Hold</span>`
+      : '';
+    const confirmCell = isWeak
+      ? `<span style="color:#d4a017;font-size:12px">⚠ Weak market — skip or hold entry. ${isTSX?'TSX':'SPY'} is ${Math.abs(mktState?.pctDiff||0).toFixed(2)}% below 21 EMA</span>`
+      : `<span style="color:#58a6ff;font-size:12px">Next session close above $${_fmtUSD(p.reclaimClose)} <span style="font-size:10px;color:#4a6a8a">${isTSX?'CAD':'USD'}</span></span>`;
+    return `<tr style="${isWeak ? 'opacity:0.75;background:#1a1200;' : ''}">
       <td><div class="ticker-cell">${_flagIcon(p.exchange||'US')} ${p.ticker}</div><div class="ticker-name">${name}</div></td>
       <td>${_typeBadge(p.type)}</td>
       <td>${_pBadge(p.prob)}</td>
       <td>${_fmtDate(p.signalDate)}<br><small style="color:#8aaccc">${p.runTime ? _fmtTime(p.runTime) : '—'}</small></td>
-      <td>$${_fmtUSD(p.reclaimClose)} <span style="font-size:10px;color:#4a6a8a;font-weight:600">${(p.exchange||'').toUpperCase()==='TSX'?'CAD':'USD'}</span></td>
-      <td style="color:#58a6ff;font-size:12px">Next session close above $${_fmtUSD(p.reclaimClose)} <span style="font-size:10px;color:#4a6a8a">${(p.exchange||'').toUpperCase()==='TSX'?'CAD':'USD'}</span></td>
-      <td><span class="badge-pending">⏳ Pending</span></td>
+      <td>$${_fmtUSD(p.reclaimClose)} <span style="font-size:10px;color:#4a6a8a;font-weight:600">${isTSX?'CAD':'USD'}</span></td>
+      <td>${confirmCell}</td>
+      <td>${isWeak ? `<span style="background:#2a1a00;color:#d4a017;border:1px solid #d4a01766;padding:2px 7px;border-radius:4px;font-size:11px;font-weight:600">⚠ Weak Mkt</span>` : '<span class="badge-pending">⏳ Pending</span>'}</td>
       <td class="why-selected-cell">${p.reason ? p.reason.replace(/</g,'&lt;') : '—'}</td>
     </tr>`;
   }).join('');
@@ -4940,8 +4979,14 @@ function _renderLive() {
         ? `<span style="color:#58a6ff">25%→$${pt2.toFixed(2)} (+5%)</span> / <span style="color:#3fb950">$${ft.toFixed(2)} (+8%)</span>`
         : `<span style="color:#e3b341">50%→$${pt.toFixed(2)} (+3%)</span> / <span style="color:#58a6ff">25%→$${pt2.toFixed(2)}</span> / <span style="color:#3fb950">$${ft.toFixed(2)}</span>`;
 
+    const mktState   = window._mktEmaState?.[(t.exchange||'US') === 'TSX' ? 'CA' : 'US'];
+    const isWeakMkt  = mktState && !mktState.above;
+    const weakBadge  = isWeakMkt
+      ? `<div style="display:inline-block;font-size:9px;font-weight:700;color:#d4a017;background:#2a1a00;border:1px solid #d4a01766;border-radius:3px;padding:1px 5px;margin-top:3px">⚠ Weak Mkt</div>`
+      : '';
+
     return `<tr>
-      <td><div class="ticker-cell">${_flagIcon(t.exchange||'US')} ${t.ticker}</div><div class="ticker-name">${name}</div>${partTag}</td>
+      <td><div class="ticker-cell">${_flagIcon(t.exchange||'US')} ${t.ticker}</div><div class="ticker-name">${name}</div>${partTag}${weakBadge}</td>
       <td>${_typeBadge(t.type)}</td>
       <td>${_pBadge(t.prob)}</td>
       <td style="white-space:nowrap"><div>${_fmtDate(t.buyDate)}</div><small style="color:#8aaccc">${_fmtTime(t.buyTime)}</small></td>
@@ -5368,6 +5413,9 @@ function _renderSlAnalyses() {
         <!-- Stats row -->
         <div style="padding:12px 16px;display:flex;gap:8px;flex-wrap:wrap">${statsHtml}</div>
 
+        <!-- Market regime context at time of stop (live-fetched on expand) -->
+        <div id="${cardId}_mktContext"></div>
+
         <!-- Why it happened -->
         <div style="padding:0 16px 12px;border-top:1px solid #1e3250;padding-top:12px">
           <div style="font-size:11px;font-weight:700;color:#e3b341;text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px">Why it happened</div>
@@ -5443,8 +5491,9 @@ function _parseTradeDate(str) {
 
 /** Fetch news from Yahoo Finance + Reddit + StockTwits during the holding period */
 async function fetchNewsForStopLoss(ticker, entryDateStr, exitDateStr, cardId) {
-  const el     = document.getElementById(cardId + '_headlines');
-  const recsEl = document.getElementById(cardId + '_newsRecs');
+  const el      = document.getElementById(cardId + '_headlines');
+  const recsEl  = document.getElementById(cardId + '_newsRecs');
+  const mktEl   = document.getElementById(cardId + '_mktContext');
   if (!el) return;
   if (el.dataset.loaded === '1') return;
   el.dataset.loaded = '1';
@@ -5466,8 +5515,8 @@ async function fetchNewsForStopLoss(ticker, entryDateStr, exitDateStr, cardId) {
     const POS  = ['surge','gain','beat','rise','strong','growth','profit','boost','upgrade','bullish','record','exceeds','outperform'];
     const NEG  = ['fall','drop','miss','decline','weak','loss','cut','downgrade','bearish','warn','concern','below','underperform'];
 
-    // ── Fetch all 3 sources in parallel ─────────────────────────────────────
-    const [yhRes, rdRes, stRes] = await Promise.allSettled([
+    // ── Fetch all sources in parallel (news + SPY regime) ───────────────────
+    const [yhRes, rdRes, stRes, spyRes] = await Promise.allSettled([
       // Yahoo Finance
       (async () => {
         const url = `https://query1.finance.yahoo.com/v1/finance/search?q=${encodeURIComponent(ticker)}&newsCount=25&quotesCount=0`;
@@ -5516,6 +5565,31 @@ async function fetchNewsForStopLoss(ticker, entryDateStr, exitDateStr, cardId) {
             return { source:'stocktwits', ts, title: m.body||'', pub:'StockTwits',
                      sent: bull?'pos':bear?'neg':'neu', cat: null };
           });
+      })(),
+      // SPY regime check — was market below 21 EMA at exit date?
+      (async () => {
+        const benchmark = ticker.endsWith('.TO') ? 'XIU.TO' : 'SPY';
+        const url = `https://query1.finance.yahoo.com/v8/finance/chart/${benchmark}?interval=1d&range=90d`;
+        const r   = await fetch(`https://corsproxy.io/?url=${encodeURIComponent(url)}`, { signal: AbortSignal.timeout(10000) });
+        const d   = await r.json();
+        const res = d?.chart?.result?.[0];
+        if (!res) return null;
+        const timestamps = res.timestamp || [];
+        const closes     = (res.indicators.quote[0].close || []).filter(c => c != null && !isNaN(c));
+        if (closes.length < 22) return null;
+        // Find index closest to exit date
+        let exitIdx = 0;
+        let minDiff = Infinity;
+        timestamps.forEach((ts, i) => {
+          const diff = Math.abs(ts - winEnd);
+          if (diff < minDiff) { minDiff = diff; exitIdx = i; }
+        });
+        const closesUpToExit = closes.slice(0, exitIdx + 1);
+        if (closesUpToExit.length < 22) return null;
+        const ema21AtExit  = _calcEMA(closesUpToExit, 21);
+        const priceAtExit  = closesUpToExit[closesUpToExit.length - 1];
+        const pct          = ((priceAtExit - ema21AtExit) / ema21AtExit * 100);
+        return { benchmark, above: priceAtExit > ema21AtExit, price: priceAtExit, ema21: ema21AtExit, pct };
       })()
     ]);
 
@@ -5525,6 +5599,55 @@ async function fetchNewsForStopLoss(ticker, entryDateStr, exitDateStr, cardId) {
     if (rdRes.status==='fulfilled') all.push(...rdRes.value);
     if (stRes.status==='fulfilled') all.push(...stRes.value);
     all.sort((a,b) => a.ts - b.ts); // chronological — see the story unfold
+
+    // ── Market regime context at exit date ───────────────────────────────────
+    const spyData = spyRes?.status === 'fulfilled' ? spyRes.value : null;
+    if (mktEl && spyData) {
+      const mktAbove   = spyData.above;
+      const mktColor   = mktAbove ? '#3fb950' : '#d4a017';
+      const mktBg      = mktAbove ? '#071a0f' : '#2a1a00';
+      const mktIcon    = mktAbove ? '✓' : '⚠';
+      const mktVerdict = mktAbove
+        ? `Strong market — ${spyData.benchmark} was ${Math.abs(spyData.pct).toFixed(2)}% ABOVE 21 EMA at exit`
+        : `Weak market — ${spyData.benchmark} was ${Math.abs(spyData.pct).toFixed(2)}% BELOW 21 EMA at exit`;
+      const mktDetail  = mktAbove
+        ? 'The overall market had positive momentum when this stop fired. This was likely a stock-specific or technical stop, not a broad market selloff.'
+        : 'The overall market was in a weak phase when this stop fired. Broad market weakness often drags down even good setups — this may not have been your stock\'s fault.';
+      mktEl.innerHTML = `
+        <div style="margin:0 16px 0;border-top:1px solid #1e3250;padding-top:12px;padding-bottom:12px">
+          <div style="background:${mktBg};border:1px solid ${mktColor}44;border-left:3px solid ${mktColor};border-radius:6px;padding:10px 14px;display:flex;align-items:flex-start;gap:12px">
+            <div style="font-size:20px;flex-shrink:0;margin-top:1px">${mktAbove ? '📈' : '📉'}</div>
+            <div style="flex:1">
+              <div style="font-size:11px;font-weight:700;color:${mktColor};text-transform:uppercase;letter-spacing:.05em;margin-bottom:4px">
+                ${mktIcon} Market Regime At Time Of Stop
+              </div>
+              <div style="font-size:13px;font-weight:600;color:${mktColor};margin-bottom:4px">${mktVerdict}</div>
+              <div style="font-size:12px;color:#c9d1d9;line-height:1.5;margin-bottom:6px">${mktDetail}</div>
+              <div style="font-size:11px;color:#4a6a8a">
+                ${spyData.benchmark}: $${spyData.price.toFixed(2)} &nbsp;|&nbsp;
+                21 EMA: $${spyData.ema21.toFixed(2)} &nbsp;|&nbsp;
+                Diff: <span style="color:${mktColor};font-weight:600">${spyData.pct >= 0 ? '+' : ''}${spyData.pct.toFixed(2)}%</span>
+              </div>
+            </div>
+          </div>
+        </div>`;
+      // Inject market-regime recommendation into Recommended Fixes
+      if (recsEl && !recsEl.dataset.mktRec) {
+        recsEl.dataset.mktRec = '1';
+        if (!mktAbove) {
+          const recDiv = document.createElement('div');
+          recDiv.innerHTML = `
+            <div style="margin-top:6px;padding-top:6px;border-top:1px solid #111d2c">
+              <div style="font-size:10px;font-weight:700;color:#d4a017;text-transform:uppercase;letter-spacing:.05em;margin-bottom:4px">📉 Weak Market Rule</div>
+              <div style="display:flex;gap:10px;align-items:flex-start;padding:6px 0">
+                <span style="color:#d4a017;font-size:13px;flex-shrink:0;margin-top:1px">→</span>
+                <span style="font-size:12px;color:#c9d1d9;line-height:1.5">${spyData.benchmark} was ${Math.abs(spyData.pct).toFixed(2)}% below its 21 EMA when this stop fired. In future, avoid entering new positions when the market benchmark is below 21 EMA — the rising tide wasn't there to help this trade.</span>
+              </div>
+            </div>`;
+          recsEl.appendChild(recDiv);
+        }
+      }
+    }
 
     // Source counts for verdict
     let posCount = 0, negCount = 0;
