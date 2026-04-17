@@ -6412,6 +6412,15 @@ function insertSorted(tbody, item) {
 }
 
 // ─── SENTIMENT ANALYSIS ──────────────────────────────────────────────────────
+function _timeAgo(ts) {
+  // ts = unix seconds or ISO string
+  const d = typeof ts === 'number' ? new Date(ts * 1000) : new Date(ts);
+  const mins = Math.round((Date.now() - d) / 60000);
+  if (mins < 60)   return mins + 'm ago';
+  if (mins < 1440) return Math.round(mins/60) + 'h ago';
+  return Math.round(mins/1440) + 'd ago';
+}
+
 async function fetchStockTwitsSentiment(ticker) {
   const sym = ticker.replace('.TO','').replace(/\./g,'-');
   const url  = `https://api.stocktwits.com/api/2/streams/symbol/${sym}.json`;
@@ -6420,36 +6429,44 @@ async function fetchStockTwitsSentiment(ticker) {
   const data = await res.json();
   if (!data.messages) return null;
   let bull = 0, bear = 0;
-  for (const m of data.messages.slice(0,30)) {
+  const msgs = data.messages.slice(0,30);
+  for (const m of msgs) {
     const s = m.entities?.sentiment?.basic;
     if (s === 'Bullish') bull++; else if (s === 'Bearish') bear++;
   }
-  const total = data.messages.slice(0,30).length;
+  const total = msgs.length;
+  const oldest = msgs.length ? _timeAgo(msgs[msgs.length-1].created_at) : '';
+  const newest = msgs.length ? _timeAgo(msgs[0].created_at) : '';
   return { bull, bear, neutral: total-bull-bear, total,
            bullPct: total ? Math.round(bull/total*100) : 0,
-           bearPct: total ? Math.round(bear/total*100) : 0 };
+           bearPct: total ? Math.round(bear/total*100) : 0,
+           newest, oldest };
 }
 
 async function fetchRedditSentiment(ticker) {
-  const sym = ticker.replace('.TO','');
-  const url  = `https://www.reddit.com/search.json?q=${encodeURIComponent(sym)}&sort=new&limit=20`;
+  const sym  = ticker.replace('.TO','');
+  // Search only finance subreddits to avoid spam
+  const subs = 'wallstreetbets+stocks+investing+StockMarket+options+SecurityAnalysis';
+  const url  = `https://www.reddit.com/r/${subs}/search.json?q=${encodeURIComponent(sym)}&sort=new&limit=25&restrict_sr=true`;
   const res  = await fetch(`https://corsproxy.io/?url=${encodeURIComponent(url)}`,
                            { signal: AbortSignal.timeout(8000) });
   const data = await res.json();
   const posts = data.data?.children || [];
-  const POS = ['bull','buy','calls','moon','up','long','growth','strong','beat','surge','breakout','gain','rocket'];
-  const NEG = ['bear','sell','puts','down','short','crash','weak','miss','drop','fall','dump','decline','loss'];
+  const POS = ['bull','buy','calls','moon','breakout','gain','rocket','strong','beat','surge','growth','long','oversold'];
+  const NEG = ['bear','sell','puts','crash','drop','fall','dump','decline','loss','weak','miss','short','overbought'];
   let pos = 0, neg = 0;
   const recent = [];
-  for (const c of posts.slice(0,15)) {
+  for (const c of posts.slice(0,20)) {
     const p = c.data;
     const t = ((p.title||'')+(p.selftext||'')).toLowerCase();
-    const pScore = POS.filter(w=>t.includes(w)).length;
-    const nScore = NEG.filter(w=>t.includes(w)).length;
-    pos += pScore; neg += nScore;
-    if (recent.length < 3) recent.push({ title: p.title, sub: p.subreddit, score: p.score });
+    pos += POS.filter(w=>t.includes(w)).length;
+    neg += NEG.filter(w=>t.includes(w)).length;
+    if (recent.length < 3)
+      recent.push({ title: p.title, sub: p.subreddit, age: _timeAgo(p.created_utc) });
   }
-  return { pos, neg, total: posts.length, recent };
+  const newest = posts.length ? _timeAgo(posts[0].data.created_utc) : '';
+  const oldest = posts.length ? _timeAgo(posts[Math.min(posts.length-1,19)].data.created_utc) : '';
+  return { pos, neg, total: posts.length, recent, newest, oldest };
 }
 
 async function fetchYahooNews(ticker) {
@@ -6458,18 +6475,21 @@ async function fetchYahooNews(ticker) {
                            { signal: AbortSignal.timeout(8000) });
   const data = await res.json();
   const items = (data.news || []).slice(0,8);
-  const POS = ['surge','gain','beat','rise','strong','growth','profit','boost','upgrade','bullish','record','exceeds'];
-  const NEG = ['fall','drop','miss','decline','weak','loss','cut','downgrade','bearish','warn','concern','below'];
+  const POS = ['surge','gain','beat','rise','strong','growth','profit','boost','upgrade','bullish','record','exceeds','outperform'];
+  const NEG = ['fall','drop','miss','decline','weak','loss','cut','downgrade','bearish','warn','concern','below','underperform'];
   let posN = 0, negN = 0;
   const headlines = [];
   for (const n of items) {
     const t = (n.title||'').toLowerCase();
     const isP = POS.some(w=>t.includes(w)), isN = NEG.some(w=>t.includes(w));
     if (isP && !isN) posN++; else if (isN && !isP) negN++;
-    headlines.push({ title: n.title, pub: n.publisher,
+    const age = n.providerPublishTime ? _timeAgo(n.providerPublishTime) : '';
+    headlines.push({ title: n.title, pub: n.publisher, age,
                      sent: isP&&!isN ? 'pos' : isN&&!isP ? 'neg' : 'neu' });
   }
-  return { posN, negN, total: items.length, headlines };
+  const newest = headlines.length ? headlines[0].age : '';
+  const oldest = headlines.length ? headlines[headlines.length-1].age : '';
+  return { posN, negN, total: items.length, headlines, newest, oldest };
 }
 
 function computeSentimentSignal(st, rd, nw) {
@@ -6511,38 +6531,40 @@ function renderSentimentHTML(ticker, st, rd, nw, sig) {
     <div style="height:5px;background:#1e3250;border-radius:3px;overflow:hidden">
       <div style="height:100%;width:${st.bullPct}%;background:#3fb950;border-radius:3px"></div>
     </div>
-    <div style="color:#4a6a8a;font-size:10px;margin-top:4px">${st.total} msgs · ${st.bull} bull / ${st.bear} bear</div>`;
+    <div style="color:#4a6a8a;font-size:10px;margin-top:4px">${st.total} msgs · ${st.bull} bull / ${st.bear} bear</div>
+    <div style="color:#4a6a8a;font-size:10px;margin-top:2px">🕐 ${st.newest} – ${st.oldest}</div>`;
   } else h += `<div style="color:#4a6a8a;font-size:11px">No data</div>`;
   h += `</div>`;
 
   // Reddit
   h += `<div ${col()}>
-    <div style="color:#8aaccc;font-weight:600;margin-bottom:6px">🤖 Reddit</div>`;
-  if (rd) {
+    <div style="color:#8aaccc;font-weight:600;margin-bottom:6px">🤖 Reddit <span style="font-weight:400;font-size:10px;color:#4a6a8a">(finance subs only)</span></div>`;
+  if (rd && rd.total > 0) {
     h += `<div style="display:flex;gap:8px;margin-bottom:5px">
       <span style="color:#3fb950;font-weight:700">+${rd.pos} positive</span>
       <span style="color:#f85149;font-weight:700">−${rd.neg} negative</span>
     </div>
-    <div style="color:#4a6a8a;font-size:10px;margin-bottom:5px">${rd.total} posts scanned</div>`;
+    <div style="color:#4a6a8a;font-size:10px;margin-bottom:4px">${rd.total} posts · 🕐 ${rd.newest} – ${rd.oldest}</div>`;
     for (const p of rd.recent)
       h += `<div style="font-size:10px;color:#4a6a8a;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:2px" title="${p.title}">
-        r/${p.sub}: ${p.title.slice(0,48)}${p.title.length>48?'…':''}</div>`;
-  } else h += `<div style="color:#4a6a8a;font-size:11px">No data</div>`;
+        <span style="color:#3a5a7a">r/${p.sub}</span> <span style="color:#2a4a5a">${p.age}</span> · ${p.title.slice(0,40)}${p.title.length>40?'…':''}</div>`;
+  } else h += `<div style="color:#4a6a8a;font-size:11px">No posts in finance subreddits</div>`;
   h += `</div>`;
 
   // News
   h += `<div ${col()}>
     <div style="color:#8aaccc;font-weight:600;margin-bottom:6px">📰 Yahoo Finance News</div>`;
   if (nw && nw.total > 0) {
-    h += `<div style="display:flex;gap:8px;margin-bottom:5px">
+    h += `<div style="display:flex;gap:8px;margin-bottom:4px">
       <span style="color:#3fb950;font-weight:700">↑${nw.posN} positive</span>
       <span style="color:#f85149;font-weight:700">↓${nw.negN} negative</span>
-    </div>`;
+    </div>
+    <div style="color:#4a6a8a;font-size:10px;margin-bottom:4px">🕐 ${nw.newest} – ${nw.oldest}</div>`;
     for (const n of nw.headlines.slice(0,4)) {
       const c = n.sent==='pos'?'#3fb950':n.sent==='neg'?'#f85149':'#4a6a8a';
       const icon = n.sent==='pos'?'↑':n.sent==='neg'?'↓':'·';
       h += `<div style="font-size:10px;color:${c};white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:3px;line-height:1.4" title="${n.title}">
-        ${icon} ${n.title.slice(0,55)}${n.title.length>55?'…':''}</div>`;
+        ${icon} <span style="color:#2a4a5a">${n.age}</span> ${n.title.slice(0,50)}${n.title.length>50?'…':''}</div>`;
     }
   } else h += `<div style="color:#4a6a8a;font-size:11px">No news found</div>`;
   h += `</div>`;
