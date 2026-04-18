@@ -3642,6 +3642,8 @@ async function loadAllRatings(){
   <div class="cap-stat">Total Capital: <strong>$10,000 USD</strong></div>
   <div class="cap-stat">Deployed: <strong id="deployedCap">$0.00</strong></div>
   <div class="cap-stat">Available: <strong id="availCap">$10,000.00</strong></div>
+  <div class="cap-stat">Started: <strong id="portfolioStartDate" style="color:#8aaccc">—</strong></div>
+  <div class="cap-stat">CAGR: <strong id="portfolioCagr" class="neutral">—</strong></div>
   <div class="cap-stat">Realized P&amp;L: <strong id="totalPnl" class="neutral">$0.00</strong></div>
   <div class="cap-stat">Portfolio Return: <strong id="portfolioRetPct" class="neutral">0.00%</strong></div>
   <div class="cap-stat">Unrealized P&amp;L: <strong id="unrealPnl" class="neutral">$0.00</strong></div>
@@ -3715,6 +3717,7 @@ async function loadAllRatings(){
       </div>
     </div>
     <div id="pending-body" class="sec-body minimized">
+    <div id="pendingFilterBar"></div>
     <div id="pendingRegimeBanner" style="display:none;background:#2a1a00;border:1px solid #d4a01766;border-radius:6px;padding:8px 14px;margin-bottom:10px;font-size:12px;color:#d4a017;align-items:center;gap:8px;flex-wrap:wrap"></div>
     <div class="table-wrap">
       <table>
@@ -3749,6 +3752,7 @@ async function loadAllRatings(){
       </div>
     </div>
     <div id="live-body" class="sec-body minimized">
+    <div id="liveFilterBar"></div>
     <div class="table-wrap">
       <table>
         <thead><tr>
@@ -3786,6 +3790,7 @@ async function loadAllRatings(){
       </div>
     </div>
     <div id="closed-body" class="sec-body minimized">
+    <div id="closedFilterBar"></div>
     <div id="closedProbBreakdown"></div>
     <div class="table-wrap">
       <table>
@@ -4642,6 +4647,32 @@ function _renderCapitalBar() {
   // CAD-USD: try to read from portfolioState or show last known
   const cad = portfolioState.cadUsdRate;
   if (cad) { const el = document.getElementById('cadUsdDisplay'); if (el) el.textContent = parseFloat(cad).toFixed(4); }
+
+  // ── Start Date (earliest buyDate across all trades) ───────────────────────
+  const allTrades  = portfolioState.trades || [];
+  const buyTimes   = allTrades.map(t => t.buyDate).filter(d => d).map(d => new Date(d).getTime()).filter(t => !isNaN(t));
+  const startMs    = buyTimes.length ? Math.min(...buyTimes) : null;
+  const startEl    = document.getElementById('portfolioStartDate');
+  if (startEl) {
+    startEl.textContent = startMs
+      ? new Date(startMs).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+      : '—';
+  }
+
+  // ── CAGR = (EndValue / StartValue)^(365/days) − 1, realized P&L only ─────
+  const cagrEl = document.getElementById('portfolioCagr');
+  if (cagrEl) {
+    const days = startMs ? (Date.now() - startMs) / 86400000 : 0;
+    if (days >= 1) {
+      const endVal  = 10000 + realized;   // $10,000 starting capital
+      const cagr    = Math.pow(endVal / 10000, 365 / days) - 1;
+      cagrEl.textContent = (cagr >= 0 ? '+' : '') + (cagr * 100).toFixed(2) + '% p.a.';
+      cagrEl.className   = cagr > 0 ? 'positive' : cagr < 0 ? 'negative' : 'neutral';
+    } else {
+      cagrEl.textContent = '—';
+      cagrEl.className   = 'neutral';
+    }
+  }
 }
 
 // ─── SUMMARY CARDS ────────────────────────────────────────────────────────────
@@ -4728,14 +4759,30 @@ function _renderCards() {
 // ─── PENDING ENTRIES ──────────────────────────────────────────────────────────
 function _renderPending() {
   if (!portfolioState) return;
-  const pends = portfolioState.pendingEntries || [];
+  const allPends = portfolioState.pendingEntries || [];
+
+  // Apply search / filters
+  const pends = allPends.filter(p => {
+    if (_pendingSearch && !(p.ticker||'').toLowerCase().includes(_pendingSearch.toLowerCase())) return false;
+    if (_pendingTypeF  && (p.type||'').toLowerCase() !== _pendingTypeF) return false;
+    if (_pendingExchF  && (p.exchange||'US').toUpperCase() !== _pendingExchF) return false;
+    if (_pendingDateF  && !_applyDateFilter(p.signalDate, parseInt(_pendingDateF))) return false;
+    return true;
+  });
+
   const el = document.getElementById('pendingBadge');
-  if (el) el.textContent = pends.length;
+  if (el) el.textContent = allPends.length;
+
+  // Render filter bar
+  const filterEl = document.getElementById('pendingFilterBar');
+  if (filterEl) filterEl.innerHTML = _filterBar(_pendingSearch, _pendingTypeF, _pendingExchF, _pendingDateF,
+    allPends.length, pends.length, 'pendingSearch','pendingTypeF','pendingExchF','pendingDateF', true);
+
   const tbody = document.getElementById('pendingBody');
   if (!tbody) return;
 
   if (!pends.length) {
-    tbody.innerHTML = '<tr><td colspan="8" class="empty">No pending entries</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="8" class="empty">No pending entries' + (allPends.length ? ' matching filters' : '') + '</td></tr>';
     return;
   }
 
@@ -4787,6 +4834,62 @@ function _renderPending() {
 }
 
 // ─── LIVE POSITIONS SORT ──────────────────────────────────────────────────────
+// ─── SEARCH / FILTER STATE ────────────────────────────────────────────────────
+let _pendingSearch = '', _pendingTypeF = '', _pendingExchF = '', _pendingDateF = '';
+let _liveSearch    = '', _liveTypeF    = '', _liveExchF    = '';
+let _closedSearch  = '', _closedTypeF  = '', _closedExchF  = '', _closedDateF  = '';
+
+function _applyDateFilter(dateStr, days) {
+  if (!days) return true;
+  const t = new Date(dateStr || '').getTime();
+  return !isNaN(t) && (Date.now() - t) <= days * 86400000;
+}
+
+function _filterBar(searchVal, typeVal, exchVal, dateVal, total, filtered,
+                    searchFn, typeFn, exchFn, dateFn, showDate) {
+  const ss = s => `padding:5px 10px;border-radius:6px;border:1px solid #1e3250;background:#0d1520;color:#8aaccc;font-size:12px;cursor:pointer;font-family:inherit;outline:none`;
+  return `<div style="display:flex;gap:8px;align-items:center;margin-bottom:10px;flex-wrap:wrap">
+    <div style="position:relative;flex:1;min-width:160px;max-width:220px">
+      <span style="position:absolute;left:9px;top:50%;transform:translateY(-50%);color:#4a6a8a;font-size:13px;pointer-events:none">🔍</span>
+      <input type="text" placeholder="Search ticker…" value="${searchVal.replace(/"/g,'&quot;')}"
+        oninput="${searchFn}(this.value)"
+        style="width:100%;box-sizing:border-box;padding:5px 10px 5px 28px;border-radius:6px;border:1px solid #1e3250;background:#0d1520;color:#e2ecf7;font-size:12px;font-family:inherit;outline:none">
+    </div>
+    <select onchange="${typeFn}(this.value)" style="${ss()}">
+      <option value="" ${!typeVal?'selected':''}>All Types</option>
+      <option value="ath"   ${typeVal==='ath'?'selected':''}>ATH</option>
+      <option value="swing" ${typeVal==='swing'?'selected':''}>Swing</option>
+    </select>
+    <select onchange="${exchFn}(this.value)" style="${ss()}">
+      <option value="" ${!exchVal?'selected':''}>All Markets</option>
+      <option value="US"  ${exchVal==='US'?'selected':''}>🇺🇸 US</option>
+      <option value="TSX" ${exchVal==='TSX'?'selected':''}>🇨🇦 CA</option>
+    </select>
+    ${showDate ? `<select onchange="${dateFn}(this.value)" style="${ss()}">
+      <option value=""  ${!dateVal?'selected':''}>All Time</option>
+      <option value="7"  ${dateVal==='7'?'selected':''}>Last 7 days</option>
+      <option value="30" ${dateVal==='30'?'selected':''}>Last 30 days</option>
+      <option value="90" ${dateVal==='90'?'selected':''}>Last 90 days</option>
+    </select>` : ''}
+    <span style="font-size:12px;color:#4a6a8a;margin-left:auto">${filtered} of ${total}</span>
+  </div>`;
+}
+
+// Pending filter handlers
+function pendingSearch(v) { _pendingSearch=v; _renderPending(); }
+function pendingTypeF(v)  { _pendingTypeF=v;  _renderPending(); }
+function pendingExchF(v)  { _pendingExchF=v;  _renderPending(); }
+function pendingDateF(v)  { _pendingDateF=v;  _renderPending(); }
+// Live filter handlers
+function liveSearch(v)    { _liveSearch=v;    _renderLive(); }
+function liveTypeF(v)     { _liveTypeF=v;     _renderLive(); }
+function liveExchF(v)     { _liveExchF=v;     _renderLive(); }
+// Closed filter handlers
+function closedSearch2(v) { _closedSearch=v;  _closedPage=1; _renderClosed(); }
+function closedTypeF2(v)  { _closedTypeF=v;   _closedPage=1; _renderClosed(); }
+function closedExchF2(v)  { _closedExchF=v;   _closedPage=1; _renderClosed(); }
+function closedDateF2(v)  { _closedDateF=v;   _closedPage=1; _renderClosed(); }
+
 let _liveSortCol = null;   // 'prob' | 'buyDate' | 'pnlUSD' | 'pnlPct' | null
 let _liveSortDir = 'desc'; // 'asc' | 'desc'
 
@@ -4884,15 +4987,14 @@ function toggleAutoSort(panel) {
 // ─── LIVE POSITIONS ───────────────────────────────────────────────────────────
 function _renderLive() {
   if (!portfolioState) return;
-  // Filter live/partial trades and REMOVE DUPLICATES (keep most recent by buy date+time)
-  const live = (portfolioState.trades || [])
+  // Deduplicate live/partial trades (keep most recent by buy date+time)
+  const allLive = (portfolioState.trades || [])
     .filter(t => t.status === 'live' || t.status === 'partial')
     .reduce((unique, trade) => {
       const existingIndex = unique.findIndex(t => t.ticker === trade.ticker);
       if (existingIndex === -1) {
         unique.push(trade);
       } else {
-        // Duplicate found - keep the MOST RECENT one (by buy date + time)
         const existing = unique[existingIndex];
         const existingTime = `${existing.buyDate || ''} ${existing.buyTime || ''}`;
         const newTime = `${trade.buyDate || ''} ${trade.buyTime || ''}`;
@@ -4900,13 +5002,28 @@ function _renderLive() {
       }
       return unique;
     }, []);
+
+  // Apply search / filters
+  const live = allLive.filter(t => {
+    if (_liveSearch && !(t.ticker||'').toLowerCase().includes(_liveSearch.toLowerCase())) return false;
+    if (_liveTypeF  && (t.type||'').toLowerCase() !== _liveTypeF) return false;
+    if (_liveExchF  && (t.exchange||'US').toUpperCase() !== _liveExchF) return false;
+    return true;
+  });
+
   const el = document.getElementById('liveBadge');
-  if (el) el.textContent = live.length;
+  if (el) el.textContent = allLive.length;
+
+  // Render filter bar
+  const filterEl = document.getElementById('liveFilterBar');
+  if (filterEl) filterEl.innerHTML = _filterBar(_liveSearch, _liveTypeF, _liveExchF, '',
+    allLive.length, live.length, 'liveSearch','liveTypeF','liveExchF','', false);
+
   const tbody = document.getElementById('liveBody');
   if (!tbody) return;
 
   if (!live.length) {
-    tbody.innerHTML = '<tr><td colspan="12" class="empty">No live positions</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="12" class="empty">No live positions' + (allLive.length ? ' matching filters' : '') + '</td></tr>';
     return;
   }
 
@@ -5005,42 +5122,49 @@ function _renderLive() {
 // ─── CLOSED POSITIONS ─────────────────────────────────────────────────────────
 function _renderClosed() {
   if (!portfolioState) return;
-  // Filter closed trades and EXCLUDE $0 P&L entries (duplicate/manual closes with no gain/loss)
-  const closed = (portfolioState.trades || [])
+  // All valid closed trades (exclude $0 P&L)
+  const allClosed = (portfolioState.trades || [])
     .filter(t => {
       if (t.status === 'live' || t.status === 'partial') return false;
       const pnl    = parseFloat(t.pnl)    || 0;
       const pnlPct = parseFloat(t.pnlPct) || 0;
-      return pnl !== 0 || pnlPct !== 0; // Exclude $0 P&L entries
+      return pnl !== 0 || pnlPct !== 0;
     })
     .sort((a, b) => {
-      // If user has chosen a manual sort column, apply it
       if (_closedSortCol) {
         let va, vb;
         if (_closedSortCol === 'prob') {
-          va = parseFloat(a.prob) || 0;
-          vb = parseFloat(b.prob) || 0;
+          va = parseFloat(a.prob) || 0; vb = parseFloat(b.prob) || 0;
         } else if (_closedSortCol === 'buyDate') {
-          va = new Date(a.buyDate || 0).getTime();
-          vb = new Date(b.buyDate || 0).getTime();
+          va = new Date(a.buyDate || 0).getTime(); vb = new Date(b.buyDate || 0).getTime();
         } else if (_closedSortCol === 'sellDate') {
-          va = new Date(a.sellDate || 0).getTime();
-          vb = new Date(b.sellDate || 0).getTime();
+          va = new Date(a.sellDate || 0).getTime(); vb = new Date(b.sellDate || 0).getTime();
         } else if (_closedSortCol === 'pnlUSD') {
-          va = parseFloat(a.pnl) || 0;
-          vb = parseFloat(b.pnl) || 0;
+          va = parseFloat(a.pnl) || 0; vb = parseFloat(b.pnl) || 0;
         } else if (_closedSortCol === 'pnlPct') {
-          va = parseFloat(a.pnlPct) || 0;
-          vb = parseFloat(b.pnlPct) || 0;
+          va = parseFloat(a.pnlPct) || 0; vb = parseFloat(b.pnlPct) || 0;
         }
         return _closedSortDir === 'desc' ? vb - va : va - vb;
       }
-      // Default (auto-sort): newest sell date first
       return new Date(b.sellDate||'') - new Date(a.sellDate||'');
     });
 
+  // Apply search / filters
+  const closed = allClosed.filter(t => {
+    if (_closedSearch && !(t.ticker||'').toLowerCase().includes(_closedSearch.toLowerCase())) return false;
+    if (_closedTypeF  && (t.type||'').toLowerCase() !== _closedTypeF) return false;
+    if (_closedExchF  && (t.exchange||'US').toUpperCase() !== _closedExchF) return false;
+    if (_closedDateF  && !_applyDateFilter(t.sellDate, parseInt(_closedDateF))) return false;
+    return true;
+  });
+
   const el = document.getElementById('closedBadge');
-  if (el) el.textContent = closed.length;
+  if (el) el.textContent = allClosed.length;
+
+  // Render filter bar
+  const filterEl = document.getElementById('closedFilterBar');
+  if (filterEl) filterEl.innerHTML = _filterBar(_closedSearch, _closedTypeF, _closedExchF, _closedDateF,
+    allClosed.length, closed.length, 'closedSearch2','closedTypeF2','closedExchF2','closedDateF2', true);
 
   const panelEl = document.getElementById('closedProbBreakdown');
   if (panelEl) panelEl.innerHTML = '';
@@ -5049,7 +5173,7 @@ function _renderClosed() {
   if (!tbody) return;
 
   if (!closed.length) {
-    tbody.innerHTML = '<tr><td colspan="11" class="empty">No closed trades yet</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="11" class="empty">No closed trades' + (allClosed.length ? ' matching filters' : ' yet') + '</td></tr>';
     _renderClosedPagination(0, 0);
     return;
   }
