@@ -3643,7 +3643,7 @@ async function loadAllRatings(){
   <div class="cap-stat">Deployed: <strong id="deployedCap">$0.00</strong></div>
   <div class="cap-stat">Available: <strong id="availCap">$10,000.00</strong></div>
   <div class="cap-stat">Started: <strong id="portfolioStartDate" style="color:#8aaccc">—</strong></div>
-  <div class="cap-stat">CAGR: <strong id="portfolioCagr" class="neutral">—</strong></div>
+  <div class="cap-stat">CAGR: <strong id="portfolioCagr" class="neutral" style="cursor:help;border-bottom:1px dashed #4a6a8a" title="Loading…">—</strong></div>
   <div class="cap-stat">Realized P&amp;L: <strong id="totalPnl" class="neutral">$0.00</strong></div>
   <div class="cap-stat">Portfolio Return: <strong id="portfolioRetPct" class="neutral">0.00%</strong></div>
   <div class="cap-stat">Unrealized P&amp;L: <strong id="unrealPnl" class="neutral">$0.00</strong></div>
@@ -4664,13 +4664,24 @@ function _renderCapitalBar() {
   if (cagrEl) {
     const days = startMs ? (Date.now() - startMs) / 86400000 : 0;
     if (days >= 1) {
-      const endVal  = 10000 + realized;   // $10,000 starting capital
+      const endVal  = 10000 + realized;
       const cagr    = Math.pow(endVal / 10000, 365 / days) - 1;
       cagrEl.textContent = (cagr >= 0 ? '+' : '') + (cagr * 100).toFixed(2) + '% p.a.';
       cagrEl.className   = cagr > 0 ? 'positive' : cagr < 0 ? 'negative' : 'neutral';
+      const startLabel   = startMs ? new Date(startMs).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}) : '—';
+      cagrEl.title = [
+        `Formula: (End ÷ Start)^(365 ÷ Days) − 1`,
+        `Start Capital: $10,000.00`,
+        `End Value: $${_fmtUSD(endVal)} (realized P&L only)`,
+        `Realized P&L: ${realized >= 0 ? '+$' : '-$'}${_fmtUSD(Math.abs(realized))}`,
+        `Start Date: ${startLabel}`,
+        `Days Elapsed: ${Math.floor(days)} days`,
+        `CAGR: (${_fmtUSD(endVal)} ÷ 10,000)^(365 ÷ ${Math.floor(days)}) − 1 = ${(cagr*100).toFixed(2)}% p.a.`
+      ].join('\n');
     } else {
       cagrEl.textContent = '—';
       cagrEl.className   = 'neutral';
+      cagrEl.title       = 'Not enough trading history yet';
     }
   }
 }
@@ -4773,10 +4784,10 @@ function _renderPending() {
   const el = document.getElementById('pendingBadge');
   if (el) el.textContent = allPends.length;
 
-  // Render filter bar
-  const filterEl = document.getElementById('pendingFilterBar');
-  if (filterEl) filterEl.innerHTML = _filterBar(_pendingSearch, _pendingTypeF, _pendingExchF, _pendingDateF,
-    allPends.length, pends.length, 'pendingSearch','pendingTypeF','pendingExchF','pendingDateF', true);
+  // Render filter bar (focus-safe)
+  _setFilterBar(document.getElementById('pendingFilterBar'),
+    _filterBar(_pendingSearch, _pendingTypeF, _pendingExchF, _pendingDateF,
+      allPends.length, pends.length, 'pendingSearch','pendingTypeF','pendingExchF','pendingDateF', true));
 
   const tbody = document.getElementById('pendingBody');
   if (!tbody) return;
@@ -4837,7 +4848,7 @@ function _renderPending() {
 // ─── SEARCH / FILTER STATE ────────────────────────────────────────────────────
 let _pendingSearch = '', _pendingTypeF = '', _pendingExchF = '', _pendingDateF = '';
 let _liveSearch    = '', _liveTypeF    = '', _liveExchF    = '';
-let _closedSearch  = '', _closedTypeF  = '', _closedExchF  = '', _closedDateF  = '';
+let _closedSearch  = '', _closedTypeF  = '', _closedExchF  = '', _closedDateF  = '', _closedPnlF = '';
 
 function _applyDateFilter(dateStr, days) {
   if (!days) return true;
@@ -4845,13 +4856,31 @@ function _applyDateFilter(dateStr, days) {
   return !isNaN(t) && (Date.now() - t) <= days * 86400000;
 }
 
+// ── Focus-safe filter bar update ────────────────────────────────────────────
+// Replaces filterEl innerHTML but restores search focus + cursor if user was typing.
+function _setFilterBar(filterEl, html) {
+  if (!filterEl) return;
+  const wasActive = filterEl.contains(document.activeElement) &&
+                    document.activeElement.tagName === 'INPUT';
+  const cursorPos = wasActive ? document.activeElement.selectionStart : -1;
+  filterEl.innerHTML = html;
+  if (wasActive) {
+    const inp = filterEl.querySelector('input[type="text"]');
+    if (inp) {
+      inp.focus();
+      const pos = cursorPos >= 0 ? cursorPos : inp.value.length;
+      inp.setSelectionRange(pos, pos);
+    }
+  }
+}
+
 function _filterBar(searchVal, typeVal, exchVal, dateVal, total, filtered,
-                    searchFn, typeFn, exchFn, dateFn, showDate) {
-  const ss = s => `padding:5px 10px;border-radius:6px;border:1px solid #1e3250;background:#0d1520;color:#8aaccc;font-size:12px;cursor:pointer;font-family:inherit;outline:none`;
+                    searchFn, typeFn, exchFn, dateFn, showDate, pnlVal, pnlFn) {
+  const ss = () => `padding:5px 10px;border-radius:6px;border:1px solid #1e3250;background:#0d1520;color:#8aaccc;font-size:12px;cursor:pointer;font-family:inherit;outline:none`;
   return `<div style="display:flex;gap:8px;align-items:center;margin-bottom:10px;flex-wrap:wrap">
     <div style="position:relative;flex:1;min-width:160px;max-width:220px">
       <span style="position:absolute;left:9px;top:50%;transform:translateY(-50%);color:#4a6a8a;font-size:13px;pointer-events:none">🔍</span>
-      <input type="text" placeholder="Search ticker…" value="${searchVal.replace(/"/g,'&quot;')}"
+      <input type="text" placeholder="Search ticker…" value="${(searchVal||'').replace(/"/g,'&quot;')}"
         oninput="${searchFn}(this.value)"
         style="width:100%;box-sizing:border-box;padding:5px 10px 5px 28px;border-radius:6px;border:1px solid #1e3250;background:#0d1520;color:#e2ecf7;font-size:12px;font-family:inherit;outline:none">
     </div>
@@ -4871,6 +4900,12 @@ function _filterBar(searchVal, typeVal, exchVal, dateVal, total, filtered,
       <option value="30" ${dateVal==='30'?'selected':''}>Last 30 days</option>
       <option value="90" ${dateVal==='90'?'selected':''}>Last 90 days</option>
     </select>` : ''}
+    ${pnlFn ? `<select onchange="${pnlFn}(this.value)" style="${ss()}">
+      <option value=""      ${!pnlVal?'selected':''}>All P&amp;L</option>
+      <option value="profit"    ${pnlVal==='profit'?'selected':''}>✓ Profit</option>
+      <option value="loss"      ${pnlVal==='loss'?'selected':''}>✗ Stop Loss</option>
+      <option value="breakeven" ${pnlVal==='breakeven'?'selected':''}>≈ Break Even</option>
+    </select>` : ''}
     <span style="font-size:12px;color:#4a6a8a;margin-left:auto">${filtered} of ${total}</span>
   </div>`;
 }
@@ -4889,6 +4924,7 @@ function closedSearch2(v) { _closedSearch=v;  _closedPage=1; _renderClosed(); }
 function closedTypeF2(v)  { _closedTypeF=v;   _closedPage=1; _renderClosed(); }
 function closedExchF2(v)  { _closedExchF=v;   _closedPage=1; _renderClosed(); }
 function closedDateF2(v)  { _closedDateF=v;   _closedPage=1; _renderClosed(); }
+function closedPnlF2(v)   { _closedPnlF=v;    _closedPage=1; _renderClosed(); }
 
 let _liveSortCol = null;   // 'prob' | 'buyDate' | 'pnlUSD' | 'pnlPct' | null
 let _liveSortDir = 'desc'; // 'asc' | 'desc'
@@ -5014,10 +5050,10 @@ function _renderLive() {
   const el = document.getElementById('liveBadge');
   if (el) el.textContent = allLive.length;
 
-  // Render filter bar
-  const filterEl = document.getElementById('liveFilterBar');
-  if (filterEl) filterEl.innerHTML = _filterBar(_liveSearch, _liveTypeF, _liveExchF, '',
-    allLive.length, live.length, 'liveSearch','liveTypeF','liveExchF','', false);
+  // Render filter bar (focus-safe)
+  _setFilterBar(document.getElementById('liveFilterBar'),
+    _filterBar(_liveSearch, _liveTypeF, _liveExchF, '',
+      allLive.length, live.length, 'liveSearch','liveTypeF','liveExchF','', false));
 
   const tbody = document.getElementById('liveBody');
   if (!tbody) return;
@@ -5155,16 +5191,23 @@ function _renderClosed() {
     if (_closedTypeF  && (t.type||'').toLowerCase() !== _closedTypeF) return false;
     if (_closedExchF  && (t.exchange||'US').toUpperCase() !== _closedExchF) return false;
     if (_closedDateF  && !_applyDateFilter(t.sellDate, parseInt(_closedDateF))) return false;
+    if (_closedPnlF) {
+      const pnl = parseFloat(t.pnl) || 0;
+      if (_closedPnlF === 'profit'    && !(t.exitReason === 'profit')) return false;
+      if (_closedPnlF === 'loss'      && !(t.exitReason === 'loss' || t.exitReason === 'timestop')) return false;
+      if (_closedPnlF === 'breakeven' && !(Math.abs(pnl) < 1)) return false;
+    }
     return true;
   });
 
   const el = document.getElementById('closedBadge');
   if (el) el.textContent = allClosed.length;
 
-  // Render filter bar
-  const filterEl = document.getElementById('closedFilterBar');
-  if (filterEl) filterEl.innerHTML = _filterBar(_closedSearch, _closedTypeF, _closedExchF, _closedDateF,
-    allClosed.length, closed.length, 'closedSearch2','closedTypeF2','closedExchF2','closedDateF2', true);
+  // Render filter bar (focus-safe)
+  _setFilterBar(document.getElementById('closedFilterBar'),
+    _filterBar(_closedSearch, _closedTypeF, _closedExchF, _closedDateF,
+      allClosed.length, closed.length, 'closedSearch2','closedTypeF2','closedExchF2','closedDateF2', true,
+      _closedPnlF, 'closedPnlF2'));
 
   const panelEl = document.getElementById('closedProbBreakdown');
   if (panelEl) panelEl.innerHTML = '';
