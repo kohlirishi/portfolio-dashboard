@@ -541,6 +541,7 @@ table.div-ht tfoot td{padding:10px 14px;font-size:13px;font-weight:700;backgroun
 #pg-short .badge-loss { background: #2a1a1a; color: #f85149; border: 1px solid #6e1a1a; padding: 2px 7px; border-radius: 4px; font-size: 11px; font-weight: 600; }
 #pg-short .badge-manual { background: #2a2a1a; color: #e3b341; border: 1px solid #6e5a1a; padding: 2px 7px; border-radius: 4px; font-size: 11px; font-weight: 600; }
 #pg-short .badge-timestop { background: #1a1a2e; color: #a78bfa; border: 1px solid #5b3fb5; padding: 2px 7px; border-radius: 4px; font-size: 11px; font-weight: 600; }
+#pg-short .badge-crash { background: #2a0a0a; color: #ff6b6b; border: 1px solid #8b1a1a; padding: 2px 7px; border-radius: 4px; font-size: 11px; font-weight: 600; }
 #pg-short .badge-pending { background: #1a1a2a; color: #79c0ff; border: 1px solid #1f6feb; padding: 2px 7px; border-radius: 4px; font-size: 11px; font-weight: 600; }
 #pg-short .prob-badge { padding: 3px 8px; border-radius: 4px; font-size: 12px; font-weight: 700; }
 #pg-short .prob-green { background: #1a3a1a; color: #3fb950; }
@@ -4716,14 +4717,14 @@ function _renderCards() {
     return pnl !== 0 || pnlPct !== 0;
   });
 
-  const profits = validClosed.filter(t => t.exitReason === 'profit').length;
-  const losses  = validClosed.filter(t => t.exitReason === 'loss' || t.exitReason === 'timestop').length;
+  const profits = validClosed.filter(t => t.exitReason === 'profit' || t.exitReason === 'profit_stage3' || t.exitReason === 'profit_trail').length;
+  const losses  = validClosed.filter(t => t.exitReason === 'loss' || t.exitReason === 'timestop' || t.exitReason === 'crashexit').length;
   const total   = profits + losses;
   const wr      = total > 0 ? Math.round(profits / total * 100) + '%' : '—';
 
   // Win Rate Last 10: most recent 10 closed trades (by sell date desc)
   const last10      = [...validClosed].sort((a, b) => new Date(b.sellDate||'') - new Date(a.sellDate||'')).slice(0, 10);
-  const last10Win   = last10.filter(t => t.exitReason === 'profit').length;
+  const last10Win   = last10.filter(t => t.exitReason === 'profit' || t.exitReason === 'profit_stage3' || t.exitReason === 'profit_trail').length;
   const wr5         = last10.length > 0 ? Math.round(last10Win / last10.length * 100) + '%' : '—';
 
   // P&L Last 14 Days: sum P&L and invested for trades closed in last 14 days
@@ -4738,8 +4739,8 @@ function _renderCards() {
   });
   const pnl14sum    = last14d.reduce((s, t) => s + (parseFloat(t.pnl) || 0), 0);
   const inv14sum    = last14d.reduce((s, t) => s + (parseFloat(t.invested) || 0), 0);
-  const pnl14wins   = last14d.filter(t => t.exitReason === 'profit').length;
-  const pnl14loss   = last14d.filter(t => t.exitReason === 'loss' || t.exitReason === 'timestop').length;
+  const pnl14wins   = last14d.filter(t => t.exitReason === 'profit' || t.exitReason === 'profit_stage3' || t.exitReason === 'profit_trail').length;
+  const pnl14loss   = last14d.filter(t => t.exitReason === 'loss' || t.exitReason === 'timestop' || t.exitReason === 'crashexit').length;
   let pnl14Str = '—', pnl14Tip = '';
   if (last14d.length > 0) {
     const pct = inv14sum > 0 ? (pnl14sum / inv14sum * 100).toFixed(1) : '0.0';
@@ -5193,8 +5194,8 @@ function _renderClosed() {
     if (_closedDateF  && !_applyDateFilter(t.sellDate, parseInt(_closedDateF))) return false;
     if (_closedPnlF) {
       const pnl = parseFloat(t.pnl) || 0;
-      if (_closedPnlF === 'profit'    && !(t.exitReason === 'profit')) return false;
-      if (_closedPnlF === 'loss'      && !(t.exitReason === 'loss' || t.exitReason === 'timestop')) return false;
+      if (_closedPnlF === 'profit'    && !(t.exitReason === 'profit' || t.exitReason === 'profit_stage3' || t.exitReason === 'profit_trail')) return false;
+      if (_closedPnlF === 'loss'      && !(t.exitReason === 'loss' || t.exitReason === 'timestop' || t.exitReason === 'crashexit')) return false;
       if (_closedPnlF === 'breakeven' && !(Math.abs(pnl) < 1)) return false;
     }
     return true;
@@ -5231,9 +5232,12 @@ function _renderClosed() {
     const pnlPct = parseFloat(t.pnlPct) || 0;
     const cls    = pnl >= 0 ? 'positive' : 'negative';
     let reasonBadge = '';
-    if (t.exitReason === 'profit')         reasonBadge = '<span class="badge-profit">✓ Profit</span>';
-    else if (t.exitReason === 'loss')      reasonBadge = '<span class="badge-loss">✗ Stop Loss</span>';
-    else if (t.exitReason === 'timestop') reasonBadge = '<span class="badge-timestop">⏱ Time Stop</span>';
+    if (t.exitReason === 'profit_stage3')  reasonBadge = '<span class="badge-profit">✓ Profit — Stage 3 (+8%)</span>';
+    else if (t.exitReason === 'profit_trail') reasonBadge = '<span class="badge-profit">✓ Profit — Trailing Stop</span>';
+    else if (t.exitReason === 'profit')    reasonBadge = '<span class="badge-profit">✓ Profit</span>';
+    else if (t.exitReason === 'loss')      reasonBadge = '<span class="badge-loss">✗ Stop Loss — Trailing</span>';
+    else if (t.exitReason === 'timestop')  reasonBadge = '<span class="badge-timestop">⏱ Time Stop</span>';
+    else if (t.exitReason === 'crashexit') reasonBadge = '<span class="badge-crash">🚨 Crash Exit</span>';
     else                                   reasonBadge = '<span class="badge-manual">Manual</span>';
     const partNote = (t.partialExitDone===true || t.partialExitDone==='true')
       ? `<br><small style="color:#e3b341">⚡ 50% @ $${_fmtUSD(t.partialExitPrice)} (+$${_fmtUSD(t.partialExitPnl)})</small>` : '';
@@ -5563,7 +5567,7 @@ function _renderSlAnalyses() {
 
     return `<div id="${cardId}" style="border:1px solid #2a1515;border-left:3px solid #f85149;border-radius:8px;margin-bottom:8px;overflow:hidden">
       <!-- Collapsed header (always visible) — click to expand -->
-      <div onclick="slToggleCard('${cardId}','${esc(s.ticker||'')}','${esc(s.entryDate||'')}','${esc(s.exitDate||'')}')" style="background:#120a0a;padding:10px 14px;display:flex;align-items:center;justify-content:space-between;cursor:pointer;gap:8px;flex-wrap:wrap"
+      <div onclick="slToggleCard('${cardId}','${esc(s.ticker||'')}','${esc(s.entryDate||'')}','${esc(s.exitDate||'')}','${esc(s.exitReason||'')}')" style="background:#120a0a;padding:10px 14px;display:flex;align-items:center;justify-content:space-between;cursor:pointer;gap:8px;flex-wrap:wrap"
         onmouseover="this.style.background='#1a0d0d'" onmouseout="this.style.background='#120a0a'">
         <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;flex:1;min-width:0">
           <span id="${cardId}_arrow" style="color:#4a6a8a;font-size:12px;flex-shrink:0">▶</span>
@@ -5629,7 +5633,7 @@ function _renderSlAnalyses() {
 }
 
 /** Toggle individual card open/closed, auto-fetch news on first open */
-function slToggleCard(cardId, ticker, entryDate, exitDate) {
+function slToggleCard(cardId, ticker, entryDate, exitDate, exitReason) {
   const body  = document.getElementById(cardId + '_body');
   const arrow = document.getElementById(cardId + '_arrow');
   if (!body) return;
@@ -5639,7 +5643,7 @@ function slToggleCard(cardId, ticker, entryDate, exitDate) {
 
   // Auto-fetch news on first open only
   if (!isOpen && ticker) {
-    fetchNewsForStopLoss(ticker, entryDate, exitDate, cardId);
+    fetchNewsForStopLoss(ticker, entryDate, exitDate, cardId, exitReason);
   }
 }
 
@@ -5657,7 +5661,7 @@ function _parseTradeDate(str) {
 }
 
 /** Fetch news from Yahoo Finance + Reddit + StockTwits during the holding period */
-async function fetchNewsForStopLoss(ticker, entryDateStr, exitDateStr, cardId) {
+async function fetchNewsForStopLoss(ticker, entryDateStr, exitDateStr, cardId, exitReason) {
   const el      = document.getElementById(cardId + '_headlines');
   const recsEl  = document.getElementById(cardId + '_newsRecs');
   const mktEl   = document.getElementById(cardId + '_mktContext');
@@ -5767,9 +5771,38 @@ async function fetchNewsForStopLoss(ticker, entryDateStr, exitDateStr, cardId) {
     if (stRes.status==='fulfilled') all.push(...stRes.value);
     all.sort((a,b) => a.ts - b.ts); // chronological — see the story unfold
 
+    // ── Crash exit context ───────────────────────────────────────────────────
+    if (mktEl && exitReason === 'crashexit') {
+      mktEl.innerHTML = `
+        <div style="margin:0 16px 0;border-top:1px solid #1e3250;padding-top:12px;padding-bottom:12px">
+          <div style="background:#2a0a0a;border:1px solid #8b1a1a44;border-left:3px solid #ff6b6b;border-radius:6px;padding:10px 14px;display:flex;align-items:flex-start;gap:12px">
+            <div style="font-size:20px;flex-shrink:0;margin-top:1px">🚨</div>
+            <div style="flex:1">
+              <div style="font-size:11px;font-weight:700;color:#ff6b6b;text-transform:uppercase;letter-spacing:.05em;margin-bottom:4px">⚡ Emergency Crash Exit</div>
+              <div style="font-size:13px;font-weight:600;color:#ff6b6b;margin-bottom:4px">This position was closed by the automated crash protection system</div>
+              <div style="font-size:12px;color:#c9d1d9;line-height:1.5">A market crash signal was detected — either VIX spiked above threshold, SPY dropped sharply intraday, or both. The system exited all live positions to protect capital. This is not a failure of the trade setup; it was a forced exit due to extreme market conditions.</div>
+            </div>
+          </div>
+        </div>`;
+      // Inject crash recommendation into Recommended Fixes
+      if (recsEl && !recsEl.dataset.crashRec) {
+        recsEl.dataset.crashRec = '1';
+        const recDiv = document.createElement('div');
+        recDiv.innerHTML = `
+          <div style="margin-top:6px;padding-top:6px;border-top:1px solid #111d2c">
+            <div style="font-size:10px;font-weight:700;color:#ff6b6b;text-transform:uppercase;letter-spacing:.05em;margin-bottom:4px">🚨 Crash Exit Rule</div>
+            <div style="display:flex;gap:10px;align-items:flex-start;padding:6px 0">
+              <span style="color:#ff6b6b;font-size:13px;flex-shrink:0;margin-top:1px">→</span>
+              <span style="font-size:12px;color:#c9d1d9;line-height:1.5">This trade was closed by the crash protection system (VIX spike or SPY intraday drop). In extreme market conditions, the system prioritizes capital preservation over profit targets. Review VIX and SPY levels from this date to understand the market environment.</span>
+            </div>
+          </div>`;
+        recsEl.appendChild(recDiv);
+      }
+    }
+
     // ── Market regime context at exit date ───────────────────────────────────
     const spyData = spyRes?.status === 'fulfilled' ? spyRes.value : null;
-    if (mktEl && spyData) {
+    if (mktEl && spyData && exitReason !== 'crashexit') {
       const mktAbove   = spyData.above;
       const mktColor   = mktAbove ? '#3fb950' : '#d4a017';
       const mktBg      = mktAbove ? '#071a0f' : '#2a1a00';
