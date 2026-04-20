@@ -3669,44 +3669,51 @@ async function loadAllRatings(){
   </div>
 
   <!-- PERFORMANCE SINCE PANEL -->
-  <div id="sincePanel" style="background:#0d1117;border:1px solid #1e3250;border-radius:10px;padding:16px 20px;margin-bottom:16px">
-    <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:14px">
-      <div style="font-size:12px;font-weight:700;letter-spacing:.06em;color:#8aaccc;text-transform:uppercase">📅 Performance Since</div>
-      <div style="display:flex;align-items:center;gap:8px">
+  <div id="sincePanel" style="background:#0d1117;border:1px solid #1e3250;border-radius:10px;margin-bottom:16px;overflow:hidden">
+    <!-- Header row — always visible, click to toggle -->
+    <div onclick="_toggleSincePanel()" style="display:flex;align-items:center;justify-content:space-between;padding:12px 16px;cursor:pointer;user-select:none" onmouseover="this.style.background='#101c2c'" onmouseout="this.style.background='transparent'">
+      <div style="display:flex;align-items:center;gap:10px">
+        <span id="sinceChevron" style="font-size:11px;color:#4a6a8a;transition:transform .2s;display:inline-block;transform:rotate(-90deg)">▼</span>
+        <span style="font-size:12px;font-weight:700;letter-spacing:.06em;color:#8aaccc;text-transform:uppercase">📅 Performance Since</span>
+      </div>
+      <div style="display:flex;align-items:center;gap:8px" onclick="event.stopPropagation()">
         <input type="date" id="sinceDate"
-          style="background:#152032;border:1px solid #1e3250;color:#e2ecf7;padding:5px 10px;border-radius:6px;font-size:13px;font-family:inherit;cursor:pointer;outline:none"
+          style="background:#152032;border:1px solid #1e3250;color:#e2ecf7;padding:4px 8px;border-radius:6px;font-size:12px;font-family:inherit;cursor:pointer;outline:none"
           onchange="localStorage.setItem('sinceDate', this.value); _renderSincePanel()">
         <span style="font-size:11px;color:#4a6a8a">→ Today</span>
       </div>
     </div>
-    <div style="display:flex;gap:10px;flex-wrap:wrap">
-      <div style="flex:1;min-width:80px;background:#0a0f16;border:1px solid #1a2a3a;border-radius:8px;padding:12px 10px;text-align:center">
-        <div id="since-trades" style="font-size:22px;font-weight:700;color:#e2ecf7">—</div>
-        <div style="font-size:10px;color:#8aaccc;margin-top:4px;font-weight:600;letter-spacing:.04em;text-transform:uppercase">Trades</div>
-      </div>
-      <div style="flex:1;min-width:80px;background:#0a0f16;border:1px solid #1a2a3a;border-radius:8px;padding:12px 10px;text-align:center">
-        <div id="since-wins" style="font-size:22px;font-weight:700;color:#3fb950">—</div>
-        <div style="font-size:10px;color:#8aaccc;margin-top:4px;font-weight:600;letter-spacing:.04em;text-transform:uppercase">Wins</div>
-      </div>
-      <div style="flex:1;min-width:80px;background:#0a0f16;border:1px solid #1a2a3a;border-radius:8px;padding:12px 10px;text-align:center">
-        <div id="since-losses" style="font-size:22px;font-weight:700;color:#f85149">—</div>
-        <div style="font-size:10px;color:#8aaccc;margin-top:4px;font-weight:600;letter-spacing:.04em;text-transform:uppercase">Losses</div>
-      </div>
-      <div style="flex:1;min-width:80px;background:#0a0f16;border:1px solid #1a2a3a;border-radius:8px;padding:12px 10px;text-align:center">
-        <div id="since-wr" style="font-size:22px;font-weight:700;color:#58a6ff">—</div>
-        <div style="font-size:10px;color:#8aaccc;margin-top:4px;font-weight:600;letter-spacing:.04em;text-transform:uppercase">Win Rate</div>
-      </div>
-      <div style="flex:1;min-width:80px;background:#0a0f16;border:1px solid #1a2a3a;border-radius:8px;padding:12px 10px;text-align:center">
-        <div id="since-open" style="font-size:22px;font-weight:700;color:#e2ecf7">—</div>
-        <div style="font-size:10px;color:#8aaccc;margin-top:4px;font-weight:600;letter-spacing:.04em;text-transform:uppercase">Open Now</div>
-      </div>
-      <div style="flex:1;min-width:110px;background:#0a0f16;border:1px solid #1a2a3a;border-radius:8px;padding:12px 10px;text-align:center">
-        <div id="since-pnl" style="font-size:22px;font-weight:700;color:#e2ecf7">—</div>
-        <div style="font-size:10px;color:#8aaccc;margin-top:4px;font-weight:600;letter-spacing:.04em;text-transform:uppercase">P&amp;L ($)</div>
-      </div>
-      <div style="flex:1;min-width:110px;background:#0a0f16;border:1px solid #1a2a3a;border-radius:8px;padding:12px 10px;text-align:center">
-        <div id="since-pnlpct" style="font-size:22px;font-weight:700;color:#e2ecf7">—</div>
-        <div style="font-size:10px;color:#8aaccc;margin-top:4px;font-weight:600;letter-spacing:.04em;text-transform:uppercase">P&amp;L (%)</div>
+    <!-- Body — hidden by default -->
+    <div id="sincePanelBody" style="display:none;padding:0 16px 16px">
+      <div style="display:flex;gap:10px;flex-wrap:wrap">
+        <div style="flex:1;min-width:80px;background:#0a0f16;border:1px solid #1a2a3a;border-radius:8px;padding:12px 10px;text-align:center">
+          <div id="since-trades" style="font-size:22px;font-weight:700;color:#e2ecf7">—</div>
+          <div style="font-size:10px;color:#8aaccc;margin-top:4px;font-weight:600;letter-spacing:.04em;text-transform:uppercase">Trades</div>
+        </div>
+        <div style="flex:1;min-width:80px;background:#0a0f16;border:1px solid #1a2a3a;border-radius:8px;padding:12px 10px;text-align:center">
+          <div id="since-wins" style="font-size:22px;font-weight:700;color:#3fb950">—</div>
+          <div style="font-size:10px;color:#8aaccc;margin-top:4px;font-weight:600;letter-spacing:.04em;text-transform:uppercase">Wins</div>
+        </div>
+        <div style="flex:1;min-width:80px;background:#0a0f16;border:1px solid #1a2a3a;border-radius:8px;padding:12px 10px;text-align:center">
+          <div id="since-losses" style="font-size:22px;font-weight:700;color:#f85149">—</div>
+          <div style="font-size:10px;color:#8aaccc;margin-top:4px;font-weight:600;letter-spacing:.04em;text-transform:uppercase">Losses</div>
+        </div>
+        <div style="flex:1;min-width:80px;background:#0a0f16;border:1px solid #1a2a3a;border-radius:8px;padding:12px 10px;text-align:center">
+          <div id="since-wr" style="font-size:22px;font-weight:700;color:#58a6ff">—</div>
+          <div style="font-size:10px;color:#8aaccc;margin-top:4px;font-weight:600;letter-spacing:.04em;text-transform:uppercase">Win Rate</div>
+        </div>
+        <div style="flex:1;min-width:80px;background:#0a0f16;border:1px solid #1a2a3a;border-radius:8px;padding:12px 10px;text-align:center">
+          <div id="since-open" style="font-size:22px;font-weight:700;color:#e2ecf7">—</div>
+          <div style="font-size:10px;color:#8aaccc;margin-top:4px;font-weight:600;letter-spacing:.04em;text-transform:uppercase">Open Now</div>
+        </div>
+        <div style="flex:1;min-width:110px;background:#0a0f16;border:1px solid #1a2a3a;border-radius:8px;padding:12px 10px;text-align:center">
+          <div id="since-pnl" style="font-size:22px;font-weight:700;color:#e2ecf7">—</div>
+          <div style="font-size:10px;color:#8aaccc;margin-top:4px;font-weight:600;letter-spacing:.04em;text-transform:uppercase">P&amp;L ($)</div>
+        </div>
+        <div style="flex:1;min-width:110px;background:#0a0f16;border:1px solid #1a2a3a;border-radius:8px;padding:12px 10px;text-align:center">
+          <div id="since-pnlpct" style="font-size:22px;font-weight:700;color:#e2ecf7">—</div>
+          <div style="font-size:10px;color:#8aaccc;margin-top:4px;font-weight:600;letter-spacing:.04em;text-transform:uppercase">P&amp;L (%)</div>
+        </div>
       </div>
     </div>
   </div>
@@ -4953,12 +4960,29 @@ function _renderCards() {
 }
 
 // ─── PERFORMANCE SINCE PANEL ──────────────────────────────────────────────────
+function _toggleSincePanel() {
+  const body    = document.getElementById('sincePanelBody');
+  const chevron = document.getElementById('sinceChevron');
+  if (!body) return;
+  const open = body.style.display === 'none';
+  body.style.display    = open ? 'block' : 'none';
+  if (chevron) chevron.style.transform = open ? 'rotate(0deg)' : 'rotate(-90deg)';
+  localStorage.setItem('sincePanelOpen', open ? '1' : '0');
+}
+
 function _renderSincePanel() {
   if (!portfolioState) return;
   const dateEl = document.getElementById('sinceDate');
   if (!dateEl) return;
 
-  // On first load: restore from localStorage, or default to 14 days ago
+  // Restore collapsed/expanded state (default: collapsed)
+  const body    = document.getElementById('sincePanelBody');
+  const chevron = document.getElementById('sinceChevron');
+  const panelOpen = localStorage.getItem('sincePanelOpen') === '1';
+  if (body)    body.style.display        = panelOpen ? 'block' : 'none';
+  if (chevron) chevron.style.transform   = panelOpen ? 'rotate(0deg)' : 'rotate(-90deg)';
+
+  // On first load: restore date from localStorage, or default to 14 days ago
   if (!dateEl.value) {
     const stored = localStorage.getItem('sinceDate');
     if (stored) {
