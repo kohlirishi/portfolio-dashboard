@@ -542,6 +542,7 @@ table.div-ht tfoot td{padding:10px 14px;font-size:13px;font-weight:700;backgroun
 #pg-short .badge-manual { background: #2a2a1a; color: #e3b341; border: 1px solid #6e5a1a; padding: 2px 7px; border-radius: 4px; font-size: 11px; font-weight: 600; }
 #pg-short .badge-timestop { background: #1a1a2e; color: #a78bfa; border: 1px solid #5b3fb5; padding: 2px 7px; border-radius: 4px; font-size: 11px; font-weight: 600; }
 #pg-short .badge-crash { background: #2a0a0a; color: #ff6b6b; border: 1px solid #8b1a1a; padding: 2px 7px; border-radius: 4px; font-size: 11px; font-weight: 600; }
+#pg-short .badge-bull  { background: #0a2a0a; color: #3fb950; border: 1px solid #1a6b1a; padding: 2px 7px; border-radius: 4px; font-size: 11px; font-weight: 600; }
 #pg-short .badge-pending { background: #1a1a2a; color: #79c0ff; border: 1px solid #1f6feb; padding: 2px 7px; border-radius: 4px; font-size: 11px; font-weight: 600; }
 #pg-short .prob-badge { padding: 3px 8px; border-radius: 4px; font-size: 12px; font-weight: 700; }
 #pg-short .prob-green { background: #1a3a1a; color: #3fb950; }
@@ -3740,6 +3741,10 @@ async function loadAllRatings(){
       <div style="font-size:10px;font-weight:700;letter-spacing:.08em;color:#8aaccc;text-transform:uppercase">SPY INTRADAY &nbsp;<span style="color:#4a6a8a">⏳</span></div>
       <div style="font-size:13px;color:#4a6a8a;margin-top:6px">Loading SPY data…</div>
     </div>
+    <div id="breakout-bull" style="flex:1;min-width:220px;background:#0d1117;border:1px solid #1e3250;border-radius:10px;padding:14px 16px;opacity:.6">
+      <div style="font-size:10px;font-weight:700;letter-spacing:.08em;color:#8aaccc;text-transform:uppercase">🐂 BULL MODE &nbsp;<span style="color:#4a6a8a">⏳</span></div>
+      <div style="font-size:13px;color:#4a6a8a;margin-top:6px">Loading…</div>
+    </div>
   </div>
 
   <!-- AUTO SCREENER -->
@@ -3757,7 +3762,7 @@ async function loadAllRatings(){
       <span>📅 Runs daily: <strong>8:00 AM EST</strong> &amp; <strong>1:00 PM EST</strong> · Weekdays only · Skips market holidays</span>
       <span id="lastRunInfo">Last run: <strong>never</strong></span>
       <span id="nextRunInfo">Next: <strong>calculating…</strong></span>
-      <span>🎯 ATH: <strong>&gt;70%</strong> · Swing: <strong>&gt;50%</strong> · Stage 1: <strong>50% @ +3%</strong> · Stage 2: <strong>25% @ +5%</strong> · Stage 3: <strong>25% @ +8%</strong> · Stop: <strong>−2% trail</strong></span>
+      <span id="stExitRules">🎯 ATH: <strong>&gt;70%</strong> · Swing: <strong>&gt;50%</strong> · Stage 1: <strong>50% @ +3%</strong> · Stage 2: <strong>25% @ +5%</strong> · Stage 3: <strong>25% @ +8%</strong> · Stop: <strong>−2% trail</strong></span>
       <span>⏳ Entry: <strong>next-session confirmation</strong> · Cooldown: <strong>48h after stop loss</strong></span>
     </div>
     <div id="screenerProgressWrap" class="progress-wrap-inner" style="display:none">
@@ -4614,6 +4619,61 @@ async function _fetchSpy15Panel() {
   }
 }
 
+async function _fetchBullModePanel() {
+  const el = document.getElementById('breakout-bull');
+  if (!el) return;
+  try {
+    const proxy = s => 'https://corsproxy.io/?url=' + encodeURIComponent(s);
+    const [vixRes, spxRes] = await Promise.all([
+      fetch(proxy('https://query2.finance.yahoo.com/v8/finance/chart/%5EVIX?interval=1d&range=5d')),
+      fetch(proxy('https://query2.finance.yahoo.com/v8/finance/chart/%5EGSPC?interval=1d&range=70d')),
+    ]);
+    const vixJson = await vixRes.json();
+    const spxJson = await spxRes.json();
+
+    const vixCloses = (vixJson.chart.result[0].indicators.quote[0].close || []).filter(v => v != null);
+    const vix = vixCloses[vixCloses.length - 1];
+
+    const spxCloses = (spxJson.chart.result[0].indicators.quote[0].close || []).filter(v => v != null);
+    const spxCurrent = spxCloses[spxCloses.length - 1];
+    const spx50ma    = spxCloses.length >= 50 ? spxCloses.slice(-50).reduce((a,b)=>a+b,0)/50 : null;
+    const spxAbove   = spx50ma !== null && spxCurrent >= spx50ma;
+
+    const bullOn = vix < 18 && spxAbove;
+    const borderCol = bullOn ? '#1a6b1a' : '#1e3250';
+    const statusCol = bullOn ? '#3fb950' : '#8aaccc';
+    const vixOk     = vix < 18;
+    const rules     = bullOn
+      ? '<div style="font-size:10px;color:#3fb950;margin-top:5px;font-weight:600">+5% · +8% · +12% · 3% trail</div>'
+      : '<div style="font-size:10px;color:#4a6a8a;margin-top:5px">+3% · +5% · +8% · 2% trail</div>';
+
+    el.style.opacity     = '1';
+    el.style.borderColor = borderCol;
+    el.innerHTML = `
+      <div style="font-size:10px;font-weight:700;letter-spacing:.08em;color:#8aaccc;text-transform:uppercase">🐂 BULL MODE</div>
+      <div style="font-size:18px;font-weight:700;color:${statusCol};margin-top:6px">${bullOn ? '✅ ACTIVE' : '⬜ INACTIVE'}</div>
+      <div style="font-size:11px;color:#8aaccc;margin-top:5px">
+        VIX <strong style="color:${vixOk?'#3fb950':'#f85149'}">${vix.toFixed(1)}</strong> ${vixOk?'✓':'✗ (need &lt;18)'}
+        &nbsp;·&nbsp;
+        SPX <strong style="color:${spxAbove?'#3fb950':'#f85149'}">${spxAbove?'▲ above':'▼ below'} 50MA</strong>
+      </div>
+      ${rules}`;
+
+    // Update the exit rules line dynamically
+    const rulesEl = document.getElementById('stExitRules');
+    if (rulesEl) {
+      if (bullOn) {
+        rulesEl.innerHTML = '🐂 <strong style="color:#3fb950">BULL MODE</strong> · Stage 1: <strong>25% @ +5%</strong> · Stage 2: <strong>25% @ +8%</strong> · Stage 3: <strong>25% @ +12%</strong> · Last 25%: <strong>−3% trail</strong>';
+      } else {
+        rulesEl.innerHTML = '🎯 ATH: <strong>&gt;70%</strong> · Swing: <strong>&gt;50%</strong> · Stage 1: <strong>50% @ +3%</strong> · Stage 2: <strong>25% @ +5%</strong> · Stage 3: <strong>25% @ +8%</strong> · Stop: <strong>−2% trail</strong>';
+      }
+    }
+  } catch(e) {
+    el.style.opacity = '1';
+    el.innerHTML = `<div style="font-size:10px;font-weight:700;letter-spacing:.08em;color:#8aaccc;text-transform:uppercase">🐂 BULL MODE</div><div style="font-size:12px;color:#4a6a8a;margin-top:6px">Unavailable</div>`;
+  }
+}
+
 async function fetchBreakoutConditions() {
   await Promise.allSettled([
     _fetchOneBreakout('breakout-spx', '^GSPC',   'S&P 500'),
@@ -4621,6 +4681,7 @@ async function fetchBreakoutConditions() {
     _fetchOneBreakout('breakout-tsx', '^GSPTSE', 'TSX Composite'),
     _fetchVixPanel(),
     _fetchSpy15Panel(),
+    _fetchBullModePanel(),
   ]);
   // Re-render pending + live so weak-mkt badges/banners update
   if (typeof _renderPending === 'function') _renderPending();
@@ -4906,14 +4967,14 @@ function _renderCards() {
     return pnl !== 0 || pnlPct !== 0;
   });
 
-  const profits = validClosed.filter(t => t.exitReason === 'profit' || t.exitReason === 'profit_stage3' || t.exitReason === 'profit_trail').length;
-  const losses  = validClosed.filter(t => t.exitReason === 'loss' || t.exitReason === 'timestop' || t.exitReason === 'crashexit').length;
+  const profits = validClosed.filter(t => t.exitReason === 'profit' || t.exitReason === 'profit_stage3' || t.exitReason === 'profit_trail' || t.exitReason === 'profit_bull').length;
+  const losses  = validClosed.filter(t => t.exitReason === 'loss' || t.exitReason === 'loss_bull' || t.exitReason === 'timestop' || t.exitReason === 'crashexit').length;
   const total   = profits + losses;
   const wr      = total > 0 ? Math.round(profits / total * 100) + '%' : '—';
 
   // Win Rate Last 10: most recent 10 closed trades (by sell date desc)
   const last10      = [...validClosed].sort((a, b) => new Date(b.sellDate||'') - new Date(a.sellDate||'')).slice(0, 10);
-  const last10Win   = last10.filter(t => t.exitReason === 'profit' || t.exitReason === 'profit_stage3' || t.exitReason === 'profit_trail').length;
+  const last10Win   = last10.filter(t => t.exitReason === 'profit' || t.exitReason === 'profit_stage3' || t.exitReason === 'profit_trail' || t.exitReason === 'profit_bull').length;
   const wr5         = last10.length > 0 ? Math.round(last10Win / last10.length * 100) + '%' : '—';
 
   // P&L Last 14 Days: sum P&L and invested for trades closed in last 14 days
@@ -4928,8 +4989,8 @@ function _renderCards() {
   });
   const pnl14sum    = last14d.reduce((s, t) => s + (parseFloat(t.pnl) || 0), 0);
   const inv14sum    = last14d.reduce((s, t) => s + (parseFloat(t.invested) || 0), 0);
-  const pnl14wins   = last14d.filter(t => t.exitReason === 'profit' || t.exitReason === 'profit_stage3' || t.exitReason === 'profit_trail').length;
-  const pnl14loss   = last14d.filter(t => t.exitReason === 'loss' || t.exitReason === 'timestop' || t.exitReason === 'crashexit').length;
+  const pnl14wins   = last14d.filter(t => t.exitReason === 'profit' || t.exitReason === 'profit_stage3' || t.exitReason === 'profit_trail' || t.exitReason === 'profit_bull').length;
+  const pnl14loss   = last14d.filter(t => t.exitReason === 'loss' || t.exitReason === 'loss_bull' || t.exitReason === 'timestop' || t.exitReason === 'crashexit').length;
   let pnl14Str = '—', pnl14Tip = '';
   if (last14d.length > 0) {
     const pct = inv14sum > 0 ? (pnl14sum / inv14sum * 100).toFixed(1) : '0.0';
@@ -5017,7 +5078,7 @@ function _renderSincePanel() {
     return parseDateTs(t.sellDate) >= fromTs;
   });
 
-  const wins   = sinceClosed.filter(t => t.exitReason === 'profit' || t.exitReason === 'profit_stage3' || t.exitReason === 'profit_trail').length;
+  const wins   = sinceClosed.filter(t => t.exitReason === 'profit' || t.exitReason === 'profit_stage3' || t.exitReason === 'profit_trail' || t.exitReason === 'profit_bull').length;
   const losses = sinceClosed.filter(t => t.exitReason === 'loss'   || t.exitReason === 'timestop'      || t.exitReason === 'crashexit').length;
   const total  = wins + losses;
   const wr     = total > 0 ? Math.round(wins / total * 100) + '%' : '—';
@@ -5476,8 +5537,8 @@ function _renderClosed() {
     if (_closedDateF  && !_applyDateFilter(t.sellDate, parseInt(_closedDateF))) return false;
     if (_closedPnlF) {
       const pnl = parseFloat(t.pnl) || 0;
-      if (_closedPnlF === 'profit'    && !(t.exitReason === 'profit' || t.exitReason === 'profit_stage3' || t.exitReason === 'profit_trail')) return false;
-      if (_closedPnlF === 'loss'      && !(t.exitReason === 'loss' || t.exitReason === 'timestop' || t.exitReason === 'crashexit')) return false;
+      if (_closedPnlF === 'profit'    && !(t.exitReason === 'profit' || t.exitReason === 'profit_stage3' || t.exitReason === 'profit_trail' || t.exitReason === 'profit_bull' || t.exitReason === 'profit_bull')) return false;
+      if (_closedPnlF === 'loss'      && !(t.exitReason === 'loss' || t.exitReason === 'loss_bull' || t.exitReason === 'timestop' || t.exitReason === 'crashexit')) return false;
       if (_closedPnlF === 'breakeven' && !(Math.abs(pnl) < 1)) return false;
     }
     return true;
@@ -5514,10 +5575,12 @@ function _renderClosed() {
     const pnlPct = parseFloat(t.pnlPct) || 0;
     const cls    = pnl >= 0 ? 'positive' : 'negative';
     let reasonBadge = '';
-    if (t.exitReason === 'profit_stage3')  reasonBadge = '<span class="badge-profit">✓ Profit — Stage 3 (+8%)</span>';
+    if (t.exitReason === 'profit_stage3')     reasonBadge = '<span class="badge-profit">✓ Profit — Stage 3 (+8%)</span>';
     else if (t.exitReason === 'profit_trail') reasonBadge = '<span class="badge-profit">✓ Profit — Trailing Stop</span>';
-    else if (t.exitReason === 'profit')    reasonBadge = '<span class="badge-profit">✓ Profit</span>';
-    else if (t.exitReason === 'loss')      reasonBadge = '<span class="badge-loss">✗ Stop Loss — Trailing</span>';
+    else if (t.exitReason === 'profit_bull')  reasonBadge = '<span class="badge-bull">🐂 Profit — Bull Run</span>';
+    else if (t.exitReason === 'profit')       reasonBadge = '<span class="badge-profit">✓ Profit</span>';
+    else if (t.exitReason === 'loss_bull')    reasonBadge = '<span class="badge-loss">🐂 Stop Loss — Bull Mode</span>';
+    else if (t.exitReason === 'loss')         reasonBadge = '<span class="badge-loss">✗ Stop Loss — Trailing</span>';
     else if (t.exitReason === 'timestop')  reasonBadge = '<span class="badge-timestop">⏱ Time Stop</span>';
     else if (t.exitReason === 'crashexit') reasonBadge = '<span class="badge-crash">🚨 Crash Exit</span>';
     else                                   reasonBadge = '<span class="badge-manual">Manual</span>';
