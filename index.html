@@ -3668,6 +3668,49 @@ async function loadAllRatings(){
     <div class="card blue" id="pnl14dCard" title="" style="cursor:default"><div class="card-val" id="pnl14dVal">—</div><div class="card-label">P&amp;L (Last 14 Days)</div></div>
   </div>
 
+  <!-- PERFORMANCE SINCE PANEL -->
+  <div id="sincePanel" style="background:#0d1117;border:1px solid #1e3250;border-radius:10px;padding:16px 20px;margin-bottom:16px">
+    <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:14px">
+      <div style="font-size:12px;font-weight:700;letter-spacing:.06em;color:#8aaccc;text-transform:uppercase">📅 Performance Since</div>
+      <div style="display:flex;align-items:center;gap:8px">
+        <input type="date" id="sinceDate"
+          style="background:#152032;border:1px solid #1e3250;color:#e2ecf7;padding:5px 10px;border-radius:6px;font-size:13px;font-family:inherit;cursor:pointer;outline:none"
+          onchange="localStorage.setItem('sinceDate', this.value); _renderSincePanel()">
+        <span style="font-size:11px;color:#4a6a8a">→ Today</span>
+      </div>
+    </div>
+    <div style="display:flex;gap:10px;flex-wrap:wrap">
+      <div style="flex:1;min-width:80px;background:#0a0f16;border:1px solid #1a2a3a;border-radius:8px;padding:12px 10px;text-align:center">
+        <div id="since-trades" style="font-size:22px;font-weight:700;color:#e2ecf7">—</div>
+        <div style="font-size:10px;color:#8aaccc;margin-top:4px;font-weight:600;letter-spacing:.04em;text-transform:uppercase">Trades</div>
+      </div>
+      <div style="flex:1;min-width:80px;background:#0a0f16;border:1px solid #1a2a3a;border-radius:8px;padding:12px 10px;text-align:center">
+        <div id="since-wins" style="font-size:22px;font-weight:700;color:#3fb950">—</div>
+        <div style="font-size:10px;color:#8aaccc;margin-top:4px;font-weight:600;letter-spacing:.04em;text-transform:uppercase">Wins</div>
+      </div>
+      <div style="flex:1;min-width:80px;background:#0a0f16;border:1px solid #1a2a3a;border-radius:8px;padding:12px 10px;text-align:center">
+        <div id="since-losses" style="font-size:22px;font-weight:700;color:#f85149">—</div>
+        <div style="font-size:10px;color:#8aaccc;margin-top:4px;font-weight:600;letter-spacing:.04em;text-transform:uppercase">Losses</div>
+      </div>
+      <div style="flex:1;min-width:80px;background:#0a0f16;border:1px solid #1a2a3a;border-radius:8px;padding:12px 10px;text-align:center">
+        <div id="since-wr" style="font-size:22px;font-weight:700;color:#58a6ff">—</div>
+        <div style="font-size:10px;color:#8aaccc;margin-top:4px;font-weight:600;letter-spacing:.04em;text-transform:uppercase">Win Rate</div>
+      </div>
+      <div style="flex:1;min-width:80px;background:#0a0f16;border:1px solid #1a2a3a;border-radius:8px;padding:12px 10px;text-align:center">
+        <div id="since-open" style="font-size:22px;font-weight:700;color:#e2ecf7">—</div>
+        <div style="font-size:10px;color:#8aaccc;margin-top:4px;font-weight:600;letter-spacing:.04em;text-transform:uppercase">Open Now</div>
+      </div>
+      <div style="flex:1;min-width:110px;background:#0a0f16;border:1px solid #1a2a3a;border-radius:8px;padding:12px 10px;text-align:center">
+        <div id="since-pnl" style="font-size:22px;font-weight:700;color:#e2ecf7">—</div>
+        <div style="font-size:10px;color:#8aaccc;margin-top:4px;font-weight:600;letter-spacing:.04em;text-transform:uppercase">P&amp;L ($)</div>
+      </div>
+      <div style="flex:1;min-width:110px;background:#0a0f16;border:1px solid #1a2a3a;border-radius:8px;padding:12px 10px;text-align:center">
+        <div id="since-pnlpct" style="font-size:22px;font-weight:700;color:#e2ecf7">—</div>
+        <div style="font-size:10px;color:#8aaccc;margin-top:4px;font-weight:600;letter-spacing:.04em;text-transform:uppercase">P&amp;L (%)</div>
+      </div>
+    </div>
+  </div>
+
   <!-- MARKET BREAKOUT CONDITIONS -->
   <div id="breakoutPanel" style="display:flex;gap:12px;margin-bottom:16px;flex-wrap:wrap">
     <div id="breakout-spx" style="flex:1;min-width:220px;background:#0d1117;border:1px solid #1e3250;border-radius:10px;padding:14px 16px;opacity:.6">
@@ -4905,6 +4948,82 @@ function _renderCards() {
     pnl14El.className   = 'card-val ' + (pnl14sum > 0 ? 'positive' : pnl14sum < 0 ? 'negative' : 'neutral');
   }
   if (pnl14Card) pnl14Card.title = pnl14Tip;
+
+  _renderSincePanel();
+}
+
+// ─── PERFORMANCE SINCE PANEL ──────────────────────────────────────────────────
+function _renderSincePanel() {
+  if (!portfolioState) return;
+  const dateEl = document.getElementById('sinceDate');
+  if (!dateEl) return;
+
+  // On first load: restore from localStorage, or default to 14 days ago
+  if (!dateEl.value) {
+    const stored = localStorage.getItem('sinceDate');
+    if (stored) {
+      dateEl.value = stored;
+    } else {
+      const d = new Date();
+      d.setDate(d.getDate() - 14);
+      dateEl.value = d.toISOString().slice(0, 10);
+      localStorage.setItem('sinceDate', dateEl.value);
+    }
+  }
+
+  const fromDate = dateEl.value; // YYYY-MM-DD
+  if (!fromDate) return;
+
+  const fromTs = new Date(fromDate + 'T00:00:00').getTime();
+  const { trades = [] } = portfolioState;
+
+  // Helper: parse a YYYY-MM-DD date string to midnight timestamp
+  const parseDateTs = (str) => {
+    if (!str) return NaN;
+    const parts = String(str).trim().split('-');
+    return parts.length === 3
+      ? new Date(Date.UTC(parseInt(parts[0]), parseInt(parts[1]) - 1, parseInt(parts[2]), 12, 0, 0)).getTime()
+      : new Date(str).getTime();
+  };
+
+  // Closed trades with sell date >= fromDate and valid P&L
+  const sinceClosed = trades.filter(t => {
+    if (t.status === 'live' || t.status === 'partial') return false;
+    if ((parseFloat(t.pnl) || 0) === 0 && (parseFloat(t.pnlPct) || 0) === 0) return false;
+    return parseDateTs(t.sellDate) >= fromTs;
+  });
+
+  const wins   = sinceClosed.filter(t => t.exitReason === 'profit' || t.exitReason === 'profit_stage3' || t.exitReason === 'profit_trail').length;
+  const losses = sinceClosed.filter(t => t.exitReason === 'loss'   || t.exitReason === 'timestop'      || t.exitReason === 'crashexit').length;
+  const total  = wins + losses;
+  const wr     = total > 0 ? Math.round(wins / total * 100) + '%' : '—';
+
+  const pnlSum = sinceClosed.reduce((s, t) => s + (parseFloat(t.pnl)      || 0), 0);
+  const invSum = sinceClosed.reduce((s, t) => s + (parseFloat(t.invested)  || 0), 0);
+  const pnlPct = invSum > 0 ? (pnlSum / invSum * 100) : null;
+
+  // Open positions with buy date >= fromDate (deduplicated by ticker)
+  const sinceOpen = trades
+    .filter(t => (t.status === 'live' || t.status === 'partial') && parseDateTs(t.buyDate) >= fromTs)
+    .reduce((acc, t) => { if (!acc.find(x => x.ticker === t.ticker)) acc.push(t); return acc; }, []);
+
+  const pnlColor = pnlSum > 0 ? '#3fb950' : pnlSum < 0 ? '#f85149' : '#e2ecf7';
+  const pnlSign  = pnlSum >= 0 ? '+' : '';
+
+  const set = (id, val, color) => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.textContent = val;
+    if (color) el.style.color = color;
+  };
+
+  set('since-trades',  total + sinceOpen.length > 0 ? total + sinceOpen.length : '0');
+  set('since-wins',    wins   > 0 ? wins   : '0', '#3fb950');
+  set('since-losses',  losses > 0 ? losses : '0', '#f85149');
+  set('since-wr',      wr, '#58a6ff');
+  set('since-open',    sinceOpen.length, '#e2ecf7');
+  set('since-pnl',     total > 0 ? pnlSign + '$' + _fmtUSD(Math.abs(pnlSum)) : '—', total > 0 ? pnlColor : '#4a6a8a');
+  set('since-pnlpct',  pnlPct !== null && total > 0 ? pnlSign + pnlPct.toFixed(1) + '%' : '—', total > 0 ? pnlColor : '#4a6a8a');
 }
 
 // ─── PENDING ENTRIES ──────────────────────────────────────────────────────────
