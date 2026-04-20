@@ -3787,7 +3787,9 @@ async function loadAllRatings(){
       <table>
         <thead><tr>
           <th>Ticker</th><th>Type</th><th>Prob</th>
-          <th>Signal Date</th><th>Reclaim Close <span style="font-size:9px;font-weight:400;opacity:.6">(native currency)</span></th>
+          <th>Signal Date</th>
+          <th>Trigger Price <span style="font-size:9px;font-weight:400;opacity:.6">(native currency)</span></th>
+          <th>CMP <span style="font-size:9px;font-weight:400;opacity:.6">↻ 60s</span></th>
           <th>Confirm At</th><th>Action</th><th>Why Selected</th>
         </tr></thead>
         <tbody id="pendingBody">
@@ -5137,7 +5139,7 @@ function _renderPending() {
   if (!tbody) return;
 
   if (!pends.length) {
-    tbody.innerHTML = '<tr><td colspan="8" class="empty">No pending entries' + (allPends.length ? ' matching filters' : '') + '</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="9" class="empty">No pending entries' + (allPends.length ? ' matching filters' : '') + '</td></tr>';
     return;
   }
 
@@ -5164,6 +5166,7 @@ function _renderPending() {
     }
   }
 
+  setTimeout(_fetchPendingCMP, 100); // fetch CMP shortly after rows are in DOM
   tbody.innerHTML = pends.map(p => {
     const name     = (window.COMPANY_NAMES && COMPANY_NAMES[p.ticker]) || '';
     const isTSX    = (p.exchange||'').toUpperCase() === 'TSX';
@@ -5181,11 +5184,49 @@ function _renderPending() {
       <td>${_pBadge(p.prob)}</td>
       <td>${_fmtDate(p.signalDate)}<br><small style="color:#8aaccc">${p.runTime ? _fmtTime(p.runTime) : '—'}</small></td>
       <td>$${_fmtUSD(p.reclaimClose)} <span style="font-size:10px;color:#4a6a8a;font-weight:600">${isTSX?'CAD':'USD'}</span></td>
+      <td id="pcmp-${p.ticker}" data-reclaim="${p.reclaimClose}" data-exchange="${p.exchange||'US'}" style="font-weight:600;font-size:13px;white-space:nowrap">—</td>
       <td>${confirmCell}</td>
       <td>${isWeak ? `<span style="background:#2a1a00;color:#d4a017;border:1px solid #d4a01766;padding:2px 7px;border-radius:4px;font-size:11px;font-weight:600">⚠ Weak Mkt</span>` : '<span class="badge-pending">⏳ Pending</span>'}</td>
       <td class="why-selected-cell">${p.reason ? p.reason.replace(/</g,'&lt;') : '—'}</td>
     </tr>`;
   }).join('');
+}
+
+// ─── PENDING CMP (Current Market Price) ──────────────────────────────────────
+let _pendingCmpTimer = null;
+
+async function _fetchPendingCMP() {
+  const cells = document.querySelectorAll('[id^="pcmp-"]');
+  if (!cells.length) return;
+
+  const proxy = s => 'https://corsproxy.io/?url=' + encodeURIComponent(s);
+
+  for (const cell of cells) {
+    const ticker   = cell.id.replace('pcmp-', '');
+    const reclaim  = parseFloat(cell.dataset.reclaim) || 0;
+    const exchange = cell.dataset.exchange || 'US';
+    const yhTicker = exchange === 'TSX' ? ticker + '.TO' : ticker;
+
+    try {
+      const resp = await fetch(proxy(
+        'https://query2.finance.yahoo.com/v8/finance/chart/' + encodeURIComponent(yhTicker) + '?interval=1m&range=1d'
+      ));
+      const json  = await resp.json();
+      const closes = (json.chart?.result?.[0]?.indicators?.quote?.[0]?.close || []).filter(v => v != null);
+      if (!closes.length) { cell.innerHTML = '<span style="color:#4a6a8a">—</span>'; continue; }
+      const cmp   = closes[closes.length - 1];
+      const above = cmp > reclaim;
+      const color = above ? '#3fb950' : '#f85149';
+      cell.innerHTML = `<span style="color:${color}">$${_fmtUSD(cmp)}</span> <span style="font-size:10px;color:${color}">${above ? '↑ ✓' : '↓ ✗'}</span>`;
+    } catch(e) {
+      cell.innerHTML = '<span style="color:#4a6a8a">—</span>';
+    }
+  }
+
+  // Start 60-second auto-refresh if not already running
+  if (!_pendingCmpTimer) {
+    _pendingCmpTimer = setInterval(_fetchPendingCMP, 60000);
+  }
 }
 
 // ─── LIVE POSITIONS SORT ──────────────────────────────────────────────────────
