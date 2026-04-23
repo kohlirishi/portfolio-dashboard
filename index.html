@@ -3827,7 +3827,6 @@ async function loadAllRatings(){
           <th class="sortable" onclick="sortLive('prob')" id="liveSort-prob">Prob <span class="sort-icon">↕</span></th>
           <th class="sortable" onclick="sortLive('buyDate')" id="liveSort-buyDate" style="white-space:nowrap">Buy Date <span class="sort-icon">↕</span></th>
           <th>Buy Price (USD)</th><th>Current (USD)</th>
-          <th>Invested</th>
           <th class="sortable" onclick="sortLive('pnlUSD')" id="liveSort-pnlUSD">Unrealized P&amp;L <span class="sort-icon">↕</span></th>
           <th class="sortable" onclick="sortLive('pnlPct')" id="liveSort-pnlPct">P&amp;L % <span class="sort-icon">↕</span></th>
           <th>Targets</th><th>Trail Stop</th>
@@ -3835,7 +3834,7 @@ async function loadAllRatings(){
           <th>Why Selected</th>
         </tr></thead>
         <tbody id="liveBody">
-          <tr><td colspan="13" class="empty">No live positions</td></tr>
+          <tr><td colspan="12" class="empty">No live positions</td></tr>
         </tbody>
       </table>
     </div>
@@ -5481,7 +5480,7 @@ function _renderLive() {
   if (!tbody) return;
 
   if (!live.length) {
-    tbody.innerHTML = '<tr><td colspan="13" class="empty">No live positions' + (allLive.length ? ' matching filters' : '') + '</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="12" class="empty">No live positions' + (allLive.length ? ' matching filters' : '') + '</td></tr>';
     return;
   }
 
@@ -5567,7 +5566,6 @@ function _renderLive() {
       <td style="white-space:nowrap"><div>${_fmtDate(t.buyDate)}</div><small style="color:#8aaccc">${_fmtTime(t.buyTime)}</small></td>
       <td>$${bp.toFixed(2)}</td>
       <td>$${cp.toFixed(2)}<br><small style="color:#8aaccc">${chg>=0?'+':''}${chg.toFixed(2)}%</small></td>
-      <td>$${_fmtUSD(inv)}</td>
       <td class="${cls}">${totalUnreal>=0?'+':'-'}$${_fmtUSD(Math.abs(totalUnreal))}</td>
       <td class="${cls}">${chg>=0?'+':''}${chg.toFixed(2)}%</td>
       <td style="font-size:12px">${targets}</td>
