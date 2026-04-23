@@ -5563,7 +5563,7 @@ function _renderLive() {
       <td><div class="ticker-cell">${_flagIcon(t.exchange||'US')} ${t.ticker}</div><div class="ticker-name">${name}</div>${partTag}${weakBadge}</td>
       <td>${_typeBadge(t.type)}</td>
       <td>${_pBadge(t.prob)}</td>
-      <td style="white-space:nowrap"><div>${_fmtDate(t.buyDate)}</div><small style="color:#8aaccc">${_fmtTime(t.buyTime)}</small></td>
+      <td style="min-width:80px"><div>${_fmtDate(t.buyDate)}</div><small style="color:#8aaccc">${_fmtTime(t.buyTime)}</small></td>
       <td>$${bp.toFixed(2)}</td>
       <td>$${cp.toFixed(2)}<br><small style="color:#8aaccc">${chg>=0?'+':''}${chg.toFixed(2)}%</small></td>
       <td class="${cls}">${totalUnreal>=0?'+':'-'}$${_fmtUSD(Math.abs(totalUnreal))}</td>
