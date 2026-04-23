@@ -3791,9 +3791,10 @@ async function loadAllRatings(){
           <th>Trigger Price <span style="font-size:9px;font-weight:400;opacity:.6">(native currency)</span></th>
           <th>CMP <span style="font-size:9px;font-weight:400;opacity:.6">↻ 60s</span></th>
           <th>STATUS</th><th>Action</th><th>Why Selected</th>
+          <th>TV Rating <span style="font-size:9px;font-weight:400;opacity:.6">at signal</span></th>
         </tr></thead>
         <tbody id="pendingBody">
-          <tr><td colspan="8" class="empty">No pending entries</td></tr>
+          <tr><td colspan="10" class="empty">No pending entries</td></tr>
         </tbody>
       </table>
     </div>
@@ -3830,9 +3831,10 @@ async function loadAllRatings(){
           <th class="sortable" onclick="sortLive('pnlUSD')" id="liveSort-pnlUSD">Unrealized P&amp;L <span class="sort-icon">↕</span></th>
           <th class="sortable" onclick="sortLive('pnlPct')" id="liveSort-pnlPct">P&amp;L % <span class="sort-icon">↕</span></th>
           <th>Targets</th><th>Trail Stop</th><th>Why Selected</th>
+          <th>TV Rating <span style="font-size:9px;font-weight:400;opacity:.6">at entry</span></th>
         </tr></thead>
         <tbody id="liveBody">
-          <tr><td colspan="12" class="empty">No live positions</td></tr>
+          <tr><td colspan="13" class="empty">No live positions</td></tr>
         </tbody>
       </table>
     </div>
@@ -3870,9 +3872,10 @@ async function loadAllRatings(){
           <th class="sortable" onclick="sortClosed('pnlUSD')" id="closedSort-pnlUSD">P&amp;L (USD) <span class="sort-icon">↕</span></th>
           <th class="sortable" onclick="sortClosed('pnlPct')" id="closedSort-pnlPct">P&amp;L % <span class="sort-icon">↕</span></th>
           <th>Exit Reason</th>
+          <th>TV Rating <span style="font-size:9px;font-weight:400;opacity:.6">at entry</span></th>
         </tr></thead>
         <tbody id="closedBody">
-          <tr><td colspan="11" class="empty">No closed trades yet</td></tr>
+          <tr><td colspan="12" class="empty">No closed trades yet</td></tr>
         </tbody>
       </table>
     </div>
@@ -4801,6 +4804,20 @@ function _typeBadge(type) {
 
 function _flagIcon(exch) { return exch === 'TSX' ? '🇨🇦' : '🇺🇸'; }
 
+function _tvBadge(rating) {
+  const map = {
+    'STRONG_BUY':  { bg:'#0d2e0d', color:'#3fb950', border:'#238636', text:'Strong Buy' },
+    'BUY':         { bg:'#0a2a1a', color:'#3fb950', border:'#238636', text:'Buy' },
+    'NEUTRAL':     { bg:'#152032', color:'#8aaccc', border:'#1e3250', text:'Neutral' },
+    'SELL':        { bg:'#2a1010', color:'#f85149', border:'#6e1a1a', text:'Sell' },
+    'STRONG_SELL': { bg:'#2a0808', color:'#f85149', border:'#6e1a1a', text:'Strong Sell' },
+  };
+  const r = (rating || '').trim().toUpperCase();
+  if (!r || r === 'N/A' || r === '') return '<span style="color:#4a6a8a;font-size:11px">—</span>';
+  const style = map[r] || { bg:'#0d1520', color:'#4a6a8a', border:'#1e3250', text: r };
+  return `<span style="background:${style.bg};color:${style.color};border:1px solid ${style.border};padding:2px 7px;border-radius:4px;font-size:11px;font-weight:600;white-space:nowrap">${style.text}</span>`;
+}
+
 // ─── SECTION MINIMIZE/EXPAND ──────────────────────────────────────────────────
 function toggleSection(bodyId, btnId) {
   const body = document.getElementById(bodyId);
@@ -5139,7 +5156,7 @@ function _renderPending() {
   if (!tbody) return;
 
   if (!pends.length) {
-    tbody.innerHTML = '<tr><td colspan="9" class="empty">No pending entries' + (allPends.length ? ' matching filters' : '') + '</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="10" class="empty">No pending entries' + (allPends.length ? ' matching filters' : '') + '</td></tr>';
     return;
   }
 
@@ -5190,6 +5207,7 @@ function _renderPending() {
       <td id="pstatus-${p.ticker}" data-weak="${isWeak?'1':'0'}" data-weaklabel="${isWeak ? weakLabel + ' (' + Math.abs(mktState?.pctDiff||0).toFixed(2) + '% below)' : ''}">${initialStatus}</td>
       <td>${isWeak ? `<span style="background:#2a1a00;color:#d4a017;border:1px solid #d4a01766;padding:2px 7px;border-radius:4px;font-size:11px;font-weight:600">⚠ Weak Mkt</span>` : '<span class="badge-pending">⏳ Pending</span>'}</td>
       <td class="why-selected-cell">${p.reason ? p.reason.replace(/</g,'&lt;') : '—'}</td>
+      <td>${_tvBadge(p.tvRating)}</td>
     </tr>`;
   }).join('');
 }
@@ -5462,7 +5480,7 @@ function _renderLive() {
   if (!tbody) return;
 
   if (!live.length) {
-    tbody.innerHTML = '<tr><td colspan="12" class="empty">No live positions' + (allLive.length ? ' matching filters' : '') + '</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="13" class="empty">No live positions' + (allLive.length ? ' matching filters' : '') + '</td></tr>';
     return;
   }
 
@@ -5554,6 +5572,7 @@ function _renderLive() {
       <td style="font-size:12px">${targets}</td>
       <td style="color:#f85149">$${trail.toFixed(2)}<br><small style="color:#8aaccc">−2% trail</small></td>
       <td class="why-selected-cell">${t.reason ? t.reason.replace(/</g,'&lt;') : '—'}</td>
+      <td>${_tvBadge(t.tvRating)}</td>
     </tr>`;
   }).join('');
 }
@@ -5619,7 +5638,7 @@ function _renderClosed() {
   if (!tbody) return;
 
   if (!closed.length) {
-    tbody.innerHTML = '<tr><td colspan="11" class="empty">No closed trades' + (allClosed.length ? ' matching filters' : ' yet') + '</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="12" class="empty">No closed trades' + (allClosed.length ? ' matching filters' : ' yet') + '</td></tr>';
     _renderClosedPagination(0, 0);
     return;
   }
@@ -5658,6 +5677,7 @@ function _renderClosed() {
       <td class="${cls}">${pnl>=0?'+':'-'}$${_fmtUSD(Math.abs(pnl))}</td>
       <td class="${cls}">${pnlPct>=0?'+':''}${pnlPct.toFixed(2)}%</td>
       <td>${reasonBadge}</td>
+      <td>${_tvBadge(t.tvRating)}</td>
     </tr>`;
   }).join('');
 
@@ -5936,6 +5956,12 @@ function _renderSlAnalyses() {
       { label: 'Prob',      val: (s.probability || '—') + '%' },
       { label: 'Exchange',  val: s.exchange || '—'    },
     ];
+    const tvRatingTile = s.tvRating
+      ? `<div style="background:#0a1525;border:1px solid #1e3250;border-radius:6px;padding:8px 12px;min-width:110px">
+          <div style="font-size:10px;color:#4a6a8a;text-transform:uppercase;letter-spacing:.05em;margin-bottom:3px">TV Rating at Entry</div>
+          <div style="font-size:13px;font-weight:600">${_tvBadge(s.tvRating)}</div>
+        </div>`
+      : '';
     const statsHtml = statItems.map(it =>
       `<div style="background:#0a1525;border:1px solid #1e3250;border-radius:6px;padding:8px 12px;min-width:110px">
         <div style="font-size:10px;color:#4a6a8a;text-transform:uppercase;letter-spacing:.05em;margin-bottom:3px">${it.label}</div>
@@ -5986,7 +6012,7 @@ function _renderSlAnalyses() {
       <!-- Expanded body (hidden by default) -->
       <div id="${cardId}_body" style="display:none">
         <!-- Stats row -->
-        <div style="padding:12px 16px;display:flex;gap:8px;flex-wrap:wrap">${statsHtml}</div>
+        <div style="padding:12px 16px;display:flex;gap:8px;flex-wrap:wrap">${statsHtml}${tvRatingTile}</div>
 
         <!-- Market regime context at time of stop (live-fetched on expand) -->
         <div id="${cardId}_mktContext"></div>
