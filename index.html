@@ -5550,9 +5550,21 @@ function _renderLive() {
     const chg        = bp > 0 ? (cp - bp) / bp * 100 : 0;
     const cls        = totalUnreal >= 0 ? 'positive' : 'negative';
     const trail      = parseFloat(t.trailingStop) || 0;
+    const partial3   = t.partial3Done === true || t.partial3Done === 'true';
     const pt         = parseFloat(t.partialTarget) || 0;  // +3% target
     const ft         = parseFloat(t.finalTarget)   || 0;  // +8% target
     const pt2        = bp > 0 ? bp * 1.05 : 0;            // +5% target (computed)
+
+    // SL cushion: how many % the stock can still fall before stop triggers
+    const cushionPct   = (cp > 0 && trail > 0) ? ((cp - trail) / cp * 100) : null;
+    const cushionColor = cushionPct === null ? '#4a6a8a'
+                       : cushionPct < 1.0    ? '#f85149'   // red  — very close
+                       : cushionPct < 2.5    ? '#e3b341'   // amber — getting close
+                       :                       '#8aaccc';  // muted — comfortable
+    const stageLabel   = partial3 ? 'S3 done · 3% trail'
+                       : partial2 ? 'S2 done · 3% trail'
+                       : partial  ? 'S1 done · 3% trail'
+                       :            'No stage yet';
 
     // Tag line showing completed exits under ticker name
     const partTag = partial2
@@ -5584,7 +5596,11 @@ function _renderLive() {
       <td class="${cls}">${totalUnreal>=0?'+':'-'}$${_fmtUSD(Math.abs(totalUnreal))}</td>
       <td class="${cls}">${chg>=0?'+':''}${chg.toFixed(2)}%</td>
       <td style="font-size:12px">${targets}</td>
-      <td style="color:#f85149">$${trail.toFixed(2)}<br><small style="color:#8aaccc">−2% trail</small></td>
+      <td style="color:#f85149">
+        $${trail.toFixed(2)}
+        <br><small style="color:${cushionColor};font-weight:600">${cushionPct !== null ? '−' + cushionPct.toFixed(1) + '% cushion' : '—'}</small>
+        <br><small style="color:#4a6a8a;font-size:10px">${stageLabel}</small>
+      </td>
       <td>${_tvBadge(t.tvRating)}</td>
       <td class="why-selected-cell">${t.reason ? t.reason.replace(/</g,'&lt;') : '—'}</td>
     </tr>`;
@@ -5680,6 +5696,20 @@ function _renderClosed() {
     const partNote = (t.partialExitDone===true || t.partialExitDone==='true')
       ? `<br><small style="color:#e3b341">⚡ 50% @ $${_fmtUSD(t.partialExitPrice)} (+$${_fmtUSD(t.partialExitPnl)})</small>` : '';
     const name = (window.COMPANY_NAMES && COMPANY_NAMES[t.ticker]) || '';
+
+    // SL context shown under sell price for stop-loss exits
+    const isStopExit = t.exitReason === 'loss' || t.exitReason === 'loss_bull' ||
+                       t.exitReason === 'profit_trail' || t.exitReason === 'profit_bull';
+    const closedHigh  = parseFloat(t.highestPrice) || 0;
+    const closedSell  = parseFloat(t.sellPrice)    || 0;
+    const closedTrail = parseFloat(t.trailingStop)  || 0;
+    const fromHighPct = (closedHigh > 0 && closedSell > 0)
+      ? ((closedHigh - closedSell) / closedHigh * 100)
+      : null;
+    const slNote = isStopExit && fromHighPct !== null
+      ? `<br><small style="color:#8aaccc;font-size:10px">−${fromHighPct.toFixed(1)}% from high $${closedHigh.toFixed(2)}</small>`
+      : '';
+
     return `<tr>
       <td><div class="ticker-cell">${_flagIcon(t.exchange||'US')} ${t.ticker}</div><div class="ticker-name">${name}</div></td>
       <td>${_typeBadge(t.type)}</td>
@@ -5687,7 +5717,7 @@ function _renderClosed() {
       <td style="white-space:nowrap">${_fmtDate(t.buyDate)}</td>
       <td style="white-space:nowrap">${_fmtDate(t.sellDate||'—')}</td>
       <td>$${parseFloat(t.buyPrice||0).toFixed(2)}</td>
-      <td>$${parseFloat(t.sellPrice||0).toFixed(2)}${partNote}</td>
+      <td>$${parseFloat(t.sellPrice||0).toFixed(2)}${partNote}${slNote}</td>
       <td>$${_fmtUSD(t.invested)}</td>
       <td class="${cls}">${pnl>=0?'+':'-'}$${_fmtUSD(Math.abs(pnl))}</td>
       <td class="${cls}">${pnlPct>=0?'+':''}${pnlPct.toFixed(2)}%</td>
