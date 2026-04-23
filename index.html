@@ -5141,6 +5141,7 @@ function _renderPending() {
     if (_pendingTypeF  && (p.type||'').toLowerCase() !== _pendingTypeF) return false;
     if (_pendingExchF  && (p.exchange||'US').toUpperCase() !== _pendingExchF) return false;
     if (_pendingDateF  && !_applyDateFilter(p.signalDate, parseInt(_pendingDateF))) return false;
+    if (_pendingTvF    && (p.tvRating||'').toUpperCase() !== _pendingTvF) return false;
     return true;
   });
 
@@ -5150,7 +5151,8 @@ function _renderPending() {
   // Render filter bar (focus-safe)
   _setFilterBar(document.getElementById('pendingFilterBar'),
     _filterBar(_pendingSearch, _pendingTypeF, _pendingExchF, _pendingDateF,
-      allPends.length, pends.length, 'pendingSearch','pendingTypeF','pendingExchF','pendingDateF', true));
+      allPends.length, pends.length, 'pendingSearch','pendingTypeF','pendingExchF','pendingDateF', true,
+      null, null, _pendingTvF, 'pendingTvF'));
 
   const tbody = document.getElementById('pendingBody');
   if (!tbody) return;
@@ -5267,9 +5269,9 @@ async function _fetchPendingCMP() {
 
 // ─── LIVE POSITIONS SORT ──────────────────────────────────────────────────────
 // ─── SEARCH / FILTER STATE ────────────────────────────────────────────────────
-let _pendingSearch = '', _pendingTypeF = '', _pendingExchF = '', _pendingDateF = '';
-let _liveSearch    = '', _liveTypeF    = '', _liveExchF    = '';
-let _closedSearch  = '', _closedTypeF  = '', _closedExchF  = '', _closedDateF  = '', _closedPnlF = '';
+let _pendingSearch = '', _pendingTypeF = '', _pendingExchF = '', _pendingDateF = '', _pendingTvF = '';
+let _liveSearch    = '', _liveTypeF    = '', _liveExchF    = '',                    _liveTvF    = '';
+let _closedSearch  = '', _closedTypeF  = '', _closedExchF  = '', _closedDateF  = '', _closedPnlF = '', _closedTvF = '';
 
 function _applyDateFilter(dateStr, days) {
   if (!days) return true;
@@ -5296,7 +5298,7 @@ function _setFilterBar(filterEl, html) {
 }
 
 function _filterBar(searchVal, typeVal, exchVal, dateVal, total, filtered,
-                    searchFn, typeFn, exchFn, dateFn, showDate, pnlVal, pnlFn) {
+                    searchFn, typeFn, exchFn, dateFn, showDate, pnlVal, pnlFn, tvVal, tvFn) {
   const ss = () => `padding:5px 10px;border-radius:6px;border:1px solid #1e3250;background:#0d1520;color:#8aaccc;font-size:12px;cursor:pointer;font-family:inherit;outline:none`;
   return `<div style="display:flex;gap:8px;align-items:center;margin-bottom:10px;flex-wrap:wrap">
     <div style="position:relative;flex:1;min-width:160px;max-width:220px">
@@ -5327,6 +5329,14 @@ function _filterBar(searchVal, typeVal, exchVal, dateVal, total, filtered,
       <option value="loss"      ${pnlVal==='loss'?'selected':''}>✗ Stop Loss</option>
       <option value="breakeven" ${pnlVal==='breakeven'?'selected':''}>≈ Break Even</option>
     </select>` : ''}
+    ${tvFn ? `<select onchange="${tvFn}(this.value)" style="${ss()}">
+      <option value=""            ${!tvVal?'selected':''}>All TV Ratings</option>
+      <option value="STRONG_BUY"  ${tvVal==='STRONG_BUY'?'selected':''}>⬆⬆ Strong Buy</option>
+      <option value="BUY"         ${tvVal==='BUY'?'selected':''}>⬆ Buy</option>
+      <option value="NEUTRAL"     ${tvVal==='NEUTRAL'?'selected':''}>→ Neutral</option>
+      <option value="SELL"        ${tvVal==='SELL'?'selected':''}>⬇ Sell</option>
+      <option value="STRONG_SELL" ${tvVal==='STRONG_SELL'?'selected':''}>⬇⬇ Strong Sell</option>
+    </select>` : ''}
     <span style="font-size:12px;color:#4a6a8a;margin-left:auto">${filtered} of ${total}</span>
   </div>`;
 }
@@ -5336,16 +5346,19 @@ function pendingSearch(v) { _pendingSearch=v; _renderPending(); }
 function pendingTypeF(v)  { _pendingTypeF=v;  _renderPending(); }
 function pendingExchF(v)  { _pendingExchF=v;  _renderPending(); }
 function pendingDateF(v)  { _pendingDateF=v;  _renderPending(); }
+function pendingTvF(v)    { _pendingTvF=v;    _renderPending(); }
 // Live filter handlers
 function liveSearch(v)    { _liveSearch=v;    _renderLive(); }
 function liveTypeF(v)     { _liveTypeF=v;     _renderLive(); }
 function liveExchF(v)     { _liveExchF=v;     _renderLive(); }
+function liveTvF(v)       { _liveTvF=v;       _renderLive(); }
 // Closed filter handlers
 function closedSearch2(v) { _closedSearch=v;  _closedPage=1; _renderClosed(); }
 function closedTypeF2(v)  { _closedTypeF=v;   _closedPage=1; _renderClosed(); }
 function closedExchF2(v)  { _closedExchF=v;   _closedPage=1; _renderClosed(); }
 function closedDateF2(v)  { _closedDateF=v;   _closedPage=1; _renderClosed(); }
 function closedPnlF2(v)   { _closedPnlF=v;    _closedPage=1; _renderClosed(); }
+function closedTvF2(v)    { _closedTvF=v;     _closedPage=1; _renderClosed(); }
 
 let _liveSortCol = null;   // 'prob' | 'buyDate' | 'pnlUSD' | 'pnlPct' | null
 let _liveSortDir = 'desc'; // 'asc' | 'desc'
@@ -5465,6 +5478,7 @@ function _renderLive() {
     if (_liveSearch && !(t.ticker||'').toLowerCase().includes(_liveSearch.toLowerCase())) return false;
     if (_liveTypeF  && (t.type||'').toLowerCase() !== _liveTypeF) return false;
     if (_liveExchF  && (t.exchange||'US').toUpperCase() !== _liveExchF) return false;
+    if (_liveTvF    && (t.tvRating||'').toUpperCase() !== _liveTvF) return false;
     return true;
   });
 
@@ -5474,7 +5488,8 @@ function _renderLive() {
   // Render filter bar (focus-safe)
   _setFilterBar(document.getElementById('liveFilterBar'),
     _filterBar(_liveSearch, _liveTypeF, _liveExchF, '',
-      allLive.length, live.length, 'liveSearch','liveTypeF','liveExchF','', false));
+      allLive.length, live.length, 'liveSearch','liveTypeF','liveExchF','', false,
+      null, null, _liveTvF, 'liveTvF'));
 
   const tbody = document.getElementById('liveBody');
   if (!tbody) return;
@@ -5618,6 +5633,7 @@ function _renderClosed() {
       if (_closedPnlF === 'loss'      && !(t.exitReason === 'loss' || t.exitReason === 'loss_bull' || t.exitReason === 'timestop' || t.exitReason === 'crashexit')) return false;
       if (_closedPnlF === 'breakeven' && !(Math.abs(pnl) < 1)) return false;
     }
+    if (_closedTvF && (t.tvRating||'').toUpperCase() !== _closedTvF) return false;
     return true;
   });
 
@@ -5628,7 +5644,7 @@ function _renderClosed() {
   _setFilterBar(document.getElementById('closedFilterBar'),
     _filterBar(_closedSearch, _closedTypeF, _closedExchF, _closedDateF,
       allClosed.length, closed.length, 'closedSearch2','closedTypeF2','closedExchF2','closedDateF2', true,
-      _closedPnlF, 'closedPnlF2'));
+      _closedPnlF, 'closedPnlF2', _closedTvF, 'closedTvF2'));
 
   const panelEl = document.getElementById('closedProbBreakdown');
   if (panelEl) panelEl.innerHTML = '';
