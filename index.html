@@ -4594,7 +4594,8 @@ async function _fetchSpy15Panel() {
     else if (roc15m < 0)   { rocStatus = 'Mild selling'; rocColor = '#d4a017'; }
     else                   { rocStatus = 'Stable / Rising'; rocColor = '#3fb950'; }
 
-    const dropSign  = dropPct > 0 ? '−' : '+';
+    const moveLabel = dropPct > 0 ? 'DROP' : 'RISE';   // DROP when down from open, RISE when up
+    const moveSign  = dropPct > 0 ? '−' : '+';
     const rocSign   = roc15m >= 0 ? '+' : '';
     el.style.opacity    = '1';
     el.style.border     = `1px solid ${borderColor}55`;
@@ -4607,7 +4608,7 @@ async function _fetchSpy15Panel() {
       <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
         <div style="width:38px;height:38px;border-radius:50%;border:2.5px solid ${borderColor};display:flex;align-items:center;justify-content:center;font-size:20px;flex-shrink:0">${icon}</div>
         <div>
-          <div style="font-size:15px;font-weight:800;color:${dropColor};line-height:1.2">DROP: ${dropSign}${Math.abs(dropPct).toFixed(2)}% from open</div>
+          <div style="font-size:15px;font-weight:800;color:${dropColor};line-height:1.2">${moveLabel}: ${moveSign}${Math.abs(dropPct).toFixed(2)}% from open</div>
           <div style="font-size:11px;color:${rocColor};opacity:.9;margin-top:2px">15m ROC: ${rocSign}${roc15m.toFixed(2)}% &nbsp;·&nbsp; ${rocStatus}</div>
         </div>
       </div>
@@ -4649,7 +4650,7 @@ async function _fetchBullModePanel() {
     const statusCol = bullOn ? '#3fb950' : '#8aaccc';
     const vixOk     = vix < 20;
     const rules     = bullOn
-      ? '<div style="font-size:10px;color:#3fb950;margin-top:5px;font-weight:600">+5% · +8% · +12% · 3% trail</div>'
+      ? '<div style="font-size:10px;color:#3fb950;margin-top:5px;font-weight:600">+3% · +6% · +9% · 2% trail</div>'
       : '<div style="font-size:10px;color:#4a6a8a;margin-top:5px">+3% · +5% · +8% · 2% trail</div>';
 
     el.style.opacity     = '1';
@@ -4668,7 +4669,7 @@ async function _fetchBullModePanel() {
     const rulesEl = document.getElementById('stExitRules');
     if (rulesEl) {
       if (bullOn) {
-        rulesEl.innerHTML = '🐂 <strong style="color:#3fb950">BULL MODE</strong> · Stage 1: <strong>25% @ +5%</strong> · Stage 2: <strong>25% @ +8%</strong> · Stage 3: <strong>25% @ +12%</strong> · Last 25%: <strong>−3% trail</strong>';
+        rulesEl.innerHTML = '🐂 <strong style="color:#3fb950">BULL MODE</strong> · Stage 1: <strong>25% @ +3%</strong> · Stage 2: <strong>25% @ +6%</strong> · Stage 3: <strong>25% @ +9%</strong> · Last 25%: <strong>−2% trail</strong>';
       } else {
         rulesEl.innerHTML = '🎯 ATH: <strong>&gt;70%</strong> · Swing: <strong>&gt;50%</strong> · Stage 1: <strong>50% @ +3%</strong> · Stage 2: <strong>25% @ +5%</strong> · Stage 3: <strong>25% @ +8%</strong> · Stop: <strong>−2% trail</strong>';
       }
@@ -4676,6 +4677,26 @@ async function _fetchBullModePanel() {
   } catch(e) {
     el.style.opacity = '1';
     el.innerHTML = `<div style="font-size:10px;font-weight:700;letter-spacing:.08em;color:#8aaccc;text-transform:uppercase">🐂 BULL MODE</div><div style="font-size:12px;color:#4a6a8a;margin-top:6px">Unavailable</div>`;
+  }
+}
+
+async function _fetchSpyDailyReturn() {
+  // Fetch SPY daily return (current vs prev close) — used by SPY filter in pending entries
+  try {
+    const url  = 'https://query2.finance.yahoo.com/v8/finance/chart/SPY?interval=1d&range=5d';
+    const resp = await fetch(url);
+    if (!resp.ok) return;
+    const data   = await resp.json();
+    const result = data.chart.result[0];
+    const closes = (result.indicators.quote[0].close || []).filter(v => v != null);
+    const current = result.meta.regularMarketPrice || result.meta.price;
+    if (closes.length < 2 || !current) return;
+    const prevClose = closes[closes.length - 2];
+    window._spyDailyReturn = (current - prevClose) / prevClose;
+    window._spyCurrentPrice = current;
+    window._spyPrevClose    = prevClose;
+  } catch(e) {
+    window._spyDailyReturn = null;
   }
 }
 
@@ -4687,6 +4708,7 @@ async function fetchBreakoutConditions() {
     _fetchVixPanel(),
     _fetchSpy15Panel(),
     _fetchBullModePanel(),
+    _fetchSpyDailyReturn(),
   ]);
   // Re-render pending + live so weak-mkt badges/banners update
   if (typeof _renderPending === 'function') _renderPending();
@@ -5194,20 +5216,30 @@ function _renderPending() {
     const blockedBadge = isWeak
       ? `<span style="background:#2a1a00;color:#d4a017;border:1px solid #d4a01766;padding:1px 6px;border-radius:4px;font-size:10px;font-weight:700;margin-left:6px">⚠ Weak Mkt — Hold</span>`
       : '';
-    // Initial STATUS — weak market is known immediately; CMP status filled in by _fetchPendingCMP
-    const weakLabel = isTSX ? 'XIU below 21 EMA' : 'SPY below 21 EMA';
-    const initialStatus = isWeak
+    // Initial STATUS — SPY filter is highest priority blocker, then weak market, then CMP check
+    const weakLabel  = isTSX ? 'XIU below 21 EMA' : 'SPY below 21 EMA';
+    const _spyRet    = window._spyDailyReturn;
+    const spyBlocked = typeof _spyRet === 'number' && _spyRet < 0;
+    const spyPct     = spyBlocked ? (_spyRet * 100).toFixed(2) : null;  // e.g. "-1.23"
+    const initialStatus = spyBlocked
+      ? `<span style="color:#f85149;font-size:12px;font-weight:600">🚫 SPY ${spyPct}% today — New buys blocked (need SPY ≥ 0%)</span>`
+      : isWeak
       ? `<span style="color:#d4a017;font-size:12px;font-weight:600">⚠️ ${weakLabel} (${Math.abs(mktState?.pctDiff||0).toFixed(2)}% below)</span>`
       : `<span style="color:#4a6a8a;font-size:12px">⏳ Checking price…</span>`;
-    return `<tr style="${isWeak ? 'opacity:0.75;background:#1a1200;' : ''}">
+    const statusBadge = spyBlocked
+      ? `<span style="background:#2a0000;color:#f85149;border:1px solid #f8514966;padding:2px 7px;border-radius:4px;font-size:11px;font-weight:600">🚫 SPY Filter</span>`
+      : isWeak
+      ? `<span style="background:#2a1a00;color:#d4a017;border:1px solid #d4a01766;padding:2px 7px;border-radius:4px;font-size:11px;font-weight:600">⚠ Weak Mkt</span>`
+      : '<span class="badge-pending">⏳ Pending</span>';
+    return `<tr style="${spyBlocked ? 'opacity:0.7;background:#150000;' : isWeak ? 'opacity:0.75;background:#1a1200;' : ''}">
       <td><div class="ticker-cell">${_flagIcon(p.exchange||'US')} ${p.ticker}</div><div class="ticker-name">${name}</div></td>
       <td>${_typeBadge(p.type)}</td>
       <td>${_pBadge(p.prob)}</td>
       <td>${_fmtDate(p.signalDate)}<br><small style="color:#8aaccc">${p.runTime ? _fmtTime(p.runTime) : '—'}</small></td>
       <td>$${_fmtUSD(p.reclaimClose)} <span style="font-size:10px;color:#4a6a8a;font-weight:600">${isTSX?'CAD':'USD'}</span></td>
       <td id="pcmp-${p.ticker}" data-reclaim="${p.reclaimClose}" data-exchange="${p.exchange||'US'}" style="font-weight:600;font-size:13px;white-space:nowrap">—</td>
-      <td id="pstatus-${p.ticker}" data-weak="${isWeak?'1':'0'}" data-weaklabel="${isWeak ? weakLabel + ' (' + Math.abs(mktState?.pctDiff||0).toFixed(2) + '% below)' : ''}">${initialStatus}</td>
-      <td>${isWeak ? `<span style="background:#2a1a00;color:#d4a017;border:1px solid #d4a01766;padding:2px 7px;border-radius:4px;font-size:11px;font-weight:600">⚠ Weak Mkt</span>` : '<span class="badge-pending">⏳ Pending</span>'}</td>
+      <td id="pstatus-${p.ticker}" data-weak="${isWeak?'1':'0'}" data-weaklabel="${isWeak ? weakLabel + ' (' + Math.abs(mktState?.pctDiff||0).toFixed(2) + '% below)' : ''}" data-spyblocked="${spyBlocked?'1':'0'}" data-spypct="${spyPct||''}">${initialStatus}</td>
+      <td>${statusBadge}</td>
       <td class="why-selected-cell">${p.reason ? p.reason.replace(/</g,'&lt;') : '—'}</td>
       <td>${_tvBadge(p.tvRating)}</td>
     </tr>`;
@@ -5241,13 +5273,18 @@ async function _fetchPendingCMP() {
       const color = above ? '#3fb950' : '#f85149';
       cell.innerHTML = `<span style="color:${color}">$${_fmtUSD(cmp)}</span> <span style="font-size:10px;color:${color}">${above ? '↑ ✓' : '↓ ✗'}</span>`;
 
-      // Update STATUS cell
+      // Update STATUS cell — priority: SPY Filter > Weak Mkt > Price check
       const statusCell = document.getElementById('pstatus-' + ticker);
       if (statusCell) {
-        const isWeak    = statusCell.dataset.weak === '1';
-        const weakLabel = statusCell.dataset.weaklabel || '';
-        if (isWeak) {
-          // Weak market is the primary blocker regardless of price
+        const isWeak     = statusCell.dataset.weak === '1';
+        const weakLabel  = statusCell.dataset.weaklabel || '';
+        const spyBlocked = statusCell.dataset.spyblocked === '1';
+        const spyPct     = statusCell.dataset.spypct || '';
+        if (spyBlocked) {
+          // SPY filter is the primary blocker — new buys not allowed on red market days
+          statusCell.innerHTML = `<span style="color:#f85149;font-size:12px;font-weight:600">🚫 SPY ${spyPct}% today — New buys blocked (need SPY ≥ 0%)</span>`;
+        } else if (isWeak) {
+          // Weak market 21 EMA regime
           statusCell.innerHTML = `<span style="color:#d4a017;font-size:12px;font-weight:600">⚠️ ${weakLabel}</span>`;
         } else if (above) {
           statusCell.innerHTML = `<span style="color:#3fb950;font-size:12px;font-weight:700">✅ Ready to Buy</span>`;
@@ -5561,9 +5598,9 @@ function _renderLive() {
                        : cushionPct < 1.0    ? '#f85149'   // red  — very close
                        : cushionPct < 2.5    ? '#e3b341'   // amber — getting close
                        :                       '#8aaccc';  // muted — comfortable
-    const stageLabel   = partial3 ? 'S3 done · 3% trail'
-                       : partial2 ? 'S2 done · 3% trail'
-                       : partial  ? 'S1 done · 3% trail'
+    const stageLabel   = partial3 ? 'S3 done · 2% trail'
+                       : partial2 ? 'S2 done · 2% trail'
+                       : partial  ? 'S1 done · 2% trail'
                        :            'No stage yet';
 
     // Tag line showing completed exits under ticker name
