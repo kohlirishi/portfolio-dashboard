@@ -5216,29 +5216,36 @@ function _renderPending() {
     const blockedBadge = isWeak
       ? `<span style="background:#2a1a00;color:#d4a017;border:1px solid #d4a01766;padding:1px 6px;border-radius:4px;font-size:10px;font-weight:700;margin-left:6px">⚠ Weak Mkt — Hold</span>`
       : '';
-    // Initial STATUS — SPY filter is highest priority blocker, then weak market, then CMP check
-    const weakLabel  = isTSX ? 'XIU below 21 EMA' : 'SPY below 21 EMA';
-    const _spyRet    = window._spyDailyReturn;
-    const spyBlocked = typeof _spyRet === 'number' && _spyRet < 0;
-    const spyPct     = spyBlocked ? (_spyRet * 100).toFixed(2) : null;  // e.g. "-1.23"
+    // Initial STATUS — priority: SPY filter → Low Volume → Weak Market → CMP check
+    const weakLabel   = isTSX ? 'XIU below 21 EMA' : 'SPY below 21 EMA';
+    const _spyRet     = window._spyDailyReturn;
+    const spyBlocked  = typeof _spyRet === 'number' && _spyRet < 0;
+    const spyPct      = spyBlocked ? (_spyRet * 100).toFixed(2) : null;
+    const volRatio    = (p.volumeRatio !== null && p.volumeRatio !== undefined) ? p.volumeRatio : null;
+    const volBlocked  = volRatio !== null && volRatio < 0.50;
+    const volPct      = volBlocked ? Math.round(volRatio * 100) : null;
     const initialStatus = spyBlocked
       ? `<span style="color:#f85149;font-size:12px;font-weight:600">🚫 SPY ${spyPct}% today — New buys blocked (need SPY ≥ 0%)</span>`
+      : volBlocked
+      ? `<span style="color:#e3a008;font-size:12px;font-weight:600">📉 Volume too low — ${volPct}% of avg (need ≥ 50%)</span>`
       : isWeak
       ? `<span style="color:#d4a017;font-size:12px;font-weight:600">⚠️ ${weakLabel} (${Math.abs(mktState?.pctDiff||0).toFixed(2)}% below)</span>`
       : `<span style="color:#4a6a8a;font-size:12px">⏳ Checking price…</span>`;
     const statusBadge = spyBlocked
       ? `<span style="background:#2a0000;color:#f85149;border:1px solid #f8514966;padding:2px 7px;border-radius:4px;font-size:11px;font-weight:600">🚫 SPY Filter</span>`
+      : volBlocked
+      ? `<span style="background:#1a1200;color:#e3a008;border:1px solid #e3a00866;padding:2px 7px;border-radius:4px;font-size:11px;font-weight:600">📉 Low Volume</span>`
       : isWeak
       ? `<span style="background:#2a1a00;color:#d4a017;border:1px solid #d4a01766;padding:2px 7px;border-radius:4px;font-size:11px;font-weight:600">⚠ Weak Mkt</span>`
       : '<span class="badge-pending">⏳ Pending</span>';
-    return `<tr style="${spyBlocked ? 'opacity:0.7;background:#150000;' : isWeak ? 'opacity:0.75;background:#1a1200;' : ''}">
+    return `<tr style="${spyBlocked ? 'opacity:0.7;background:#150000;' : volBlocked ? 'opacity:0.75;background:#131000;' : isWeak ? 'opacity:0.75;background:#1a1200;' : ''}">
       <td><div class="ticker-cell">${_flagIcon(p.exchange||'US')} ${p.ticker}</div><div class="ticker-name">${name}</div></td>
       <td>${_typeBadge(p.type)}</td>
       <td>${_pBadge(p.prob)}</td>
       <td>${_fmtDate(p.signalDate)}<br><small style="color:#8aaccc">${p.runTime ? _fmtTime(p.runTime) : '—'}</small></td>
       <td>$${_fmtUSD(p.reclaimClose)} <span style="font-size:10px;color:#4a6a8a;font-weight:600">${isTSX?'CAD':'USD'}</span></td>
       <td id="pcmp-${p.ticker}" data-reclaim="${p.reclaimClose}" data-exchange="${p.exchange||'US'}" style="font-weight:600;font-size:13px;white-space:nowrap">—</td>
-      <td id="pstatus-${p.ticker}" data-weak="${isWeak?'1':'0'}" data-weaklabel="${isWeak ? weakLabel + ' (' + Math.abs(mktState?.pctDiff||0).toFixed(2) + '% below)' : ''}" data-spyblocked="${spyBlocked?'1':'0'}" data-spypct="${spyPct||''}">${initialStatus}</td>
+      <td id="pstatus-${p.ticker}" data-weak="${isWeak?'1':'0'}" data-weaklabel="${isWeak ? weakLabel + ' (' + Math.abs(mktState?.pctDiff||0).toFixed(2) + '% below)' : ''}" data-spyblocked="${spyBlocked?'1':'0'}" data-spypct="${spyPct||''}" data-volblocked="${volBlocked?'1':'0'}" data-volpct="${volPct||''}">${initialStatus}</td>
       <td>${statusBadge}</td>
       <td class="why-selected-cell">${p.reason ? p.reason.replace(/</g,'&lt;') : '—'}</td>
       <td>${_tvBadge(p.tvRating)}</td>
@@ -5273,18 +5280,20 @@ async function _fetchPendingCMP() {
       const color = above ? '#3fb950' : '#f85149';
       cell.innerHTML = `<span style="color:${color}">$${_fmtUSD(cmp)}</span> <span style="font-size:10px;color:${color}">${above ? '↑ ✓' : '↓ ✗'}</span>`;
 
-      // Update STATUS cell — priority: SPY Filter > Weak Mkt > Price check
+      // Update STATUS cell — priority: SPY Filter > Low Volume > Weak Mkt > Price check
       const statusCell = document.getElementById('pstatus-' + ticker);
       if (statusCell) {
         const isWeak     = statusCell.dataset.weak === '1';
         const weakLabel  = statusCell.dataset.weaklabel || '';
         const spyBlocked = statusCell.dataset.spyblocked === '1';
         const spyPct     = statusCell.dataset.spypct || '';
+        const volBlocked = statusCell.dataset.volblocked === '1';
+        const volPct     = statusCell.dataset.volpct || '';
         if (spyBlocked) {
-          // SPY filter is the primary blocker — new buys not allowed on red market days
           statusCell.innerHTML = `<span style="color:#f85149;font-size:12px;font-weight:600">🚫 SPY ${spyPct}% today — New buys blocked (need SPY ≥ 0%)</span>`;
+        } else if (volBlocked) {
+          statusCell.innerHTML = `<span style="color:#e3a008;font-size:12px;font-weight:600">📉 Volume too low — ${volPct}% of avg (need ≥ 50%)</span>`;
         } else if (isWeak) {
-          // Weak market 21 EMA regime
           statusCell.innerHTML = `<span style="color:#d4a017;font-size:12px;font-weight:600">⚠️ ${weakLabel}</span>`;
         } else if (above) {
           statusCell.innerHTML = `<span style="color:#3fb950;font-size:12px;font-weight:700">✅ Ready to Buy</span>`;
