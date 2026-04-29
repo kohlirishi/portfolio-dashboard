@@ -4658,8 +4658,7 @@ let _rbVerdicts     = {};   // watchlist promotion verdicts
 let _rbAnalysisData = null; // last computed analysis
 let _rbReportCache  = {};   // { [uid]: { reportText, verdict, reason, analyzedOn, savedToSheets } }
 const _rbScriptUrl  = 'https://script.google.com/macros/s/AKfycbzy9yLFOXBxf8qoEc1O8pQIMXSTwZ3-FGUKIdXa22i-LiGg50qweZls_JrmUpuWxs-euA/exec';
-const FMP_API_KEY   = 'Zi6Ma3nNfm9v0dVMXPtsJwDLcMjlOWoN';
-const FMP_BASE      = 'https://financialmodelingprep.com/api/v3';
+// Fundamentals fetched via App Script → Yahoo Finance proxy (no API key needed)
 
 // ── Quarter badge ─────────────────────────────────────────────────────────────
 (function setQuarterBadge() {
@@ -4824,7 +4823,7 @@ function _verdictColor(v) {
   return 'var(--red)';
 }
 
-// ── Convert Google Sheet column V ticker (e.g. "NASDAQ:ORCL") to FMP format ──
+// ── Convert Google Sheet column V ticker (e.g. "NASDAQ:ORCL") to Yahoo Finance format ──
 function sheetTickerToFMP(sheetTicker) {
   if (!sheetTicker) return null;
   const parts = sheetTicker.split(':');
@@ -4835,84 +4834,45 @@ function sheetTickerToFMP(sheetTicker) {
   return sym;
 }
 
-// ── FMP API: resolve ticker, try multiple formats ─────────────────────────────
-function _fmpIsCanadian(ticker) {
-  if (ticker.endsWith('.TO') || ticker.endsWith('.TSX')) return true;
-  if (typeof ALL !== 'undefined' && ALL) {
-    const found = ALL.find(d => d.ticker === ticker || d.ticker === ticker.replace(/\.(TO|TSX)$/, ''));
-    if (found && found.country === 'Canada') return true;
-  }
-  return false;
-}
-
-async function _fmpFetchProfile(sym) {
-  const r = await fetch(`${FMP_BASE}/profile/${sym}?apikey=${FMP_API_KEY}`).then(r => r.json()).catch(() => []);
-  if (!Array.isArray(r)) return null;           // object = error
-  if (!r.length) return null;
-  if (r[0]['Error Message']) return null;        // FMP error object in array
-  return r[0].symbol ? r[0] : null;
-}
-
-async function _resolveFMPTicker(ticker) {
-  const base = ticker.replace(/\.(TO|TSX)$/i, '');
-  // Try candidates in order
-  const candidates = _fmpIsCanadian(ticker)
-    ? [base + '.TO', base, base + '.TSX']
-    : [base, base + '.TO'];
-  for (const sym of candidates) {
-    const p = await _fmpFetchProfile(sym);
-    if (p) return { sym, profile: p };
-  }
-  return null;
-}
-
-// ── FMP API: fetch real fundamentals and produce verdict ──────────────────────
+// ── Yahoo Finance fundamentals via App Script proxy ───────────────────────────
 async function rbFetchFundamentals(uid, ticker, context, sheetTicker) {
   const statusEl = document.getElementById('rb-rpt-status-' + uid);
   const btn      = document.getElementById('rb-fetch-btn-' + uid);
-  if (statusEl) statusEl.innerHTML = '<span style="color:var(--blue);font-size:11px">⏳ Fetching from Financial Modeling Prep…</span>';
+  const FETCH_BTN_HTML = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 6v16l7-4 8 4 7-4V2l-7 4-8-4-7 4z"/><path d="M8 2v16M16 6v16"/></svg> Fetch Fundamentals';
+  if (statusEl) statusEl.innerHTML = '<span style="color:var(--blue);font-size:11px">⏳ Fetching fundamentals…</span>';
   if (btn) { btn.disabled = true; btn.textContent = '⏳ Fetching…'; }
 
   try {
-    let sym, profile;
-    // Prefer the ticker from Google Sheet column V (already FMP-formatted)
-    if (sheetTicker) {
-      profile = await _fmpFetchProfile(sheetTicker);
-      sym = sheetTicker;
-    }
-    // Fall back to auto-resolution if sheet ticker didn't work
-    if (!profile) {
-      const resolved = await _resolveFMPTicker(ticker);
-      if (resolved) { sym = resolved.sym; profile = resolved.profile; }
+    // Try column V ticker first, then bare ticker, then .TO variant for Canadian stocks
+    const candidates = [];
+    if (sheetTicker) candidates.push(sheetTicker);
+    if (!candidates.includes(ticker)) candidates.push(ticker);
+    if (!ticker.endsWith('.TO') && !candidates.includes(ticker + '.TO')) candidates.push(ticker + '.TO');
+
+    let data = null;
+    for (const sym of candidates) {
+      const resp = await fetch(`${_rbScriptUrl}?action=getFundamentals&ticker=${encodeURIComponent(sym)}`).catch(() => null);
+      if (!resp || !resp.ok) continue;
+      const json = await resp.json().catch(() => null);
+      if (json && json.ok && json.data) { data = json.data; break; }
     }
 
-    if (!profile) {
-      if (statusEl) statusEl.innerHTML = `<span style="color:var(--text3);font-size:11px">FMP data not available for <strong style="color:var(--text2)">${ticker}</strong> — not covered in FMP's database. Use manual judgment for this position.</span>`;
-      if (btn) { btn.disabled = false; btn.innerHTML = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 6v16l7-4 8 4 7-4V2l-7 4-8-4-7 4z"/><path d="M8 2v16M16 6v16"/></svg> Fetch Fundamentals'; }
+    if (!data) {
+      if (statusEl) statusEl.innerHTML = `<span style="color:var(--text3);font-size:11px">Data not available for <strong style="color:var(--text2)">${ticker}</strong> — use manual judgment for this position.</span>`;
+      if (btn) { btn.disabled = false; btn.innerHTML = FETCH_BTN_HTML; }
       return;
     }
 
-    const K = FMP_API_KEY, B = FMP_BASE;
-    const [growthArr, earningsArr, ratiosArr] = await Promise.all([
-      fetch(`${B}/income-statement-growth/${sym}?limit=2&apikey=${K}`).then(r => r.json()).catch(() => []),
-      fetch(`${B}/earnings-surprises/${sym}?apikey=${K}`).then(r => r.json()).catch(() => []),
-      fetch(`${B}/ratios/${sym}?limit=1&apikey=${K}`).then(r => r.json()).catch(() => []),
-    ]);
-
-    const growth  = Array.isArray(growthArr)   && growthArr.length   ? growthArr[0]   : null;
-    const lastEps = Array.isArray(earningsArr)  && earningsArr.length ? earningsArr[0] : null;
-    const ratios  = Array.isArray(ratiosArr)    && ratiosArr.length   ? ratiosArr[0]   : null;
-
     // ── Extract signals ────────────────────────────────────────────────────────
-    const epsBeat    = lastEps ? (lastEps.actualEarningResult - lastEps.estimatedEarning) : null;
-    const revGrowth  = growth ? growth.growthRevenue : null;
-    const grossMargin = ratios ? ratios.grossProfitMargin : null;
-    const debtEquity  = ratios ? ratios.debtEquityRatio   : null;
-    const pe          = profile.pe || null;
-    const analyst     = (profile.analystRatingRecommendation || '').toLowerCase();
-    const buyCount    = (profile.analystRatingbuy  || 0) + (profile.analystRatingStrongBuy  || 0);
-    const sellCount   = (profile.analystRatingSell || 0) + (profile.analystRatingStrongSell || 0);
-    const holdCount   = profile.analystRatinghold  || 0;
+    const epsBeat     = data.epsBeat;
+    const revGrowth   = data.revenueGrowth;
+    const grossMargin = data.grossMargins;
+    const debtEquity  = data.debtToEquity;
+    const pe          = data.pe;
+    const analyst     = (data.analystKey || '').toLowerCase().replace(/_/g, ' ');
+    const buyCount    = data.buyCount  || 0;
+    const sellCount   = data.sellCount || 0;
+    const holdCount   = data.holdCount || 0;
     const totalAnal   = buyCount + sellCount + holdCount;
 
     // ── Scoring ────────────────────────────────────────────────────────────────
@@ -4926,12 +4886,12 @@ async function rbFetchFundamentals(uid, ticker, context, sheetTicker) {
       else if (revGrowth > 0) { posScore += 1; signals.push(`revenue +${(revGrowth*100).toFixed(1)}% YoY (slow)`); }
       else                     { negScore += 2; signals.push(`revenue ${(revGrowth*100).toFixed(1)}% YoY`); }
     }
-    if (/strong.buy|buy|outperform|overweight/.test(analyst)) { posScore += 2; signals.push(`analyst: ${profile.analystRatingRecommendation}`); }
-    else if (/hold|neutral/.test(analyst))                    { signals.push(`analyst: ${profile.analystRatingRecommendation}`); }
-    else if (/sell|underperform|underweight/.test(analyst))   { negScore += 2; signals.push(`analyst: ${profile.analystRatingRecommendation}`); }
+    if (/strong.buy|buy|outperform|overweight/.test(analyst)) { posScore += 2; signals.push(`analyst: ${analyst}`); }
+    else if (/hold|neutral/.test(analyst))                    { signals.push(`analyst: ${analyst}`); }
+    else if (/sell|underperform|underweight/.test(analyst))   { negScore += 2; signals.push(`analyst: ${analyst}`); }
     if (debtEquity !== null) {
-      if (debtEquity > 3)     { negScore += 1; signals.push(`high D/E: ${debtEquity.toFixed(1)}`); }
-      else if (debtEquity < 1){ posScore += 1; signals.push(`low D/E: ${debtEquity.toFixed(1)}`); }
+      if (debtEquity > 3)      { negScore += 1; signals.push(`high D/E: ${debtEquity.toFixed(1)}`); }
+      else if (debtEquity < 1) { posScore += 1; signals.push(`low D/E: ${debtEquity.toFixed(1)}`); }
     }
     const net = posScore - negScore;
 
@@ -4939,25 +4899,26 @@ async function rbFetchFundamentals(uid, ticker, context, sheetTicker) {
     const sigStr = signals.slice(0,3).join('; ') || 'data available but signals inconclusive';
     let result;
     if (context === 'watchlist') {
-      if (net >= 4) result = { verdict: 'Promote to Core SIP',    reason: `Strong fundamentals: ${sigStr}.` };
-      else if (net >= 2) result = { verdict: 'One-Time Investment', reason: `Solid fundamentals: ${sigStr}. Good single-entry opportunity.` };
-      else if (net >= 0) result = { verdict: 'Hold in Watchlist',   reason: `Mixed signals: ${sigStr}. Monitor next quarter.` };
-      else               result = { verdict: 'Not Ready for Promotion', reason: `Concerns noted: ${sigStr}.` };
+      if (net >= 4)      result = { verdict: 'Promote to Core SIP',        reason: `Strong fundamentals: ${sigStr}.` };
+      else if (net >= 2) result = { verdict: 'One-Time Investment',         reason: `Solid fundamentals: ${sigStr}. Good single-entry opportunity.` };
+      else if (net >= 0) result = { verdict: 'Hold in Watchlist',           reason: `Mixed signals: ${sigStr}. Monitor next quarter.` };
+      else               result = { verdict: 'Not Ready for Promotion',     reason: `Concerns noted: ${sigStr}.` };
     } else {
-      if (net >= 3)  result = { verdict: 'Recovery Thesis Intact — Hold', reason: `Fundamentals support holding: ${sigStr}.` };
-      else if (net >= 1) result = { verdict: 'Buy the Dip — One-Time',    reason: `Weakness appears price-driven: ${sigStr}.` };
-      else if (net >= -1) result = { verdict: 'Hold — Under Review',       reason: `Mixed picture: ${sigStr}. Do not add or exit yet.` };
-      else               result = { verdict: 'Exit Position',              reason: `Fundamental concerns confirmed: ${sigStr}.` };
+      if (net >= 3)       result = { verdict: 'Recovery Thesis Intact — Hold', reason: `Fundamentals support holding: ${sigStr}.` };
+      else if (net >= 1)  result = { verdict: 'Buy the Dip — One-Time',        reason: `Weakness appears price-driven: ${sigStr}.` };
+      else if (net >= -1) result = { verdict: 'Hold — Under Review',           reason: `Mixed picture: ${sigStr}. Do not add or exit yet.` };
+      else                result = { verdict: 'Exit Position',                 reason: `Fundamental concerns confirmed: ${sigStr}.` };
     }
 
     // ── Build metrics grid ─────────────────────────────────────────────────────
-    const fmtPct2 = v => v !== null ? `${(v*100).toFixed(1)}%` : '—';
+    const fmtPct2 = v => (v !== null && v !== undefined) ? `${(v*100).toFixed(1)}%` : '—';
+    const analystLabel = analyst ? analyst.replace(/\b\w/g, c => c.toUpperCase()) : '—';
     const metrics = [
-      { l: 'Last EPS', v: epsBeat !== null ? (epsBeat >= 0 ? `✓ Beat +${Math.abs(epsBeat).toFixed(2)}` : `✗ Miss −${Math.abs(epsBeat).toFixed(2)}`) : '—', c: epsBeat === null ? 'var(--text3)' : epsBeat >= 0 ? 'var(--green)' : 'var(--red)' },
-      { l: 'Revenue Growth', v: revGrowth !== null ? fmtPct2(revGrowth) + ' YoY' : '—', c: revGrowth === null ? 'var(--text3)' : revGrowth >= 0 ? 'var(--green)' : 'var(--red)' },
-      { l: 'Gross Margin', v: grossMargin !== null ? fmtPct2(grossMargin) : '—', c: 'var(--text)' },
-      { l: 'Debt / Equity', v: debtEquity !== null ? debtEquity.toFixed(2) : '—', c: debtEquity === null ? 'var(--text3)' : debtEquity > 3 ? 'var(--red)' : debtEquity < 1 ? 'var(--green)' : 'var(--yellow)' },
-      { l: 'Analyst Rating', v: profile.analystRatingRecommendation || '—', c: /buy|outperform/i.test(analyst) ? 'var(--green)' : /sell|under/i.test(analyst) ? 'var(--red)' : 'var(--yellow)' },
+      { l: 'Last EPS',         v: epsBeat !== null ? (epsBeat >= 0 ? `✓ Beat +${Math.abs(epsBeat).toFixed(2)}` : `✗ Miss −${Math.abs(epsBeat).toFixed(2)}`) : '—', c: epsBeat === null ? 'var(--text3)' : epsBeat >= 0 ? 'var(--green)' : 'var(--red)' },
+      { l: 'Revenue Growth',   v: revGrowth   !== null ? fmtPct2(revGrowth)   + ' YoY' : '—', c: revGrowth   === null ? 'var(--text3)' : revGrowth   >= 0 ? 'var(--green)' : 'var(--red)' },
+      { l: 'Gross Margin',     v: grossMargin !== null ? fmtPct2(grossMargin) : '—',           c: 'var(--text)' },
+      { l: 'Debt / Equity',    v: debtEquity  !== null ? debtEquity.toFixed(2) : '—',          c: debtEquity  === null ? 'var(--text3)' : debtEquity > 3 ? 'var(--red)' : debtEquity < 1 ? 'var(--green)' : 'var(--yellow)' },
+      { l: 'Analyst Rating',   v: analystLabel,  c: /buy|outperform/i.test(analyst) ? 'var(--green)' : /sell|under/i.test(analyst) ? 'var(--red)' : 'var(--yellow)' },
       { l: 'Buy / Hold / Sell', v: totalAnal ? `${buyCount} / ${holdCount} / ${sellCount}` : '—', c: 'var(--text)' },
     ];
     const metricsHtml = `<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin-bottom:10px">
@@ -4969,7 +4930,8 @@ async function rbFetchFundamentals(uid, ticker, context, sheetTicker) {
 
     // ── Cache & display ────────────────────────────────────────────────────────
     const now = new Date().toISOString();
-    const reportText = `[FMP] ${sym} | EPS:${epsBeat !== null ? (epsBeat >= 0 ? 'Beat' : 'Miss') : '?'} | RevG:${revGrowth !== null ? fmtPct2(revGrowth) : '?'} | Analyst:${profile.analystRatingRecommendation || '?'}`;
+    const sym = sheetTicker || ticker;
+    const reportText = `[YF] ${sym} | EPS:${epsBeat !== null ? (epsBeat >= 0 ? 'Beat' : 'Miss') : '?'} | RevG:${revGrowth !== null ? fmtPct2(revGrowth) : '?'} | Analyst:${analystLabel}`;
     _rbReportCache[uid] = { reportText, verdict: result.verdict, reason: result.reason, analyzedOn: now, savedToSheets: false };
 
     const vEl = document.getElementById('rb-verdict-' + uid);
@@ -4980,7 +4942,7 @@ async function rbFetchFundamentals(uid, ticker, context, sheetTicker) {
         <div>
           <div style="font-size:13px;font-weight:700;color:${_verdictColor(result.verdict)}">${result.verdict}</div>
           <div style="font-size:12px;color:var(--text2);margin-top:2px">${result.reason}</div>
-          <div style="font-size:11px;color:var(--text3);margin-top:4px">Source: Financial Modeling Prep · ${new Date().toLocaleDateString('en-CA')}</div>
+          <div style="font-size:11px;color:var(--text3);margin-top:4px">Source: Yahoo Finance · ${new Date().toLocaleDateString('en-CA')}</div>
         </div>
       </div>`;
     }
@@ -5002,8 +4964,8 @@ async function rbFetchFundamentals(uid, ticker, context, sheetTicker) {
     rbSaveReportToSheets(uid, ticker, context, reportText, result.verdict, result.reason, now);
 
   } catch(err) {
-    console.error('[FMP]', err);
-    if (statusEl) statusEl.innerHTML = `<span style="color:var(--red);font-size:11px">⚠ FMP API error — ${err.message}</span>`;
+    console.error('[YF Fundamentals]', err);
+    if (statusEl) statusEl.innerHTML = `<span style="color:var(--red);font-size:11px">⚠ Error fetching fundamentals — ${err.message}</span>`;
   }
 
   if (btn) {
