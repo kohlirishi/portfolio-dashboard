@@ -4796,6 +4796,15 @@ function reportToggle(uid, ticker, context) {
       <textarea class="rb-report-textarea" id="rb-rpt-ta-${uid}"
         placeholder="Optional: add your own notes for ${ticker} (the main analysis is auto-fetched from Financial Modeling Prep above)…">${cached.reportText || ''}</textarea>
     </div>
+    <!-- Manual ticker override — shown only when auto-detection fails -->
+    <div id="rb-override-box-${uid}" style="display:none;align-items:center;gap:8px;margin-top:8px;flex-wrap:wrap">
+      <span style="font-size:11px;color:var(--text3)">FMP ticker:</span>
+      <input id="rb-ticker-override-${uid}" type="text" placeholder="e.g. L.TO or SHOP.TO"
+        style="background:var(--bg2);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:12px;padding:5px 10px;width:140px;font-family:inherit"
+        onkeydown="if(event.key==='Enter') rbFetchFundamentals('${uid}','${ticker}','${context}')"/>
+      <button onclick="rbFetchFundamentals('${uid}','${ticker}','${context}')"
+        style="background:var(--blue);color:#fff;border:none;border-radius:6px;padding:5px 12px;font-size:12px;font-weight:600;cursor:pointer">Try</button>
+    </div>
     <div class="rb-rpt-actions">
       <button class="rb-analyze-btn" id="rb-fetch-btn-${uid}" onclick="rbFetchFundamentals('${uid}','${ticker}','${context}')">
         <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 6v16l7-4 8 4 7-4V2l-7 4-8-4-7 4z"/><path d="M8 2v16M16 6v16"/></svg>
@@ -4820,44 +4829,77 @@ function _verdictColor(v) {
   return 'var(--red)';
 }
 
-// ── FMP API: resolve ticker for Canadian stocks ───────────────────────────────
-function _fmpTicker(ticker) {
+// ── FMP API: resolve ticker, try multiple formats ─────────────────────────────
+function _fmpIsCanadian(ticker) {
+  if (ticker.endsWith('.TO') || ticker.endsWith('.TSX')) return true;
   if (typeof ALL !== 'undefined' && ALL) {
-    const found = ALL.find(d => d.ticker === ticker);
-    if (found && found.country === 'Canada' && !ticker.endsWith('.TO')) return ticker + '.TO';
+    const found = ALL.find(d => d.ticker === ticker || d.ticker === ticker.replace(/\.(TO|TSX)$/, ''));
+    if (found && found.country === 'Canada') return true;
   }
-  return ticker;
+  return false;
+}
+
+async function _fmpFetchProfile(sym) {
+  const r = await fetch(`${FMP_BASE}/profile/${sym}?apikey=${FMP_API_KEY}`).then(r => r.json()).catch(() => []);
+  if (!Array.isArray(r)) return null;           // object = error
+  if (!r.length) return null;
+  if (r[0]['Error Message']) return null;        // FMP error object in array
+  return r[0].symbol ? r[0] : null;
+}
+
+async function _resolveFMPTicker(ticker) {
+  const base = ticker.replace(/\.(TO|TSX)$/i, '');
+  // Try candidates in order
+  const candidates = _fmpIsCanadian(ticker)
+    ? [base + '.TO', base, base + '.TSX']
+    : [base, base + '.TO'];
+  for (const sym of candidates) {
+    const p = await _fmpFetchProfile(sym);
+    if (p) return { sym, profile: p };
+  }
+  return null;
 }
 
 // ── FMP API: fetch real fundamentals and produce verdict ──────────────────────
-async function rbFetchFundamentals(uid, ticker, context) {
+async function rbFetchFundamentals(uid, ticker, context, overrideSym) {
   const statusEl = document.getElementById('rb-rpt-status-' + uid);
   const btn      = document.getElementById('rb-fetch-btn-' + uid);
   if (statusEl) statusEl.innerHTML = '<span style="color:var(--blue);font-size:11px">⏳ Fetching from Financial Modeling Prep…</span>';
   if (btn) { btn.disabled = true; btn.textContent = '⏳ Fetching…'; }
 
-  const sym = _fmpTicker(ticker);
-  const K   = FMP_API_KEY;
-  const B   = FMP_BASE;
+  // If user supplied a manual ticker override, use that directly
+  const overrideInput = document.getElementById('rb-ticker-override-' + uid);
+  const manualSym = overrideSym || (overrideInput && overrideInput.value.trim().toUpperCase()) || '';
 
   try {
-    const [profArr, growthArr, earningsArr, ratiosArr] = await Promise.all([
-      fetch(`${B}/profile/${sym}?apikey=${K}`).then(r => r.json()).catch(() => []),
+    let sym, profile;
+    if (manualSym) {
+      profile = await _fmpFetchProfile(manualSym);
+      sym = manualSym;
+    } else {
+      const resolved = await _resolveFMPTicker(ticker);
+      if (resolved) { sym = resolved.sym; profile = resolved.profile; }
+    }
+
+    if (!profile) {
+      // Show override input so user can type the correct FMP ticker
+      if (statusEl) statusEl.innerHTML = `<span style="color:var(--yellow);font-size:11px">⚠ Could not find <strong>${manualSym || ticker}</strong> on FMP. Enter the exact FMP ticker below:</span>`;
+      const overrideBox = document.getElementById('rb-override-box-' + uid);
+      if (overrideBox) overrideBox.style.display = 'flex';
+      if (btn) { btn.disabled = false; btn.innerHTML = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 6v16l7-4 8 4 7-4V2l-7 4-8-4-7 4z"/><path d="M8 2v16M16 6v16"/></svg> Fetch Fundamentals'; }
+      return;
+    }
+
+    const K = FMP_API_KEY, B = FMP_BASE;
+    const [growthArr, earningsArr, ratiosArr] = await Promise.all([
       fetch(`${B}/income-statement-growth/${sym}?limit=2&apikey=${K}`).then(r => r.json()).catch(() => []),
       fetch(`${B}/earnings-surprises/${sym}?apikey=${K}`).then(r => r.json()).catch(() => []),
       fetch(`${B}/ratios/${sym}?limit=1&apikey=${K}`).then(r => r.json()).catch(() => []),
     ]);
 
-    const profile  = Array.isArray(profArr)    && profArr.length    ? profArr[0]    : null;
-    const growth   = Array.isArray(growthArr)  && growthArr.length  ? growthArr[0]  : null;
-    const lastEps  = Array.isArray(earningsArr) && earningsArr.length ? earningsArr[0] : null;
-    const ratios   = Array.isArray(ratiosArr)  && ratiosArr.length  ? ratiosArr[0]  : null;
-
-    if (!profile || !profile.symbol) {
-      if (statusEl) statusEl.innerHTML = `<span style="color:var(--yellow);font-size:11px">⚠ No FMP data for ${sym}. Try adding .TO suffix or check if ticker is supported.</span>`;
-      if (btn) { btn.disabled = false; btn.innerHTML = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 6v16l7-4 8 4 7-4V2l-7 4-8-4-7 4z"/><path d="M8 2v16M16 6v16"/></svg> Fetch Fundamentals'; }
-      return;
-    }
+    const growth  = Array.isArray(growthArr)   && growthArr.length   ? growthArr[0]   : null;
+    const lastEps = Array.isArray(earningsArr)  && earningsArr.length ? earningsArr[0] : null;
+    const ratios  = Array.isArray(ratiosArr)    && ratiosArr.length   ? ratiosArr[0]   : null;
 
     // ── Extract signals ────────────────────────────────────────────────────────
     const epsBeat    = lastEps ? (lastEps.actualEarningResult - lastEps.estimatedEarning) : null;
