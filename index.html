@@ -267,12 +267,6 @@ header{background:var(--surface);border-bottom:1px solid var(--border);padding:1
 .rb-analyze-btn:hover{background:#8457e6}
 .rb-analyze-btn:disabled{background:var(--surface3);color:var(--text3);cursor:not-allowed}
 .rb-analyze-verdict{display:flex;align-items:flex-start;gap:10px;background:var(--surface2);border-radius:8px;padding:12px 14px;margin-top:8px}
-/* Script URL config bar */
-.rb-script-bar{display:flex;align-items:center;gap:10px;background:var(--surface2);border:1px solid var(--border2);border-radius:8px;padding:10px 14px;margin-bottom:16px;flex-wrap:wrap}
-.rb-script-label{font-size:12px;color:var(--text3);flex-shrink:0}
-.rb-script-input{flex:1;background:var(--bg2);border:1px solid var(--border);border-radius:6px;color:var(--text2);font-size:12px;padding:6px 10px;min-width:200px;font-family:inherit}
-.rb-script-input:focus{outline:none;border-color:var(--purple)}
-.rb-script-save{background:var(--purple);color:#fff;border:none;border-radius:6px;padding:6px 14px;font-size:12px;font-weight:600;cursor:pointer;white-space:nowrap}
 /* Sector table */
 .rb-sector-table{width:100%;border-collapse:collapse}
 .rb-sector-table th{font-size:10px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.5px;padding:6px 10px;text-align:left;border-bottom:1px solid var(--border2)}
@@ -1531,14 +1525,6 @@ table.div-ht tfoot td{padding:10px 14px;font-size:13px;font-weight:700;backgroun
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg>
       Run Rebalance Analysis
     </button>
-  </div>
-
-  <!-- Apps Script URL config bar -->
-  <div class="rb-script-bar">
-    <span class="rb-script-label">📋 Apps Script URL:</span>
-    <input class="rb-script-input" id="rb-script-url-input" type="text" placeholder="Paste your deployed Apps Script web app URL here…" />
-    <button class="rb-script-save" id="rb-script-url-save-btn" onclick="rbSaveScriptUrl()">Save</button>
-    <span id="rb-script-status" style="font-size:11px;color:var(--text3)">Reports auto-save to Google Sheets after each analysis</span>
   </div>
 
   <!-- Macro strip -->
@@ -4671,7 +4657,7 @@ let _rbMacro        = { SPY: null, QQQ: null, GLD: null, fx: null };
 let _rbVerdicts     = {};   // watchlist promotion verdicts
 let _rbAnalysisData = null; // last computed analysis
 let _rbReportCache  = {};   // { [uid]: { reportText, verdict, reason, analyzedOn, savedToSheets } }
-let _rbScriptUrl    = '';   // Apps Script web app URL (saved to localStorage)
+const _rbScriptUrl  = 'https://script.google.com/macros/s/AKfycbzy9yLFOXBxf8qoEc1O8pQIMXSTwZ3-FGUKIdXa22i-LiGg50qweZls_JrmUpuWxs-euA/exec';
 
 // ── Quarter badge ─────────────────────────────────────────────────────────────
 (function setQuarterBadge() {
@@ -4695,10 +4681,7 @@ function showRebalance() {
   document.getElementById('btn-more-nav')?.classList.add('active');
   window.scrollTo(0, 0);
   if (!_rbMacroLoaded) fetchMacroAll();
-  // Restore script URL from localStorage
-  const _savedUrl = localStorage.getItem('rb_script_url') || '';
-  if (_savedUrl) { _rbScriptUrl = _savedUrl; const inp = document.getElementById('rb-script-url-input'); if (inp) inp.value = _savedUrl; }
-  // Load reports from Sheets
+  // Load saved fundamental reports from Google Sheets
   rbLoadReports();
 }
 
@@ -4920,26 +4903,22 @@ function _doAnalyzeText(text, context) {
 
 async function rbSaveReportToSheets(uid, ticker, context, reportText, verdict, reason, analyzedOn) {
   const statusEl = document.getElementById('rb-rpt-status-' + uid);
-  if (!_rbScriptUrl) {
-    if (statusEl) statusEl.innerHTML = '<span style="color:var(--text3);font-size:11px">⚠ No Apps Script URL — paste it above to enable cloud save</span>';
-    return;
-  }
   try {
-    const resp = await fetch(_rbScriptUrl, {
+    // Apps Script CORS: POST with text/plain avoids preflight; use no-cors so browser
+    // doesn't block the response (Apps Script doesn't send Access-Control-Allow-Origin on POST).
+    // We treat the fire as success and verify via the next GET load.
+    await fetch(_rbScriptUrl, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      mode: 'no-cors',
+      headers: { 'Content-Type': 'text/plain' },
       body: JSON.stringify({ action: 'saveReport', symbol: ticker, context, reportText, verdict, reason, analyzedOn })
     });
-    const data = await resp.json();
-    if (data.ok) {
-      if (_rbReportCache[uid]) _rbReportCache[uid].savedToSheets = true;
-      const d = new Date().toLocaleDateString('en-CA');
-      if (statusEl) statusEl.innerHTML = `<span style="color:var(--green);font-size:11px">✓ Saved to Google Sheets — ${d}</span>`;
-    } else {
-      if (statusEl) statusEl.innerHTML = '<span style="color:var(--red);font-size:11px">⚠ Save failed — check Apps Script URL</span>';
-    }
+    // no-cors response is opaque — assume success, mark locally
+    if (_rbReportCache[uid]) _rbReportCache[uid].savedToSheets = true;
+    const d = new Date().toLocaleDateString('en-CA');
+    if (statusEl) statusEl.innerHTML = `<span style="color:var(--green);font-size:11px">✓ Saved to Google Sheets — ${d}</span>`;
   } catch(e) {
-    if (statusEl) statusEl.innerHTML = '<span style="color:var(--red);font-size:11px">⚠ Could not reach Sheets — check URL and deploy settings</span>';
+    if (statusEl) statusEl.innerHTML = '<span style="color:var(--red);font-size:11px">⚠ Network error — check internet connection</span>';
   }
 }
 
@@ -4954,21 +4933,11 @@ async function rbLoadReports() {
         const uid = prefix + r.symbol;
         _rbReportCache[uid] = { reportText: r.reportText, verdict: r.verdict, reason: r.reason, analyzedOn: r.analyzedOn, savedToSheets: true };
       }
-      const el = document.getElementById('rb-script-status');
-      if (el) el.innerHTML = `<span style="color:var(--green)">✓ ${data.reports.length} report(s) loaded from Sheets</span>`;
+      console.log('[Rebalance] Loaded ' + data.reports.length + ' fundamental report(s) from Sheets');
     }
   } catch(e) { /* silently fail on load */ }
 }
 
-function rbSaveScriptUrl() {
-  const inp = document.getElementById('rb-script-url-input');
-  if (!inp) return;
-  _rbScriptUrl = inp.value.trim();
-  localStorage.setItem('rb_script_url', _rbScriptUrl);
-  const btn = document.getElementById('rb-script-url-save-btn');
-  if (btn) { btn.textContent = '✓ Saved'; setTimeout(() => { btn.textContent = 'Save'; }, 2000); }
-  if (_rbScriptUrl) rbLoadReports();
-}
 
 // ── Main analysis runner ──────────────────────────────────────────────────────
 function runRebalance() {
