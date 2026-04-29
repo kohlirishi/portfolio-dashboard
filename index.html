@@ -4887,8 +4887,8 @@ async function rbFetchFundamentals(uid, ticker, context, sheetTicker) {
     }
 
     if (!profile) {
-      if (statusEl) statusEl.innerHTML = `<span style="color:var(--yellow);font-size:11px">⚠ Could not find <strong>${sheetTicker || ticker}</strong> on FMP. The ticker may not be available in their database.</span>`;
-      if (btn) { btn.disabled = false; btn.innerHTML = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 6v16l7-4 8 4 7-4V2l-7 4-8-4-7 4z"/><path d="M8 2v16M16 6v16"/></svg> Retry'; }
+      if (statusEl) statusEl.innerHTML = `<span style="color:var(--text3);font-size:11px">FMP data not available for <strong style="color:var(--text2)">${ticker}</strong> — not covered in FMP's database. Use manual judgment for this position.</span>`;
+      if (btn) { btn.disabled = false; btn.innerHTML = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 6v16l7-4 8 4 7-4V2l-7 4-8-4-7 4z"/><path d="M8 2v16M16 6v16"/></svg> Fetch Fundamentals'; }
       return;
     }
 
