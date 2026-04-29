@@ -257,14 +257,22 @@ header{background:var(--surface);border-bottom:1px solid var(--border);padding:1
 .rb-metric-l{font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:.4px}
 .rb-metric-v{font-size:13px;font-weight:600;color:var(--text)}
 .rb-flag-status{flex-shrink:0;text-align:right}
-/* Report toggle */
-.rb-report-toggle{margin-top:8px;display:flex;align-items:center;gap:6px;font-size:12px;color:var(--text3);cursor:pointer;padding:4px 0;width:fit-content}
-.rb-report-toggle:hover{color:var(--text2)}
-.rb-report-box{display:none;margin-top:8px}
-.rb-report-box.open{display:block}
+/* Report panel */
 .rb-report-textarea{width:100%;min-height:90px;background:var(--bg2);border:1px solid var(--border);border-radius:7px;color:var(--text2);font-size:12px;padding:10px 12px;font-family:inherit;resize:vertical;line-height:1.5}
 .rb-report-textarea:focus{outline:none;border-color:var(--purple)}
 .rb-report-textarea::placeholder{color:var(--text3)}
+.rb-rpt-status{font-size:11px;margin-top:6px}
+.rb-rpt-actions{display:flex;justify-content:flex-end;margin-top:6px}
+.rb-analyze-btn{background:var(--purple);color:#fff;border:none;border-radius:7px;padding:7px 18px;font-size:12px;font-weight:600;cursor:pointer;display:flex;align-items:center;gap:6px;transition:background .12s}
+.rb-analyze-btn:hover{background:#8457e6}
+.rb-analyze-btn:disabled{background:var(--surface3);color:var(--text3);cursor:not-allowed}
+.rb-analyze-verdict{display:flex;align-items:flex-start;gap:10px;background:var(--surface2);border-radius:8px;padding:12px 14px;margin-top:8px}
+/* Script URL config bar */
+.rb-script-bar{display:flex;align-items:center;gap:10px;background:var(--surface2);border:1px solid var(--border2);border-radius:8px;padding:10px 14px;margin-bottom:16px;flex-wrap:wrap}
+.rb-script-label{font-size:12px;color:var(--text3);flex-shrink:0}
+.rb-script-input{flex:1;background:var(--bg2);border:1px solid var(--border);border-radius:6px;color:var(--text2);font-size:12px;padding:6px 10px;min-width:200px;font-family:inherit}
+.rb-script-input:focus{outline:none;border-color:var(--purple)}
+.rb-script-save{background:var(--purple);color:#fff;border:none;border-radius:6px;padding:6px 14px;font-size:12px;font-weight:600;cursor:pointer;white-space:nowrap}
 /* Sector table */
 .rb-sector-table{width:100%;border-collapse:collapse}
 .rb-sector-table th{font-size:10px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.5px;padding:6px 10px;text-align:left;border-bottom:1px solid var(--border2)}
@@ -274,14 +282,6 @@ header{background:var(--surface);border-bottom:1px solid var(--border);padding:1
 /* Cap compliance */
 .rb-cap-ok{color:var(--green);font-size:13px;font-weight:500;display:flex;align-items:center;gap:6px}
 .rb-cap-over{color:var(--red);font-size:13px;font-weight:600;display:flex;align-items:center;gap:6px}
-/* Behavioral audit */
-.rb-audit-list{list-style:none;display:flex;flex-direction:column;gap:10px}
-.rb-audit-item{display:flex;align-items:flex-start;gap:12px;background:var(--surface2);border:1px solid var(--border2);border-radius:8px;padding:12px 14px}
-.rb-audit-q{font-size:13px;color:var(--text);flex:1}
-.rb-audit-btns{display:flex;gap:6px;flex-shrink:0}
-.rb-audit-btn{padding:4px 14px;border-radius:6px;font-size:12px;font-weight:600;border:1px solid var(--border);background:var(--surface);color:var(--text3);cursor:pointer;transition:all .12s}
-.rb-audit-btn.yes-sel{background:var(--red-dim);border-color:var(--red);color:var(--red)}
-.rb-audit-btn.no-sel{background:var(--green-dim);border-color:var(--green);color:var(--green)}
 /* Score card */
 .rb-score-ring{width:90px;height:90px;position:relative;flex-shrink:0}
 .rb-score-ring svg{transform:rotate(-90deg)}
@@ -1533,6 +1533,14 @@ table.div-ht tfoot td{padding:10px 14px;font-size:13px;font-weight:700;backgroun
     </button>
   </div>
 
+  <!-- Apps Script URL config bar -->
+  <div class="rb-script-bar">
+    <span class="rb-script-label">📋 Apps Script URL:</span>
+    <input class="rb-script-input" id="rb-script-url-input" type="text" placeholder="Paste your deployed Apps Script web app URL here…" />
+    <button class="rb-script-save" id="rb-script-url-save-btn" onclick="rbSaveScriptUrl()">Save</button>
+    <span id="rb-script-status" style="font-size:11px;color:var(--text3)">Reports auto-save to Google Sheets after each analysis</span>
+  </div>
+
   <!-- Macro strip -->
   <div class="rb-macro" id="rb-macro-strip">
     <span class="rb-macro-title">Market Context · Last 90 Days</span>
@@ -1632,17 +1640,6 @@ table.div-ht tfoot td{padding:10px 14px;font-size:13px;font-weight:700;backgroun
         <span class="rb-sec-toggle" id="rb-tog-h">▾</span>
       </div>
       <div class="rb-sec-body" id="rb-body-h"></div>
-    </div>
-
-    <!-- SECTION I -->
-    <div class="rb-section" id="rb-sec-i">
-      <div class="rb-sec-head" onclick="rbToggleSec('i')">
-        <div class="rb-sec-letter">I</div>
-        <div class="rb-sec-title">Behavioral Audit — Self-Check</div>
-        <span class="rb-sec-badge rb-badge-info" id="rb-i-badge">Complete Below</span>
-        <span class="rb-sec-toggle" id="rb-tog-i">▾</span>
-      </div>
-      <div class="rb-sec-body" id="rb-body-i"></div>
     </div>
 
     <!-- SECTION J -->
@@ -4669,11 +4666,12 @@ function showLongTerm() {
 //  PORTFOLIO REBALANCE ENGINE
 // ═══════════════════════════════════════════════════════════════════════════════
 
-let _rbMacroLoaded = false;
-let _rbMacro       = { SPY: null, QQQ: null, GLD: null, fx: null };
-let _rbAuditState  = {};   // behavioral audit answers
-let _rbVerdicts    = {};   // watchlist promotion verdicts
+let _rbMacroLoaded  = false;
+let _rbMacro        = { SPY: null, QQQ: null, GLD: null, fx: null };
+let _rbVerdicts     = {};   // watchlist promotion verdicts
 let _rbAnalysisData = null; // last computed analysis
+let _rbReportCache  = {};   // { [uid]: { reportText, verdict, reason, analyzedOn, savedToSheets } }
+let _rbScriptUrl    = '';   // Apps Script web app URL (saved to localStorage)
 
 // ── Quarter badge ─────────────────────────────────────────────────────────────
 (function setQuarterBadge() {
@@ -4697,6 +4695,11 @@ function showRebalance() {
   document.getElementById('btn-more-nav')?.classList.add('active');
   window.scrollTo(0, 0);
   if (!_rbMacroLoaded) fetchMacroAll();
+  // Restore script URL from localStorage
+  const _savedUrl = localStorage.getItem('rb_script_url') || '';
+  if (_savedUrl) { _rbScriptUrl = _savedUrl; const inp = document.getElementById('rb-script-url-input'); if (inp) inp.value = _savedUrl; }
+  // Load reports from Sheets
+  rbLoadReports();
 }
 
 // ── Section toggle ────────────────────────────────────────────────────────────
@@ -4774,21 +4777,198 @@ function rbFlagRow(icon, iconBg, name, sub, metrics, statusHtml, extraHtml) {
     <div class="rb-flag-status">${statusHtml}</div>
   </div>`;
 }
-function reportToggle(uid) {
-  return `<div class="rb-report-toggle" onclick="rbToggleReport('${uid}')">
-    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
-    Paste Fundamental Report
-  </div>
-  <div class="rb-report-box" id="rb-rpt-${uid}">
-    <textarea class="rb-report-textarea" id="rb-rpt-ta-${uid}" placeholder="Paste the fundamental report for this stock here (earnings, revenue trend, debt, guidance, analyst outlook)…" onchange="rbSaveReport('${uid}',this.value)"></textarea>
+// ── Fundamental Report Panel ──────────────────────────────────────────────────
+function reportToggle(uid, ticker, context) {
+  // context: 'core' (sections C, J) | 'deadweight' (section F) | 'watchlist' (section G)
+  context = context || 'core';
+  ticker  = ticker  || uid.replace(/^[a-z]_/, '');
+  const cached = _rbReportCache[uid] || {};
+  const hasReport = !!cached.reportText;
+  const isStale   = hasReport && cached.analyzedOn
+    && (Date.now() - new Date(cached.analyzedOn).getTime() > 30 * 24 * 3600 * 1000);
+  let statusHtml;
+  if (!hasReport) {
+    statusHtml = '<span style="color:var(--text3)">No report on file</span>';
+  } else if (isStale) {
+    const d = new Date(cached.analyzedOn).toLocaleDateString('en-CA');
+    statusHtml = `<span style="color:var(--yellow)">⚠ Last report: ${d} — over 30 days old, please update</span>`;
+  } else {
+    const d = new Date(cached.analyzedOn).toLocaleDateString('en-CA');
+    statusHtml = `<span style="color:var(--green)">✓ Report on file — analyzed ${d}</span>`;
+  }
+  const verdictHtml = cached.verdict
+    ? `<div class="rb-analyze-verdict" id="rb-verdict-${uid}">
+        <div style="font-size:18px">${_verdictIcon(cached.verdict)}</div>
+        <div>
+          <div style="font-size:13px;font-weight:700;color:${_verdictColor(cached.verdict)}">${cached.verdict}</div>
+          <div style="font-size:12px;color:var(--text2);margin-top:2px">${cached.reason || ''}</div>
+        </div>
+       </div>`
+    : `<div class="rb-analyze-verdict" id="rb-verdict-${uid}" style="display:none"></div>`;
+  return `<div style="margin-top:10px;border-top:1px solid var(--border2);padding-top:10px">
+    <div class="rb-rpt-status" id="rb-rpt-status-${uid}">${statusHtml}</div>
+    <div style="margin-top:8px">
+      <textarea class="rb-report-textarea" id="rb-rpt-ta-${uid}"
+        placeholder="Paste fundamental analysis for ${ticker} — earnings, revenue trend, debt, guidance, analyst rating, competitive outlook…">${cached.reportText || ''}</textarea>
+    </div>
+    <div class="rb-rpt-actions">
+      <button class="rb-analyze-btn" onclick="rbAnalyzeReport('${uid}','${ticker}','${context}')">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+        Analyze Report
+      </button>
+    </div>
+    ${verdictHtml}
   </div>`;
 }
-function rbToggleReport(uid) {
-  const box = document.getElementById('rb-rpt-' + uid);
-  if (box) box.classList.toggle('open');
+
+function _verdictIcon(v) {
+  if (/Promote|Recovery|Buy the Dip/i.test(v)) return '🟢';
+  if (/One-Time/i.test(v))                      return '🔵';
+  if (/Hold in Watchlist|Under Review/i.test(v)) return '🟡';
+  if (/Exit|Not Ready/i.test(v))                return '🔴';
+  return '⚪';
 }
-let _rbReports = {};
-function rbSaveReport(uid, val) { _rbReports[uid] = val; }
+function _verdictColor(v) {
+  if (/Promote|Recovery|Buy the Dip/i.test(v)) return 'var(--green)';
+  if (/One-Time/i.test(v))                     return 'var(--blue)';
+  if (/Hold in Watchlist|Under Review/i.test(v)) return 'var(--yellow)';
+  return 'var(--red)';
+}
+
+function rbAnalyzeReport(uid, ticker, context) {
+  const ta = document.getElementById('rb-rpt-ta-' + uid);
+  if (!ta || !ta.value.trim()) { alert('Please paste the fundamental report first.'); return; }
+  const text = ta.value.trim();
+  const result = _doAnalyzeText(text, context);
+  const now = new Date().toISOString();
+  _rbReportCache[uid] = { reportText: text, verdict: result.verdict, reason: result.reason, analyzedOn: now, savedToSheets: false };
+
+  // Show verdict
+  const vEl = document.getElementById('rb-verdict-' + uid);
+  if (vEl) {
+    vEl.style.display = 'flex';
+    vEl.innerHTML = `<div style="font-size:18px">${_verdictIcon(result.verdict)}</div>
+      <div>
+        <div style="font-size:13px;font-weight:700;color:${_verdictColor(result.verdict)}">${result.verdict}</div>
+        <div style="font-size:12px;color:var(--text2);margin-top:2px">${result.reason}</div>
+      </div>`;
+  }
+  const statusEl = document.getElementById('rb-rpt-status-' + uid);
+  if (statusEl) statusEl.innerHTML = '<span style="color:var(--yellow);font-size:11px">⏳ Analyzed — saving to Sheets…</span>';
+
+  // Auto-select verdict buttons for watchlist
+  if (context === 'watchlist') {
+    const map = { 'Promote to Core SIP': 'promote', 'One-Time Investment': 'onetime', 'Hold in Watchlist': 'stay', 'Not Ready for Promotion': 'stay' };
+    const v = map[result.verdict] || 'stay';
+    ['promote','onetime','stay'].forEach(vv => {
+      const b = document.getElementById(`vbtn-${vv}-${uid}`);
+      if (b) b.classList.toggle('sel', vv === v);
+    });
+    _rbVerdicts[uid] = v;
+  }
+  rbSaveReportToSheets(uid, ticker, context, text, result.verdict, result.reason, now);
+}
+
+function _doAnalyzeText(text, context) {
+  const t = text.toLowerCase();
+  const POS = [
+    { kw: ['beat','exceeded','outperformed','surpassed','above expectations'], w: 2 },
+    { kw: ['revenue growth','growing revenue','revenue increased','top-line growth','record revenue'], w: 2 },
+    { kw: ['raised guidance','guidance raised','raised outlook','raised forecast'], w: 2 },
+    { kw: ['strong buy','buy rating','outperform','overweight'], w: 1 },
+    { kw: ['margin expansion','improving margin','expanding margins'], w: 2 },
+    { kw: ['debt reduction','reducing debt','deleveraging','net cash'], w: 1 },
+    { kw: ['market share gain','gaining share','competitive advantage','moat'], w: 2 },
+    { kw: ['free cash flow','cash flow positive','strong cash generation'], w: 1 },
+    { kw: ['dividend growth','share buyback','capital return'], w: 1 },
+    { kw: ['undervalued','trading at discount','deep value'], w: 1 },
+    { kw: ['turnaround','recovery','improving fundamentals','return to growth'], w: 1 },
+    { kw: ['innovation','new product','product launch'], w: 1 },
+  ];
+  const NEG = [
+    { kw: ['miss','missed','below expectations','disappointing'], w: 2 },
+    { kw: ['revenue decline','falling revenue','revenue dropped','top-line miss'], w: 2 },
+    { kw: ['guidance cut','lowered guidance','guidance reduced','withdrew outlook'], w: 2 },
+    { kw: ['sell rating','underperform','underweight'], w: 1 },
+    { kw: ['margin compression','declining margins','margin pressure'], w: 2 },
+    { kw: ['high debt','debt concern','leverage risk','overleveraged'], w: 2 },
+    { kw: ['market share loss','losing share','competition intensifying'], w: 2 },
+    { kw: ['ceo change','management change','leadership departure'], w: 1 },
+    { kw: ['regulatory','lawsuit','investigation','sec probe'], w: 2 },
+    { kw: ['structural decline','secular decline','disruption risk','obsolete'], w: 2 },
+    { kw: ['customer churn','subscriber loss','user decline'], w: 1 },
+    { kw: ['guidance withdrawn','no guidance'], w: 2 },
+  ];
+  let posScore = 0, posM = [], negScore = 0, negM = [];
+  for (const s of POS) { for (const kw of s.kw) { if (t.includes(kw)) { posScore += s.w; posM.push(kw); break; } } }
+  for (const s of NEG) { for (const kw of s.kw) { if (t.includes(kw)) { negScore += s.w; negM.push(kw); break; } } }
+  const net  = posScore - negScore;
+  const pos3 = posM.slice(0,3).join(', ') || 'signals not detected';
+  const neg3 = negM.slice(0,3).join(', ') || 'none detected';
+  if (context === 'watchlist') {
+    if (net >= 5) return { verdict: 'Promote to Core SIP',       reason: `Strong fundamentals confirmed: ${pos3}. Well suited for regular SIP accumulation.` };
+    if (net >= 2) return { verdict: 'One-Time Investment',        reason: `Solid fundamentals: ${pos3}. Consider a single lump-sum entry.` };
+    if (net >= -1) return { verdict: 'Hold in Watchlist',         reason: `Mixed signals — positives: ${pos3}; concerns: ${neg3}. Not ready for promotion yet.` };
+    return               { verdict: 'Not Ready for Promotion',    reason: `Concerns outweigh positives: ${neg3}. Revisit next quarter.` };
+  } else {
+    if (net >= 4) return { verdict: 'Recovery Thesis Intact — Hold', reason: `Fundamentals strong despite price weakness: ${pos3}. Hold and monitor.` };
+    if (net >= 1) return { verdict: 'Buy the Dip — One-Time',        reason: `Weakness appears price-driven, not fundamental: ${pos3}. Consider adding.` };
+    if (net >= -2) return { verdict: 'Hold — Under Review',           reason: `Mixed picture — positives: ${pos3}; concerns: ${neg3}. Do not add or exit yet.` };
+    return                { verdict: 'Exit Position',                 reason: `Fundamental deterioration confirmed: ${neg3}. Dead-weight signal validated — consider exiting.` };
+  }
+}
+
+async function rbSaveReportToSheets(uid, ticker, context, reportText, verdict, reason, analyzedOn) {
+  const statusEl = document.getElementById('rb-rpt-status-' + uid);
+  if (!_rbScriptUrl) {
+    if (statusEl) statusEl.innerHTML = '<span style="color:var(--text3);font-size:11px">⚠ No Apps Script URL — paste it above to enable cloud save</span>';
+    return;
+  }
+  try {
+    const resp = await fetch(_rbScriptUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'saveReport', symbol: ticker, context, reportText, verdict, reason, analyzedOn })
+    });
+    const data = await resp.json();
+    if (data.ok) {
+      if (_rbReportCache[uid]) _rbReportCache[uid].savedToSheets = true;
+      const d = new Date().toLocaleDateString('en-CA');
+      if (statusEl) statusEl.innerHTML = `<span style="color:var(--green);font-size:11px">✓ Saved to Google Sheets — ${d}</span>`;
+    } else {
+      if (statusEl) statusEl.innerHTML = '<span style="color:var(--red);font-size:11px">⚠ Save failed — check Apps Script URL</span>';
+    }
+  } catch(e) {
+    if (statusEl) statusEl.innerHTML = '<span style="color:var(--red);font-size:11px">⚠ Could not reach Sheets — check URL and deploy settings</span>';
+  }
+}
+
+async function rbLoadReports() {
+  if (!_rbScriptUrl) return;
+  try {
+    const resp = await fetch(_rbScriptUrl + '?action=getReports');
+    const data = await resp.json();
+    if (data.ok && Array.isArray(data.reports)) {
+      for (const r of data.reports) {
+        const prefix = r.context === 'watchlist' ? 'g_' : r.context === 'deadweight' ? 'f_' : 'c_';
+        const uid = prefix + r.symbol;
+        _rbReportCache[uid] = { reportText: r.reportText, verdict: r.verdict, reason: r.reason, analyzedOn: r.analyzedOn, savedToSheets: true };
+      }
+      const el = document.getElementById('rb-script-status');
+      if (el) el.innerHTML = `<span style="color:var(--green)">✓ ${data.reports.length} report(s) loaded from Sheets</span>`;
+    }
+  } catch(e) { /* silently fail on load */ }
+}
+
+function rbSaveScriptUrl() {
+  const inp = document.getElementById('rb-script-url-input');
+  if (!inp) return;
+  _rbScriptUrl = inp.value.trim();
+  localStorage.setItem('rb_script_url', _rbScriptUrl);
+  const btn = document.getElementById('rb-script-url-save-btn');
+  if (btn) { btn.textContent = '✓ Saved'; setTimeout(() => { btn.textContent = 'Save'; }, 2000); }
+  if (_rbScriptUrl) rbLoadReports();
+}
 
 // ── Main analysis runner ──────────────────────────────────────────────────────
 function runRebalance() {
@@ -4956,7 +5136,7 @@ function _doRebalance() {
          { l: 'YTD', v: fmtPct(d.ytd), c: pctColor(d.ytd) },
          { l: 'Signal', v: d.recommend || '—' }],
         `<span class="rb-sec-badge rb-badge-warn">Monitor<br><span style="font-size:10px">Report Required</span></span>`,
-        reportToggle('c_' + d.ticker)
+        reportToggle('c_' + d.ticker, d.ticker, 'core')
       )).join('');
 
   // ── SECTION D: ETFs down >15% ─────────────────────────────────────────────
@@ -5018,7 +5198,7 @@ function _doRebalance() {
          { l: 'P/L %', v: fmtPct(d.plP), c: pctColor(d.plP) },
          { l: 'Invested', v: fmtUSD(d.inv) }],
         `<span class="rb-sec-badge rb-badge-warn">Monitor<br><span style="font-size:10px">Report Required</span></span>`,
-        reportToggle('f_' + d.ticker)
+        reportToggle('f_' + d.ticker, d.ticker, 'deadweight')
       )).join('');
 
   // ── SECTION G: Watchlist Promotion ───────────────────────────────────────
@@ -5042,7 +5222,7 @@ function _doRebalance() {
            { l: 'YTD', v: fmtPct(d.ytd), c: pctColor(d.ytd) },
            { l: 'Signal', v: d.recommend || '—' }],
           `<span class="rb-sec-badge rb-badge-purple">Watchlist</span>`,
-          reportToggle(uid) + verdictHtml
+          reportToggle(uid, d.ticker, 'watchlist') + verdictHtml
         );
       }).join('');
 
@@ -5092,34 +5272,6 @@ function _doRebalance() {
       </div>
     </div>`;
 
-  // ── SECTION I: Behavioral Audit ───────────────────────────────────────────
-  const auditQs = [
-    { id: 'a1', q: 'Did I add any new position in the last 30 days without a clear dip/value trigger?' },
-    { id: 'a2', q: 'Did I buy any stock based on news, momentum, or social media rather than fundamentals?' },
-    { id: 'a3', q: 'Am I currently holding any position purely out of hope — where the original thesis has changed?' },
-    { id: 'a4', q: 'Did any watchlist stock sit idle for 2+ quarters without being formally reviewed?' },
-    { id: 'a5', q: 'Did I exceed the $2,500 per-person invested capital cap on any individual stock this quarter?' },
-    { id: 'a6', q: 'Did I react emotionally to a short-term price drop and add more without reviewing fundamentals?' },
-    { id: 'a7', q: 'Am I reviewing any position for removal only because the price is down — not because fundamentals changed?' },
-  ];
-  document.getElementById('rb-body-i').innerHTML = `
-    <p style="font-size:13px;color:var(--text2);margin-bottom:14px">Answer each question honestly. Yes answers are flags — not automatic actions, but signals to investigate further.</p>
-    <ul class="rb-audit-list">
-      ${auditQs.map(q => `<li class="rb-audit-item">
-        <div class="rb-audit-q">${q.q}</div>
-        <div class="rb-audit-btns">
-          <button class="rb-audit-btn" id="rb-aud-yes-${q.id}" onclick="rbAudit('${q.id}','yes')">Yes</button>
-          <button class="rb-audit-btn" id="rb-aud-no-${q.id}" onclick="rbAudit('${q.id}','no')">No</button>
-        </div>
-      </li>`).join('')}
-    </ul>`;
-  // Restore previous answers
-  for (const [id, ans] of Object.entries(_rbAuditState)) {
-    const yBtn = document.getElementById('rb-aud-yes-' + id);
-    const nBtn = document.getElementById('rb-aud-no-' + id);
-    if (yBtn && nBtn) { yBtn.className = 'rb-audit-btn' + (ans==='yes'?' yes-sel':''); nBtn.className = 'rb-audit-btn' + (ans==='no'?' no-sel':''); }
-  }
-
   // ── SECTION J: Core ↔ Watchlist movement suggestions ─────────────────────
   const promote = [];   // watchlist → consider moving to core
   const demote  = [];   // core → consider moving to watchlist
@@ -5161,7 +5313,7 @@ function _doRebalance() {
          { l: 'YTD', v: fmtPct(d.ytd), c: 'var(--red)' },
          { l: 'Signal', v: d.recommend }],
         `<span class="rb-sec-badge rb-badge-warn">Review</span>`,
-        reportToggle('j_' + d.ticker)
+        reportToggle('j_' + d.ticker, d.ticker, 'core')
       )).join('');
     }
   }
@@ -5205,16 +5357,6 @@ function _doRebalance() {
 
   // Store analysis data for prompt generation
   _rbAnalysisData = { main, watch, totalInv, totalVal, etfInv, stkInv, usInv, caInv, totalSIP, sipFunds, sectorRows, capViolations, stocksDown, etfsDown, profitAbove, deadWeight, promote, demote, planAction, planMonitor, planOk, planReport, hScore, hGrade, overallVerdict, fxRate };
-}
-
-// ── Behavioral audit ──────────────────────────────────────────────────────────
-function rbAudit(id, ans) {
-  _rbAuditState[id] = ans;
-  const yBtn = document.getElementById('rb-aud-yes-' + id);
-  const nBtn = document.getElementById('rb-aud-no-' + id);
-  if (!yBtn || !nBtn) return;
-  yBtn.className = 'rb-audit-btn' + (ans === 'yes' ? ' yes-sel' : '');
-  nBtn.className = 'rb-audit-btn' + (ans === 'no'  ? ' no-sel'  : '');
 }
 
 // ── Watchlist verdict ─────────────────────────────────────────────────────────
@@ -5290,7 +5432,26 @@ SECTION E — PROFIT BOOKING (>+20%)
 ${d.profitAbove.length > 0 ? d.profitAbove.map(f => `• ${f.shortName} (${f.ticker}): ${fmtPct(f.plP)} profit | Invested: ${fmtUSD(f.inv)} | Value: ${fmtUSD(f.curval)}`).join('\n') : 'None'}
 
 SECTION F — DEAD WEIGHT PROXY (YTD<0 + 30D<0)
-${d.deadWeight.length > 0 ? d.deadWeight.map(f => `• ${f.shortName} (${f.ticker}): YTD ${fmtPct(f.ytd)}, 30D ${fmtPct(f.s30d)} | P/L: ${fmtPct(f.plP)}`).join('\n') : '✓ None'}
+${d.deadWeight.length > 0 ? d.deadWeight.map(f => {
+  const rpt = _rbReportCache['f_' + f.ticker];
+  const rptLine = rpt && rpt.verdict ? ` | Report Verdict: ${rpt.verdict}` : ' | Report: Not provided';
+  return `• ${f.shortName} (${f.ticker}): YTD ${fmtPct(f.ytd)}, 30D ${fmtPct(f.s30d)} | P/L: ${fmtPct(f.plP)}${rptLine}`;
+}).join('\n') : '✓ None'}
+
+FUNDAMENTAL REPORTS (Dead Weight — Sections C & F)
+${[...d.stocksDown, ...d.deadWeight].map(f => {
+  const uid1 = 'c_' + f.ticker, uid2 = 'f_' + f.ticker;
+  const rpt = _rbReportCache[uid1] || _rbReportCache[uid2];
+  if (!rpt || !rpt.reportText) return null;
+  return `[${f.ticker}] Verdict: ${rpt.verdict}\nReason: ${rpt.reason}\nAnalyzed: ${rpt.analyzedOn ? new Date(rpt.analyzedOn).toLocaleDateString('en-CA') : '—'}`;
+}).filter(Boolean).join('\n\n') || 'No reports provided yet'}
+
+FUNDAMENTAL REPORTS (Watchlist — Section G)
+${d.watch.map(f => {
+  const rpt = _rbReportCache['g_' + f.ticker];
+  if (!rpt || !rpt.reportText) return null;
+  return `[${f.ticker}] Verdict: ${rpt.verdict}\nReason: ${rpt.reason}\nAnalyzed: ${rpt.analyzedOn ? new Date(rpt.analyzedOn).toLocaleDateString('en-CA') : '—'}`;
+}).filter(Boolean).join('\n\n') || 'No reports provided yet'}
 
 SECTION H — DIVERSIFICATION HEALTH SCORE
 ${d.hScore}/100 — Grade ${d.hGrade}
