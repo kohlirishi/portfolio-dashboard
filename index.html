@@ -1532,7 +1532,7 @@ table.div-ht tfoot td{padding:10px 14px;font-size:13px;font-weight:700;backgroun
     <span class="rb-macro-title">Market Context · Last 90 Days</span>
     <div class="rb-macro-item"><span class="rb-macro-label">SPY</span><span class="rb-macro-val" id="rb-spy">Loading…</span></div>
     <div class="rb-macro-item"><span class="rb-macro-label">QQQ</span><span class="rb-macro-val" id="rb-qqq">Loading…</span></div>
-    <div class="rb-macro-item"><span class="rb-macro-label">GLD</span><span class="rb-macro-val" id="rb-gld">Loading…</span></div>
+    <div class="rb-macro-item"><span class="rb-macro-label">GOLD (GLD)</span><span class="rb-macro-val" id="rb-gld">Loading…</span></div>
     <div class="rb-macro-item"><span class="rb-macro-label">USD/CAD</span><span class="rb-macro-val" id="rb-fx">Loading…</span></div>
     <span class="rb-macro-note">Auto-fetched · used for context only</span>
   </div>
@@ -4790,23 +4790,18 @@ function reportToggle(uid, ticker, context) {
         </div>
        </div>`
     : `<div class="rb-analyze-verdict" id="rb-verdict-${uid}" style="display:none"></div>`;
+
+  // Resolve FMP ticker from Google Sheet column V (NASDAQ:ORCL → ORCL, TSE:L → L.TO)
+  let fmpHint = '';
+  if (typeof ALL !== 'undefined' && ALL) {
+    const entry = ALL.find(d => d.ticker === ticker);
+    if (entry && entry.ticker_v) fmpHint = sheetTickerToFMP(entry.ticker_v) || '';
+  }
+
   return `<div style="margin-top:10px;border-top:1px solid var(--border2);padding-top:10px">
     <div class="rb-rpt-status" id="rb-rpt-status-${uid}">${statusHtml}</div>
-    <div style="margin-top:8px">
-      <textarea class="rb-report-textarea" id="rb-rpt-ta-${uid}"
-        placeholder="Optional: add your own notes for ${ticker} (the main analysis is auto-fetched from Financial Modeling Prep above)…">${cached.reportText || ''}</textarea>
-    </div>
-    <!-- Manual ticker override — shown only when auto-detection fails -->
-    <div id="rb-override-box-${uid}" style="display:none;align-items:center;gap:8px;margin-top:8px;flex-wrap:wrap">
-      <span style="font-size:11px;color:var(--text3)">FMP ticker:</span>
-      <input id="rb-ticker-override-${uid}" type="text" placeholder="e.g. L.TO or SHOP.TO"
-        style="background:var(--bg2);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:12px;padding:5px 10px;width:140px;font-family:inherit"
-        onkeydown="if(event.key==='Enter') rbFetchFundamentals('${uid}','${ticker}','${context}')"/>
-      <button onclick="rbFetchFundamentals('${uid}','${ticker}','${context}')"
-        style="background:var(--blue);color:#fff;border:none;border-radius:6px;padding:5px 12px;font-size:12px;font-weight:600;cursor:pointer">Try</button>
-    </div>
     <div class="rb-rpt-actions">
-      <button class="rb-analyze-btn" id="rb-fetch-btn-${uid}" onclick="rbFetchFundamentals('${uid}','${ticker}','${context}')">
+      <button class="rb-analyze-btn" id="rb-fetch-btn-${uid}" onclick="rbFetchFundamentals('${uid}','${ticker}','${context}','${fmpHint}')">
         <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 6v16l7-4 8 4 7-4V2l-7 4-8-4-7 4z"/><path d="M8 2v16M16 6v16"/></svg>
         Fetch Fundamentals
       </button>
@@ -4827,6 +4822,17 @@ function _verdictColor(v) {
   if (/One-Time/i.test(v))                     return 'var(--blue)';
   if (/Hold in Watchlist|Under Review/i.test(v)) return 'var(--yellow)';
   return 'var(--red)';
+}
+
+// ── Convert Google Sheet column V ticker (e.g. "NASDAQ:ORCL") to FMP format ──
+function sheetTickerToFMP(sheetTicker) {
+  if (!sheetTicker) return null;
+  const parts = sheetTicker.split(':');
+  if (parts.length < 2) return sheetTicker.trim();
+  const exchange = parts[0].toUpperCase().trim();
+  const sym = parts[1].trim();
+  if (['TSE', 'TSX', 'CVE'].includes(exchange)) return sym + '.TO';
+  return sym;
 }
 
 // ── FMP API: resolve ticker, try multiple formats ─────────────────────────────
@@ -4861,32 +4867,28 @@ async function _resolveFMPTicker(ticker) {
 }
 
 // ── FMP API: fetch real fundamentals and produce verdict ──────────────────────
-async function rbFetchFundamentals(uid, ticker, context, overrideSym) {
+async function rbFetchFundamentals(uid, ticker, context, sheetTicker) {
   const statusEl = document.getElementById('rb-rpt-status-' + uid);
   const btn      = document.getElementById('rb-fetch-btn-' + uid);
   if (statusEl) statusEl.innerHTML = '<span style="color:var(--blue);font-size:11px">⏳ Fetching from Financial Modeling Prep…</span>';
   if (btn) { btn.disabled = true; btn.textContent = '⏳ Fetching…'; }
 
-  // If user supplied a manual ticker override, use that directly
-  const overrideInput = document.getElementById('rb-ticker-override-' + uid);
-  const manualSym = overrideSym || (overrideInput && overrideInput.value.trim().toUpperCase()) || '';
-
   try {
     let sym, profile;
-    if (manualSym) {
-      profile = await _fmpFetchProfile(manualSym);
-      sym = manualSym;
-    } else {
+    // Prefer the ticker from Google Sheet column V (already FMP-formatted)
+    if (sheetTicker) {
+      profile = await _fmpFetchProfile(sheetTicker);
+      sym = sheetTicker;
+    }
+    // Fall back to auto-resolution if sheet ticker didn't work
+    if (!profile) {
       const resolved = await _resolveFMPTicker(ticker);
       if (resolved) { sym = resolved.sym; profile = resolved.profile; }
     }
 
     if (!profile) {
-      // Show override input so user can type the correct FMP ticker
-      if (statusEl) statusEl.innerHTML = `<span style="color:var(--yellow);font-size:11px">⚠ Could not find <strong>${manualSym || ticker}</strong> on FMP. Enter the exact FMP ticker below:</span>`;
-      const overrideBox = document.getElementById('rb-override-box-' + uid);
-      if (overrideBox) overrideBox.style.display = 'flex';
-      if (btn) { btn.disabled = false; btn.innerHTML = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 6v16l7-4 8 4 7-4V2l-7 4-8-4-7 4z"/><path d="M8 2v16M16 6v16"/></svg> Fetch Fundamentals'; }
+      if (statusEl) statusEl.innerHTML = `<span style="color:var(--yellow);font-size:11px">⚠ Could not find <strong>${sheetTicker || ticker}</strong> on FMP. The ticker may not be available in their database.</span>`;
+      if (btn) { btn.disabled = false; btn.innerHTML = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 6v16l7-4 8 4 7-4V2l-7 4-8-4-7 4z"/><path d="M8 2v16M16 6v16"/></svg> Retry'; }
       return;
     }
 
@@ -5064,6 +5066,13 @@ function runRebalance() {
     btn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg> Re-Run Analysis';
     document.getElementById('rb-last-run').textContent = 'Last run: ' + new Date().toLocaleTimeString('en-CA', { hour:'2-digit', minute:'2-digit' });
     document.getElementById('rb-results').style.display = 'block';
+    // Collapse all sections by default — user clicks to expand what they need
+    ['a','b','c','d','e','f','g','h','j','plan','prompt'].forEach(id => {
+      const body = document.getElementById('rb-body-' + id);
+      const tog  = document.getElementById('rb-tog-' + id);
+      if (body) body.style.display = 'none';
+      if (tog)  tog.textContent = '▸';
+    });
     document.getElementById('rb-results').scrollIntoView({ behavior: 'smooth', block: 'start' });
   }, 80);
 }
