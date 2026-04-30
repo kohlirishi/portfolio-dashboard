@@ -5029,7 +5029,7 @@ function runRebalance() {
   btn.disabled = true;
   btn.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg> Analysing…';
 
-  setTimeout(() => { // allow UI to update
+  setTimeout(async () => { // allow UI to update
     try { _doRebalance(); } catch(e) { console.error(e); }
     btn.disabled = false;
     btn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg> Re-Run Analysis';
@@ -5043,7 +5043,67 @@ function runRebalance() {
       if (tog)  tog.textContent = '▸';
     });
     document.getElementById('rb-results').scrollIntoView({ behavior: 'smooth', block: 'start' });
+
+    // Auto-fetch fundamentals for watchlist stocks missing a fresh report
+    await _rbAutoFetchWatchlist();
   }, 80);
+}
+
+// ── Auto-fetch fundamentals for all watchlist stocks without a fresh report ──
+async function _rbAutoFetchWatchlist() {
+  const watch = (typeof ALL !== 'undefined' ? ALL.filter(d => d.isWatch) : []);
+  if (watch.length === 0) return;
+
+  const THIRTY_DAYS = 30 * 24 * 3600 * 1000;
+  const needsFetch = watch.filter(d => {
+    const cached = _rbReportCache['g_' + d.ticker] || {};
+    if (!cached.reportText) return true;
+    return cached.analyzedOn && (Date.now() - new Date(cached.analyzedOn).getTime() > THIRTY_DAYS);
+  });
+
+  if (needsFetch.length === 0) {
+    console.log('[AutoFetch] All watchlist fundamentals are up to date.');
+    return;
+  }
+
+  console.log('[AutoFetch] Fetching fundamentals for ' + needsFetch.length + ' watchlist stock(s)…');
+  const lastRunEl = document.getElementById('rb-last-run');
+
+  for (let i = 0; i < needsFetch.length; i++) {
+    const d = needsFetch[i];
+    if (lastRunEl) lastRunEl.textContent = `Auto-fetching ${i + 1}/${needsFetch.length}: ${d.ticker}…`;
+    try {
+      const uid = 'g_' + d.ticker;
+      const sheetTicker = typeof sheetTickerToFMP === 'function' ? (sheetTickerToFMP(d.ticker_v || '') || '') : '';
+      await rbFetchFundamentals(uid, d.ticker, 'watchlist', sheetTicker);
+    } catch(e) {
+      console.error('[AutoFetch] Error for ' + d.ticker + ':', e);
+    }
+    // Brief pause between calls to be a good API citizen
+    if (i < needsFetch.length - 1) await new Promise(r => setTimeout(r, 300));
+  }
+
+  if (lastRunEl) lastRunEl.textContent = 'Last run: ' + new Date().toLocaleTimeString('en-CA', { hour:'2-digit', minute:'2-digit' });
+
+  // Refresh the Watchlist Decision card in the Plan section with updated verdicts
+  _rbRefreshPlanWatchlistCard();
+}
+
+// ── Rebuild Watchlist Decision card after auto-fetch completes ────────────────
+function _rbRefreshPlanWatchlistCard() {
+  const card = document.getElementById('rb-plan-card-watch');
+  if (!card || !_rbAnalysisData) return;
+  const watch = _rbAnalysisData.watch || [];
+  const planWatch = watch.map(d => {
+    const v = _rbVerdicts['g_' + d.ticker];
+    return d.shortName + (v ? ` — ${v}` : ' — No verdict yet');
+  });
+  card.innerHTML = `
+    <div class="rb-plan-card-title">🔄 Watchlist Decision</div>
+    <div class="rb-plan-count">${planWatch.length}</div>
+    ${planWatch.slice(0, 8).map(i => `<div class="rb-plan-item"><span>·</span><span>${i}</span></div>`).join('')}
+    ${planWatch.length > 8 ? `<div style="font-size:11px;color:var(--text3);margin-top:6px">+${planWatch.length - 8} more</div>` : ''}
+  `;
 }
 
 function _doRebalance() {
@@ -5407,15 +5467,31 @@ function _doRebalance() {
   document.getElementById('rb-body-j').innerHTML = jHtml;
 
   // ── FINAL ACTION PLAN ─────────────────────────────────────────────────────
-  const planAction   = [...capViolations.map(v => `${v.sym} (${v.person}) — cap violation: ${fmtUSD(v.over)} over limit`)];
-  const planMonitor  = [...stocksDown.map(d => d.shortName + ' — down ' + fmtPct(d.plP) + ' (report needed)'),
-                        ...etfsDown.map(d => d.shortName + ' — ETF down ' + fmtPct(d.plP)),
-                        ...deadWeight.map(d => d.shortName + ' — dead weight proxy (report needed)')];
+  // Split dead weight by report status so reviewed stocks leave the Monitor card
+  const THIRTY_DAYS_PLAN = 30 * 24 * 3600 * 1000;
+  const dwNeedsReport = deadWeight.filter(d => {
+    const cached = _rbReportCache['f_' + d.ticker] || {};
+    if (!cached.reportText) return true;
+    return cached.analyzedOn && (Date.now() - new Date(cached.analyzedOn).getTime() > THIRTY_DAYS_PLAN);
+  });
+  const dwReviewed = deadWeight.filter(d => !dwNeedsReport.includes(d));
+  const dwExitRequired = dwReviewed.filter(d => /exit/i.test((_rbReportCache['f_' + d.ticker] || {}).verdict || ''));
+
+  const planAction   = [
+    ...capViolations.map(v => `${v.sym} (${v.person}) — cap violation: ${fmtUSD(v.over)} over limit`),
+    ...dwExitRequired.map(d => d.shortName + ' — exit recommended by fundamental report'),
+  ];
+  const planMonitor  = [
+    ...stocksDown.map(d => d.shortName + ' — down ' + fmtPct(d.plP) + ' (report needed)'),
+    ...etfsDown.map(d => d.shortName + ' — ETF down ' + fmtPct(d.plP)),
+    ...dwNeedsReport.map(d => d.shortName + ' — dead weight proxy (report needed)'),
+    // dwReviewed with hold verdict: omitted here — already shown as ✓ All Reviewed in Section F
+  ];
   const planOk       = main.filter(d => !stocksDown.includes(d) && !etfsDown.includes(d) && !deadWeight.includes(d) && !capViolations.find(v => v.sym === d.ticker) && (d.plP === null || (d.plP >= -20 && (d.type === 'Stock' || d.plP >= -15)))).map(d => d.shortName + ' (' + d.ticker + ')');
-  const planReport   = [...stocksDown.map(d => d.shortName + ' (C)'), ...deadWeight.map(d => d.shortName + ' (F)'), ...demote.map(d => d.shortName + ' (J)')];
+  const planReport   = [...stocksDown.map(d => d.shortName + ' (C)'), ...dwNeedsReport.map(d => d.shortName + ' (F)'), ...demote.map(d => d.shortName + ' (J)')];
   const planWatch    = watch.map(d => { const v = _rbVerdicts['g_' + d.ticker]; return d.shortName + (v ? ` — ${v}` : ' — No verdict yet'); });
 
-  const planCard = (cls, letter, title, items, count) => `<div class="rb-plan-card ${cls}">
+  const planCard = (cls, letter, title, items, count, cardId) => `<div class="rb-plan-card ${cls}"${cardId ? ` id="${cardId}"` : ''}>
     <div class="rb-plan-card-title">${letter} ${title}</div>
     <div class="rb-plan-count">${count}</div>
     ${items.slice(0, 8).map(i => `<div class="rb-plan-item"><span>·</span><span>${i}</span></div>`).join('')}
@@ -5436,13 +5512,13 @@ function _doRebalance() {
       ${planCard('c-yellow', '🟡', 'Monitor',                    planMonitor, planMonitor.length)}
       ${planCard('c-green',  '🟢', 'No Action',                  planOk,      planOk.length)}
       ${planCard('c-blue',   '📋', 'Fundamental Report Needed',  planReport,  planReport.length)}
-      ${planCard('c-purple', '🔄', 'Watchlist Decision',         planWatch,   planWatch.length)}
+      ${planCard('c-purple', '🔄', 'Watchlist Decision',         planWatch,   planWatch.length, 'rb-plan-card-watch')}
     </div>
     <div style="font-size:12px;color:var(--text3);margin-top:4px">
       Remember: During rebalance, revisit your last 3–5 investment decisions. Ask yourself — if I had no idea what happened next, what would I have done at each stage? This builds real judgment, not just rule following.
     </div>`;
 
-  // Store analysis data for prompt generation
+  // Store analysis data for prompt generation (watch stored for auto-fetch refresh)
   _rbAnalysisData = { main, watch, totalInv, totalVal, etfInv, stkInv, usInv, caInv, totalSIP, sipFunds, sectorRows, capViolations, stocksDown, etfsDown, profitAbove, deadWeight, promote, demote, planAction, planMonitor, planOk, planReport, hScore, hGrade, overallVerdict, fxRate };
 }
 
