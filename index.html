@@ -5107,30 +5107,75 @@ function _rbRefreshPlanWatchlistCard() {
   `;
 }
 
+// ── Watchlist summary table sort state ───────────────────────────────────────
+let _rbWatchSort = { col: null, dir: 1 };
+
+function _rbSortWatchlist(col) {
+  if (_rbWatchSort.col === col) {
+    _rbWatchSort.dir = _rbWatchSort.dir === 1 ? -1 : 1;
+  } else {
+    _rbWatchSort.col = col;
+    _rbWatchSort.dir = 1;
+  }
+  _rbBuildWatchlistSummaryTable();
+}
+
 // ── Watchlist summary table — rebuilt after each auto-fetch ──────────────────
 function _rbBuildWatchlistSummaryTable() {
   const el = document.getElementById('rb-g-summary');
   if (!el || !_rbAnalysisData) return;
-  const watch = _rbAnalysisData.watch || [];
+  let watch = (_rbAnalysisData.watch || []).slice(); // shallow copy so sort doesn't mutate original
   if (watch.length === 0) { el.innerHTML = ''; return; }
+
+  // Verdict sort order: Promote(0) > One-Time(1) > Hold/Stay(2) > Not Ready(3) > Pending(4)
+  const verdictRank = v => {
+    if (!v) return 4;
+    if (/promote/i.test(v))   return 0;
+    if (/one.time/i.test(v))  return 1;
+    if (/hold|stay/i.test(v)) return 2;
+    return 3;
+  };
+
+  const { col, dir } = _rbWatchSort;
+  if (col) {
+    watch.sort((a, b) => {
+      let va, vb;
+      if (col === 'name')    { va = (a.shortName || '').toLowerCase(); vb = (b.shortName || '').toLowerCase(); }
+      else if (col === 'pl') { va = a.plP  ?? -Infinity; vb = b.plP  ?? -Infinity; }
+      else if (col === 's30'){ va = a.s30d ?? -Infinity; vb = b.s30d ?? -Infinity; }
+      else if (col === 'ytd'){ va = a.ytd  ?? -Infinity; vb = b.ytd  ?? -Infinity; }
+      else if (col === 'sec'){ va = (a.sector || '').toLowerCase(); vb = (b.sector || '').toLowerCase(); }
+      else if (col === 'ver'){
+        va = verdictRank((_rbReportCache['g_' + a.ticker] || {}).verdict);
+        vb = verdictRank((_rbReportCache['g_' + b.ticker] || {}).verdict);
+      }
+      if (va < vb) return -1 * dir;
+      if (va > vb) return  1 * dir;
+      return 0;
+    });
+  }
+
+  const thStyle = (key, align) => {
+    const active = _rbWatchSort.col === key;
+    const arrow  = active ? (_rbWatchSort.dir === 1 ? ' ↑' : ' ↓') : ' ⇅';
+    const color  = active ? 'var(--blue)' : 'var(--text3)';
+    return `style="padding:8px 12px;text-align:${align};font-size:10px;font-weight:700;color:${color};text-transform:uppercase;letter-spacing:.5px;white-space:nowrap;cursor:pointer;user-select:none" onclick="_rbSortWatchlist('${key}')"`;
+  };
 
   const verdictCell = ticker => {
     const cached = _rbReportCache['g_' + ticker] || {};
-    if (!cached.verdict) {
-      return `<span style="color:var(--text3);font-size:11px">⏳ Pending…</span>`;
-    }
-    const v = cached.verdict;
+    if (!cached.verdict) return `<span style="color:var(--text3);font-size:11px">⏳ Pending…</span>`;
+    const v     = cached.verdict;
     const color = typeof _verdictColor === 'function' ? _verdictColor(v) : 'var(--text)';
     const icon  = typeof _verdictIcon  === 'function' ? _verdictIcon(v)  : '•';
-    // Compact label: strip long phrases
     const label = v.replace('Recovery Thesis Intact — ', '').replace(' — Hold', '');
     return `<span style="font-size:11px;font-weight:600;color:${color}">${icon} ${label}</span>`;
   };
 
-  const decided  = watch.filter(d => !!(_rbReportCache['g_' + d.ticker] || {}).verdict).length;
-  const promote  = watch.filter(d => /promote/i.test((_rbReportCache['g_' + d.ticker] || {}).verdict || '')).length;
-  const onetime  = watch.filter(d => /one.time/i.test((_rbReportCache['g_' + d.ticker] || {}).verdict || '')).length;
-  const stay     = watch.filter(d => /hold|stay|not ready/i.test((_rbReportCache['g_' + d.ticker] || {}).verdict || '') && !/promote|one.time/i.test((_rbReportCache['g_' + d.ticker] || {}).verdict || '')).length;
+  const decided = watch.filter(d => !!(_rbReportCache['g_' + d.ticker] || {}).verdict).length;
+  const promote = watch.filter(d => /promote/i.test((_rbReportCache['g_' + d.ticker] || {}).verdict || '')).length;
+  const onetime = watch.filter(d => /one.time/i.test((_rbReportCache['g_' + d.ticker] || {}).verdict || '')).length;
+  const stay    = watch.filter(d => /hold|stay|not ready/i.test((_rbReportCache['g_' + d.ticker] || {}).verdict || '') && !/promote|one.time/i.test((_rbReportCache['g_' + d.ticker] || {}).verdict || '')).length;
 
   const rows = watch.map((d, i) => {
     const bg = i % 2 === 0 ? 'background:var(--surface)' : 'background:var(--surface2)';
@@ -5138,9 +5183,9 @@ function _rbBuildWatchlistSummaryTable() {
       <td style="padding:8px 12px;font-size:12px;font-weight:600;color:var(--text);white-space:nowrap">
         ${d.shortName}<span style="color:var(--text3);font-weight:400;margin-left:4px">(${d.ticker})</span>
       </td>
-      <td style="padding:8px 12px;font-size:12px;color:${pctColor(d.plP)};text-align:right">${d.plP !== null ? fmtPct(d.plP) : '—'}</td>
+      <td style="padding:8px 12px;font-size:12px;color:${pctColor(d.plP)};text-align:right">${d.plP  !== null ? fmtPct(d.plP)  : '—'}</td>
       <td style="padding:8px 12px;font-size:12px;color:${pctColor(d.s30d)};text-align:right">${d.s30d !== null ? fmtPct(d.s30d) : '—'}</td>
-      <td style="padding:8px 12px;font-size:12px;color:${pctColor(d.ytd)};text-align:right">${d.ytd !== null ? fmtPct(d.ytd) : '—'}</td>
+      <td style="padding:8px 12px;font-size:12px;color:${pctColor(d.ytd)};text-align:right">${d.ytd  !== null ? fmtPct(d.ytd)  : '—'}</td>
       <td style="padding:8px 12px;font-size:11px;color:var(--text3)">${d.sector || '—'}</td>
       <td style="padding:8px 14px">${verdictCell(d.ticker)}</td>
     </tr>`;
@@ -5154,21 +5199,21 @@ function _rbBuildWatchlistSummaryTable() {
         </div>
         <div style="display:flex;gap:10px;flex-wrap:wrap">
           <span style="font-size:11px;color:var(--text3)">${decided}/${watch.length} analysed</span>
-          ${promote  ? `<span style="font-size:11px;font-weight:600;color:var(--green)">▲ ${promote} Promote</span>` : ''}
-          ${onetime  ? `<span style="font-size:11px;font-weight:600;color:var(--blue)">◎ ${onetime} One-Time</span>` : ''}
-          ${stay     ? `<span style="font-size:11px;font-weight:600;color:var(--yellow)">○ ${stay} Stay/Hold</span>` : ''}
+          ${promote ? `<span style="font-size:11px;font-weight:600;color:var(--green)">▲ ${promote} Promote</span>` : ''}
+          ${onetime ? `<span style="font-size:11px;font-weight:600;color:var(--blue)">◎ ${onetime} One-Time</span>` : ''}
+          ${stay    ? `<span style="font-size:11px;font-weight:600;color:var(--yellow)">○ ${stay} Stay/Hold</span>` : ''}
         </div>
       </div>
       <div style="border:1px solid var(--border2);border-radius:8px;overflow:hidden">
         <table style="width:100%;border-collapse:collapse">
           <thead>
             <tr style="background:var(--surface3)">
-              <th style="padding:8px 12px;text-align:left;font-size:10px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.5px">Stock</th>
-              <th style="padding:8px 12px;text-align:right;font-size:10px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.5px;white-space:nowrap">P/L %</th>
-              <th style="padding:8px 12px;text-align:right;font-size:10px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.5px;white-space:nowrap">30-Day</th>
-              <th style="padding:8px 12px;text-align:right;font-size:10px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.5px">YTD</th>
-              <th style="padding:8px 12px;text-align:left;font-size:10px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.5px">Sector</th>
-              <th style="padding:8px 14px;text-align:left;font-size:10px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.5px">Verdict</th>
+              <th ${thStyle('name','left')}>Stock</th>
+              <th ${thStyle('pl',  'right')}>P/L %</th>
+              <th ${thStyle('s30', 'right')}>30-Day</th>
+              <th ${thStyle('ytd', 'right')}>YTD</th>
+              <th ${thStyle('sec', 'left')}>Sector</th>
+              <th ${thStyle('ver', 'left')}>Verdict</th>
             </tr>
           </thead>
           <tbody>${rows}</tbody>
