@@ -4914,24 +4914,31 @@ async function rbFetchFundamentals(uid, ticker, context, sheetTicker) {
     const fmtPct2 = v => (v !== null && v !== undefined) ? `${(v*100).toFixed(1)}%` : '—';
     const analystLabel = analyst ? analyst.replace(/\b\w/g, c => c.toUpperCase()) : '—';
     const metrics = [
-      { l: 'Last EPS',         v: epsBeat !== null ? (epsBeat >= 0 ? `✓ Beat +${Math.abs(epsBeat).toFixed(2)}` : `✗ Miss −${Math.abs(epsBeat).toFixed(2)}`) : '—', c: epsBeat === null ? 'var(--text3)' : epsBeat >= 0 ? 'var(--green)' : 'var(--red)' },
-      { l: 'Revenue Growth',   v: revGrowth   !== null ? fmtPct2(revGrowth)   + ' YoY' : '—', c: revGrowth   === null ? 'var(--text3)' : revGrowth   >= 0 ? 'var(--green)' : 'var(--red)' },
-      { l: 'Gross Margin',     v: grossMargin !== null ? fmtPct2(grossMargin) : '—',           c: 'var(--text)' },
-      { l: 'Debt / Equity',    v: debtEquity  !== null ? debtEquity.toFixed(2) : '—',          c: debtEquity  === null ? 'var(--text3)' : debtEquity > 3 ? 'var(--red)' : debtEquity < 1 ? 'var(--green)' : 'var(--yellow)' },
-      { l: 'Analyst Rating',   v: analystLabel,  c: /buy|outperform/i.test(analyst) ? 'var(--green)' : /sell|under/i.test(analyst) ? 'var(--red)' : 'var(--yellow)' },
+      { l: 'Last EPS',          v: epsBeat !== null ? (epsBeat >= 0 ? `✓ Beat +${Math.abs(epsBeat).toFixed(2)}` : `✗ Miss −${Math.abs(epsBeat).toFixed(2)}`) : '—', c: epsBeat === null ? 'var(--text3)' : epsBeat >= 0 ? 'var(--green)' : 'var(--red)' },
+      { l: 'Revenue Growth',    v: revGrowth   !== null ? fmtPct2(revGrowth)   + ' YoY' : '—', c: revGrowth   === null ? 'var(--text3)' : revGrowth   >= 0 ? 'var(--green)' : 'var(--red)' },
+      { l: 'Gross Margin',      v: grossMargin !== null ? fmtPct2(grossMargin) : '—',           c: 'var(--text)' },
+      { l: 'Debt / Equity',     v: debtEquity  !== null ? debtEquity.toFixed(2) : '—',          c: debtEquity  === null ? 'var(--text3)' : debtEquity > 3 ? 'var(--red)' : debtEquity < 1 ? 'var(--green)' : 'var(--yellow)' },
+      { l: 'Analyst Rating',    v: analystLabel,  c: /buy|outperform/i.test(analyst) ? 'var(--green)' : /sell|under/i.test(analyst) ? 'var(--red)' : 'var(--yellow)' },
       { l: 'Buy / Hold / Sell', v: totalAnal ? `${buyCount} / ${holdCount} / ${sellCount}` : '—', c: 'var(--text)' },
+      { l: 'TV Rating',         v: typeof _tvBadge === 'function' ? _tvBadge(data.tvRating || 'N/A') : (data.tvRating || '—'), raw: true, span: true },
     ];
     const metricsHtml = `<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin-bottom:10px">
-      ${metrics.map(m => `<div style="background:var(--surface3);border-radius:6px;padding:8px 10px">
-        <div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:.4px;margin-bottom:2px">${m.l}</div>
-        <div style="font-size:12px;font-weight:700;color:${m.c}">${m.v}</div>
-      </div>`).join('')}
+      ${metrics.map(m => m.span
+        ? `<div style="background:var(--surface3);border-radius:6px;padding:8px 10px;grid-column:1/-1;display:flex;align-items:center;gap:10px">
+            <div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:.4px;white-space:nowrap">${m.l}</div>
+            <div style="font-size:12px;font-weight:700">${m.v}</div>
+           </div>`
+        : `<div style="background:var(--surface3);border-radius:6px;padding:8px 10px">
+            <div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:.4px;margin-bottom:2px">${m.l}</div>
+            <div style="font-size:12px;font-weight:700;${m.raw ? '' : 'color:' + m.c}">${m.v}</div>
+           </div>`
+      ).join('')}
     </div>`;
 
     // ── Cache & display ────────────────────────────────────────────────────────
     const now = new Date().toISOString();
     const sym = sheetTicker || ticker;
-    const reportText = `[YF] ${sym} | EPS:${epsBeat !== null ? (epsBeat >= 0 ? 'Beat' : 'Miss') : '?'} | RevG:${revGrowth !== null ? fmtPct2(revGrowth) : '?'} | Analyst:${analystLabel}`;
+    const reportText = `[YF] ${sym} | EPS:${epsBeat !== null ? (epsBeat >= 0 ? 'Beat' : 'Miss') : '?'} | RevG:${revGrowth !== null ? fmtPct2(revGrowth) : '?'} | Analyst:${analystLabel} | TV:${data.tvRating || 'N/A'}`;
     _rbReportCache[uid] = { reportText, verdict: result.verdict, reason: result.reason, analyzedOn: now, savedToSheets: false };
 
     const vEl = document.getElementById('rb-verdict-' + uid);
