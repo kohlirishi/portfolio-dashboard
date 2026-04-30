@@ -5076,6 +5076,7 @@ async function _rbAutoFetchWatchlist() {
       const uid = 'g_' + d.ticker;
       const sheetTicker = typeof sheetTickerToFMP === 'function' ? (sheetTickerToFMP(d.ticker_v || '') || '') : '';
       await rbFetchFundamentals(uid, d.ticker, 'watchlist', sheetTicker);
+      _rbBuildWatchlistSummaryTable(); // refresh table row in real-time
     } catch(e) {
       console.error('[AutoFetch] Error for ' + d.ticker + ':', e);
     }
@@ -5104,6 +5105,79 @@ function _rbRefreshPlanWatchlistCard() {
     ${planWatch.slice(0, 8).map(i => `<div class="rb-plan-item"><span>·</span><span>${i}</span></div>`).join('')}
     ${planWatch.length > 8 ? `<div style="font-size:11px;color:var(--text3);margin-top:6px">+${planWatch.length - 8} more</div>` : ''}
   `;
+}
+
+// ── Watchlist summary table — rebuilt after each auto-fetch ──────────────────
+function _rbBuildWatchlistSummaryTable() {
+  const el = document.getElementById('rb-g-summary');
+  if (!el || !_rbAnalysisData) return;
+  const watch = _rbAnalysisData.watch || [];
+  if (watch.length === 0) { el.innerHTML = ''; return; }
+
+  const verdictCell = ticker => {
+    const cached = _rbReportCache['g_' + ticker] || {};
+    if (!cached.verdict) {
+      return `<span style="color:var(--text3);font-size:11px">⏳ Pending…</span>`;
+    }
+    const v = cached.verdict;
+    const color = typeof _verdictColor === 'function' ? _verdictColor(v) : 'var(--text)';
+    const icon  = typeof _verdictIcon  === 'function' ? _verdictIcon(v)  : '•';
+    // Compact label: strip long phrases
+    const label = v.replace('Recovery Thesis Intact — ', '').replace(' — Hold', '');
+    return `<span style="font-size:11px;font-weight:600;color:${color}">${icon} ${label}</span>`;
+  };
+
+  const decided  = watch.filter(d => !!(_rbReportCache['g_' + d.ticker] || {}).verdict).length;
+  const promote  = watch.filter(d => /promote/i.test((_rbReportCache['g_' + d.ticker] || {}).verdict || '')).length;
+  const onetime  = watch.filter(d => /one.time/i.test((_rbReportCache['g_' + d.ticker] || {}).verdict || '')).length;
+  const stay     = watch.filter(d => /hold|stay|not ready/i.test((_rbReportCache['g_' + d.ticker] || {}).verdict || '') && !/promote|one.time/i.test((_rbReportCache['g_' + d.ticker] || {}).verdict || '')).length;
+
+  const rows = watch.map((d, i) => {
+    const bg = i % 2 === 0 ? 'background:var(--surface)' : 'background:var(--surface2)';
+    return `<tr style="${bg}">
+      <td style="padding:8px 12px;font-size:12px;font-weight:600;color:var(--text);white-space:nowrap">
+        ${d.shortName}<span style="color:var(--text3);font-weight:400;margin-left:4px">(${d.ticker})</span>
+      </td>
+      <td style="padding:8px 12px;font-size:12px;color:${pctColor(d.plP)};text-align:right">${d.plP !== null ? fmtPct(d.plP) : '—'}</td>
+      <td style="padding:8px 12px;font-size:12px;color:${pctColor(d.s30d)};text-align:right">${d.s30d !== null ? fmtPct(d.s30d) : '—'}</td>
+      <td style="padding:8px 12px;font-size:12px;color:${pctColor(d.ytd)};text-align:right">${d.ytd !== null ? fmtPct(d.ytd) : '—'}</td>
+      <td style="padding:8px 12px;font-size:11px;color:var(--text3)">${d.sector || '—'}</td>
+      <td style="padding:8px 14px">${verdictCell(d.ticker)}</td>
+    </tr>`;
+  }).join('');
+
+  el.innerHTML = `
+    <div style="margin-bottom:18px">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;flex-wrap:wrap;gap:8px">
+        <div style="font-size:11px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.5px">
+          Quick Summary — ${watch.length} Watchlist Stocks
+        </div>
+        <div style="display:flex;gap:10px;flex-wrap:wrap">
+          <span style="font-size:11px;color:var(--text3)">${decided}/${watch.length} analysed</span>
+          ${promote  ? `<span style="font-size:11px;font-weight:600;color:var(--green)">▲ ${promote} Promote</span>` : ''}
+          ${onetime  ? `<span style="font-size:11px;font-weight:600;color:var(--blue)">◎ ${onetime} One-Time</span>` : ''}
+          ${stay     ? `<span style="font-size:11px;font-weight:600;color:var(--yellow)">○ ${stay} Stay/Hold</span>` : ''}
+        </div>
+      </div>
+      <div style="border:1px solid var(--border2);border-radius:8px;overflow:hidden">
+        <table style="width:100%;border-collapse:collapse">
+          <thead>
+            <tr style="background:var(--surface3)">
+              <th style="padding:8px 12px;text-align:left;font-size:10px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.5px">Stock</th>
+              <th style="padding:8px 12px;text-align:right;font-size:10px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.5px;white-space:nowrap">P/L %</th>
+              <th style="padding:8px 12px;text-align:right;font-size:10px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.5px;white-space:nowrap">30-Day</th>
+              <th style="padding:8px 12px;text-align:right;font-size:10px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.5px">YTD</th>
+              <th style="padding:8px 12px;text-align:left;font-size:10px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.5px">Sector</th>
+              <th style="padding:8px 14px;text-align:left;font-size:10px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.5px">Verdict</th>
+            </tr>
+          </thead>
+          <tbody>${rows}</tbody>
+        </table>
+      </div>
+    </div>
+    <div style="font-size:11px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.5px;margin-bottom:12px;padding-top:4px">
+      Full Detail — Per Stock ↓
+    </div>`;
 }
 
 function _doRebalance() {
@@ -5354,7 +5428,8 @@ function _doRebalance() {
 
   document.getElementById('rb-body-g').innerHTML = watch.length === 0
     ? `<div class="rb-no-data" style="color:var(--text2)">No stocks in your Watchlist.</div>`
-    : `<div style="margin-bottom:12px;font-size:12px;color:var(--text2)">For each watchlist stock, paste the fundamental report and choose a verdict. Rule: No promotion to Core SIP without a fundamental report — this rule has no exceptions.</div>`
+    : `<div id="rb-g-summary"></div>
+       <div style="margin-bottom:14px;font-size:12px;color:var(--text2)">For each watchlist stock, paste the fundamental report and choose a verdict. Rule: No promotion to Core SIP without a fundamental report — this rule has no exceptions.</div>`
       + watch.map(d => {
         const uid = 'g_' + d.ticker;
         const verdictHtml = `<div class="rb-verdict-btns">
@@ -5372,6 +5447,9 @@ function _doRebalance() {
           reportToggle(uid, d.ticker, 'watchlist') + verdictHtml
         );
       }).join('');
+
+  // Populate summary table with whatever is already in cache
+  _rbBuildWatchlistSummaryTable();
 
   // ── SECTION H: Diversification Health Score ───────────────────────────────
   let hScore = 100;
