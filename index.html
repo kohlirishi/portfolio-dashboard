@@ -3033,7 +3033,6 @@ async function fetchMonthlyPerformance() {
 // ═══════════════════════════════════════════════
 initCols();
 fetchAll();
-fetchMonthlyPerformance();
 setInterval(fetchAll, 10 * 60 * 1000); // auto-refresh every 10 min
 
 // ═══════════════════════════════════════════════
@@ -4746,6 +4745,7 @@ let _rbVerdicts     = {};   // watchlist promotion verdicts
 let _rbAnalysisData = null; // last computed analysis
 let _rbReportCache  = {};   // { [uid]: { reportText, verdict, reason, analyzedOn, savedToSheets } }
 const _rbScriptUrl  = 'https://script.google.com/macros/s/AKfycbzy9yLFOXBxf8qoEc1O8pQIMXSTwZ3-FGUKIdXa22i-LiGg50qweZls_JrmUpuWxs-euA/exec';
+fetchMonthlyPerformance(); // call here so _rbScriptUrl is already defined
 // Fundamentals fetched via App Script → Yahoo Finance proxy (no API key needed)
 
 // ── Quarter badge ─────────────────────────────────────────────────────────────
