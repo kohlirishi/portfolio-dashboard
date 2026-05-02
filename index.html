@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Portfolio Dashboard</title>
 <link href="https://fonts.googleapis.com/css2?family=Inter:ital,opsz,wght@0,14..32,300;0,14..32,400;0,14..32,500;0,14..32,600;0,14..32,700;0,14..32,800;1,14..32,400&display=swap" rel="stylesheet">
+<link href="https://api.fontshare.com/v2/css?f[]=satoshi@400,500,700,800&display=swap" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2.2.0/dist/chartjs-plugin-datalabels.min.js"></script>
 <style>
@@ -430,6 +431,63 @@ table.div-ht tfoot td{padding:10px 14px;font-size:13px;font-weight:700;backgroun
 /* ── RESPONSIVE ── */
 @media(max-width:1100px){.sum-stats{grid-template-columns:repeat(4,1fr)}.sum-counts{grid-template-columns:repeat(3,1fr)}.div-stats{grid-template-columns:repeat(3,1fr)}}
 @media(max-width:800px){.wrap,.div-wrap{padding:12px 12px 40px}.div-grid{grid-template-columns:1fr}.div-stats{grid-template-columns:repeat(2,1fr)}.h-right{flex-wrap:wrap}.sum-stats{grid-template-columns:repeat(2,1fr)}.sum-counts{grid-template-columns:repeat(2,1fr)}}
+
+/* ══════════════════════════════════════════════════════
+   COMMAND STRIP — Quarterly Rebalance (Satoshi font)
+══════════════════════════════════════════════════════ */
+#rb-cmd-strip{background:#13151a;border:1px solid rgba(255,255,255,.07);border-radius:14px;padding:24px;margin-bottom:16px;font-family:'Satoshi','Inter',sans-serif;display:none}
+.cs-header{display:flex;align-items:flex-start;justify-content:space-between;flex-wrap:wrap;gap:12px;margin-bottom:20px}
+.cs-title{font-size:21px;font-weight:800;color:#e2ecf7;letter-spacing:-.4px;line-height:1.2}
+.cs-accent{color:#a78bfa}
+.cs-subtitle{font-size:12px;color:#6b7a90;margin-top:5px}
+.cs-chips{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.cs-chip{display:inline-flex;align-items:center;gap:6px;padding:5px 12px;border-radius:20px;font-size:12px;font-weight:600;letter-spacing:.2px;white-space:nowrap}
+.cs-chip-green{background:rgba(62,207,110,.12);color:#3ecf6e;border:1px solid rgba(62,207,110,.25)}
+.cs-chip-amber{background:rgba(245,166,35,.12);color:#f5a623;border:1px solid rgba(245,166,35,.25)}
+.cs-chip-blue{background:rgba(91,143,255,.12);color:#5b8fff;border:1px solid rgba(91,143,255,.25)}
+.cs-chip-red{background:rgba(255,92,92,.12);color:#ff5c5c;border:1px solid rgba(255,92,92,.25)}
+.cs-chip-dot{width:7px;height:7px;border-radius:50%;display:inline-block;flex-shrink:0}
+/* 4 priority cards */
+.cs-cards-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:16px}
+@media(max-width:960px){.cs-cards-grid{grid-template-columns:repeat(2,1fr)}}
+@media(max-width:520px){.cs-cards-grid{grid-template-columns:1fr}}
+.cs-card{background:#0d0e10;border:1px solid rgba(255,255,255,.06);border-radius:10px;padding:16px;position:relative;overflow:hidden}
+.cs-card::before{content:'';position:absolute;top:0;left:0;right:0;height:3px;border-radius:10px 10px 0 0}
+.cs-card-amber::before{background:#f5a623}.cs-card-green::before{background:#3ecf6e}
+.cs-card-blue::before{background:#5b8fff}.cs-card-purple::before{background:#a78bfa}
+.cs-card-icon{width:28px;height:28px;border-radius:6px;display:flex;align-items:center;justify-content:center;margin-bottom:10px;font-size:15px;line-height:1}
+.cs-card-amber .cs-card-icon{background:rgba(245,166,35,.15);color:#f5a623}
+.cs-card-green .cs-card-icon{background:rgba(62,207,110,.15);color:#3ecf6e}
+.cs-card-blue  .cs-card-icon{background:rgba(91,143,255,.15);color:#5b8fff}
+.cs-card-purple .cs-card-icon{background:rgba(167,139,250,.15);color:#a78bfa}
+.cs-card-count{font-size:34px;font-weight:800;letter-spacing:-1px;line-height:1;margin-bottom:5px;font-variant-numeric:tabular-nums}
+.cs-card-amber .cs-card-count{color:#f5a623}.cs-card-green .cs-card-count{color:#3ecf6e}
+.cs-card-blue  .cs-card-count{color:#5b8fff}.cs-card-purple .cs-card-count{color:#a78bfa}
+.cs-card-label{font-size:11px;font-weight:700;color:#6b7a90;text-transform:uppercase;letter-spacing:.5px;margin-bottom:10px;line-height:1.4}
+.cs-card-items{font-size:12px}
+.cs-card-item{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:4px 0;border-top:1px solid rgba(255,255,255,.04)}
+.cs-card-item:first-child{border-top:none}
+.cs-card-item-name{font-weight:500;color:#c8d8e8;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
+.cs-card-item-tag{font-size:11px;color:#6b7a90;flex-shrink:0;white-space:nowrap}
+.cs-card-more{font-size:11px;color:#4a5a70;margin-top:8px}
+/* Movement block */
+.cs-movement{background:#0d0e10;border:1px solid rgba(255,255,255,.06);border-radius:10px;padding:16px}
+.cs-movement-head{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:14px}
+.cs-movement-title{font-size:14px;font-weight:700;color:#e2ecf7}
+.cs-movement-meta{font-size:11px;color:#6b7a90}
+.cs-movement-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:12px}
+@media(max-width:600px){.cs-movement-grid{grid-template-columns:1fr}}
+.cs-movement-col-title{font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.8px;margin-bottom:8px}
+.cs-col-promote .cs-movement-col-title{color:#3ecf6e}
+.cs-col-demote  .cs-movement-col-title{color:#f5a623}
+.cs-move-row{display:flex;justify-content:space-between;align-items:center;padding:8px 12px;border-radius:6px;margin-bottom:6px;font-size:13px;font-weight:500}
+.cs-col-promote .cs-move-row{background:rgba(62,207,110,.08);color:#c8f0d8;border:1px solid rgba(62,207,110,.14)}
+.cs-col-promote .cs-move-row-tag{font-size:11px;color:#3ecf6e;flex-shrink:0;margin-left:8px}
+.cs-col-demote  .cs-move-row{background:rgba(245,166,35,.08);color:#f5e0b0;border:1px solid rgba(245,166,35,.14)}
+.cs-col-demote  .cs-move-row-tag{font-size:11px;color:#f5a623;flex-shrink:0;margin-left:8px}
+.cs-movement-empty{font-size:12px;color:#4a5a70;padding:6px 0}
+.cs-capital-note{background:rgba(91,143,255,.07);border:1px solid rgba(91,143,255,.2);border-radius:8px;padding:12px 14px;font-size:12px;color:#8aaccc;line-height:1.6;margin-top:12px}
+.cs-capital-note strong{color:#5b8fff}
 </style>
 
 <!-- ANALYSER STYLES -->
@@ -1566,6 +1624,19 @@ table.div-ht tfoot td{padding:10px 14px;font-size:13px;font-weight:700;backgroun
 
   <!-- Results container (hidden until Run is clicked) -->
   <div id="rb-results" style="display:none">
+
+    <!-- COMMAND STRIP — populated by _rbRenderCommandStrip() after analysis runs -->
+    <div id="rb-cmd-strip">
+      <div class="cs-header">
+        <div>
+          <div class="cs-title">Quarterly <span class="cs-accent">Rebalance</span> Review</div>
+          <div class="cs-subtitle" id="cs-subtitle"></div>
+        </div>
+        <div class="cs-chips" id="cs-chips"></div>
+      </div>
+      <div class="cs-cards-grid" id="cs-cards-grid"></div>
+      <div class="cs-movement" id="cs-movement"></div>
+    </div>
 
     <!-- SECTION A -->
     <div class="rb-section" id="rb-sec-a">
@@ -5729,8 +5800,103 @@ function _doRebalance() {
       Remember: During rebalance, revisit your last 3–5 investment decisions. Ask yourself — if I had no idea what happened next, what would I have done at each stage? This builds real judgment, not just rule following.
     </div>`;
 
+  // Render command strip BEFORE storing analysis data
+  _rbRenderCommandStrip(deadWeight, profitAbove, planReport, watch, promote, demote, planMonitor, planAction, overallVerdict, dwNeedingReport);
+
   // Store analysis data for prompt generation (watch stored for auto-fetch refresh)
   _rbAnalysisData = { main, watch, totalInv, totalVal, etfInv, stkInv, usInv, caInv, totalSIP, sipFunds, sectorRows, capViolations, stocksDown, etfsDown, profitAbove, deadWeight, promote, demote, planAction, planMonitor, planOk, planReport, hScore, hGrade, overallVerdict, fxRate };
+}
+
+// ── COMMAND STRIP RENDERER ────────────────────────────────────────────────────
+function _rbRenderCommandStrip(deadWeight, profitAbove, planReport, watch, promote, demote, planMonitor, planAction, overallVerdict, dwNeedingReport) {
+  const MAX = 5;
+
+  // ── Status chips ──────────────────────────────────────────────────────────
+  const hasAction  = planAction.length > 0;
+  const hasMonitor = planMonitor.length > 0;
+  const verdictText  = hasAction ? 'Action Required' : hasMonitor ? 'No Immediate Action' : 'Stay Disciplined';
+  const verdictClass = hasAction ? 'cs-chip-red' : 'cs-chip-green';
+  const verdictDotColor = hasAction ? '#ff5c5c' : '#3ecf6e';
+
+  const lastRunText = (document.getElementById('rb-last-run') || {}).textContent || '';
+  const phaseLine = hasAction ? 'Immediate action needed' : 'Structural maintenance — not a reaction';
+  document.getElementById('cs-subtitle').textContent = lastRunText + (lastRunText ? ' · ' : '') + phaseLine;
+
+  document.getElementById('cs-chips').innerHTML =
+    `<span class="cs-chip ${verdictClass}"><span class="cs-chip-dot" style="background:${verdictDotColor}"></span>${verdictText}</span>` +
+    (hasMonitor ? `<span class="cs-chip cs-chip-amber"><span class="cs-chip-dot" style="background:#f5a623"></span>${planMonitor.length} Monitor</span>` : '') +
+    (planReport.length > 0 ? `<span class="cs-chip cs-chip-blue"><span class="cs-chip-dot" style="background:#5b8fff"></span>${planReport.length} Reports Needed</span>` : '');
+
+  // ── Card builder ──────────────────────────────────────────────────────────
+  const mkCard = (cls, icon, count, label, items, extra) =>
+    `<div class="cs-card ${cls}">
+      <div class="cs-card-icon">${icon}</div>
+      <div class="cs-card-count">${count}</div>
+      <div class="cs-card-label">${label}</div>
+      <div class="cs-card-items">
+        ${items.slice(0, MAX).map(i =>
+          `<div class="cs-card-item"><span class="cs-card-item-name">${i.name}</span><span class="cs-card-item-tag">${i.tag}</span></div>`
+        ).join('')}
+        ${items.length > MAX ? `<div class="cs-card-more">+${items.length - MAX} more · see Section ${extra}</div>` : ''}
+      </div>
+    </div>`;
+
+  // Card 1 — Dead Weight (F) needing reports
+  const card1Items = dwNeedingReport.map(d => ({ name: d.shortName, tag: 'report needed' }));
+
+  // Card 2 — Positions Above +20% (E)
+  const card2Items = profitAbove.map(d => ({ name: d.ticker, tag: '+' + d.plP.toFixed(0) + '%' }));
+
+  // Card 3 — Fundamental Reports Blocked (planReport already has: stocksDown(C) + dw(F) + demote(J))
+  const card3Items = [
+    ...dwNeedingReport.map(d => ({ name: d.shortName, tag: '(F) dead weight' })),
+    ...demote.map(d => ({ name: d.shortName, tag: '(J) demotion' })),
+  ].slice(0, MAX + 4);
+
+  // Card 4 — Watchlist Candidates (G)
+  const card4Items = watch.map(d => {
+    const v = (_rbReportCache['g_' + d.ticker] || {}).verdict || '';
+    const tag = /promote/i.test(v) ? 'promote' : /one.?time/i.test(v) ? 'one-time' : 'pending verdict';
+    return { name: d.shortName, tag };
+  });
+
+  document.getElementById('cs-cards-grid').innerHTML =
+    mkCard('cs-card-amber',  '⚠',  dwNeedingReport.length, 'Dead Weight — Fundamental Report Required',           card1Items, 'F') +
+    mkCard('cs-card-green',  '↗',  profitAbove.length,      'Positions Above +20% — Review for Overweight',        card2Items, 'E') +
+    mkCard('cs-card-blue',   '◎',  planReport.length,       'Fundamental Reports Blocked — No Conclusion Without These', card3Items, 'F/J') +
+    mkCard('cs-card-purple', '☆',  watch.length,            'Watchlist Candidates — Promotion Decision Pending',   card4Items, 'G');
+
+  // ── Movement block ────────────────────────────────────────────────────────
+  const totalSug = promote.length + demote.length;
+  const promHtml = promote.length > 0
+    ? promote.map(d => `<div class="cs-move-row"><span>${d.shortName} (${d.ticker})</span><span class="cs-move-row-tag">suggest promote</span></div>`).join('')
+    : `<div class="cs-movement-empty">No promote suggestions based on current signals</div>`;
+
+  const demHtml = demote.length > 0
+    ? demote.map(d => `<div class="cs-move-row"><span>${d.shortName} (${d.ticker})</span><span class="cs-move-row-tag">dead weight — report first</span></div>`).join('')
+    : `<div class="cs-movement-empty">No demotion suggestions</div>`;
+
+  document.getElementById('cs-movement').innerHTML =
+    `<div class="cs-movement-head">
+       <div class="cs-movement-title">⇌ Core ↔ Watchlist Movement &amp; Capital Distribution</div>
+       <div class="cs-movement-meta">${totalSug} Suggestion${totalSug !== 1 ? 's' : ''} · Reports required before acting</div>
+     </div>
+     <div class="cs-movement-grid">
+       <div class="cs-col-promote">
+         <div class="cs-movement-col-title">▲ WATCHLIST → CORE SIP</div>
+         ${promHtml}
+       </div>
+       <div class="cs-col-demote">
+         <div class="cs-movement-col-title">▼ CORE → WATCHLIST (STOP SIP)</div>
+         ${demHtml}
+         ${demote.length > 0 ? '<div style="font-size:11px;color:#6b7a90;margin-top:8px">⚠ Rule: Do NOT stop SIP without reviewing fundamental reports first. Dead weight by price alone is not a valid reason.</div>' : ''}
+       </div>
+     </div>
+     <div class="cs-capital-note">
+       <strong>💡 Capital Distribution Rule:</strong> If you promote N stocks to Core SIP and remove M stocks from Core, the freed SIP capital is redistributed equally among new additions. Example: if 3 stocks are removed and 8 promoted, divide freed monthly amount by 8 as the starting SIP for each new stock. One-time investments stay within your $2,000 per-stock invested capital cap.
+     </div>`;
+
+  document.getElementById('rb-cmd-strip').style.display = 'block';
 }
 
 // ── Watchlist verdict ─────────────────────────────────────────────────────────
