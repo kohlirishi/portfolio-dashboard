@@ -5305,6 +5305,43 @@ async function _rbAutoFetchWatchlist() {
 
   // Refresh the Watchlist Decision card in the Plan section with updated verdicts
   _rbRefreshPlanWatchlistCard();
+  // Re-render command strip with updated promote list now that fundamentals are fetched
+  _rbRefreshCommandStripPromote();
+}
+
+// ── Recompute promote list from cache and re-render command strip ─────────────
+function _rbRefreshCommandStripPromote() {
+  const data = _rbAnalysisData;
+  if (!data) return;
+
+  // Recompute promote: fundamental verdict = Promote AND (Buy signal OR positive 30d)
+  const promoteUpdated = (data.watch || []).filter(d => {
+    const verdict = (_rbReportCache['g_' + d.ticker] || {}).verdict || '';
+    const hasFundamentals = /promote to core sip/i.test(verdict);
+    const hasSignal = (d.recommend === 'Buy') || (d.s30d !== null && d.s30d > 0);
+    return hasFundamentals && hasSignal;
+  }).map(d => ({ ...d, reason: 'Fundamental verdict: Promote · confirmed by positive signal' }));
+
+  if (promoteUpdated.length === (data.promote || []).length) return; // no change
+
+  const THIRTY_DAYS_F = 30 * 24 * 3600 * 1000;
+  const dwNeedingReportNow = (data.deadWeight || []).filter(d => {
+    const c = _rbReportCache['f_' + d.ticker] || {};
+    return !c.reportText || (c.analyzedOn && (Date.now() - new Date(c.analyzedOn).getTime() > THIRTY_DAYS_F));
+  });
+  const planReportNow = [
+    ...(data.stocksDown || []).map(d => d.shortName + ' (C)'),
+    ...dwNeedingReportNow.map(d => d.shortName + ' (F)'),
+    ...(data.demote || []).map(d => d.shortName + ' (J)'),
+  ];
+
+  _rbRenderCommandStrip(
+    data.deadWeight, data.profitAbove, planReportNow, data.watch,
+    promoteUpdated, data.demote,
+    data.planMonitor, data.planAction, data.overallVerdict,
+    dwNeedingReportNow
+  );
+  _rbAnalysisData.promote = promoteUpdated;
 }
 
 // ── Rebuild Watchlist Decision card after auto-fetch completes ────────────────
@@ -5764,8 +5801,11 @@ function _doRebalance() {
   const demote  = [];   // core → consider moving to watchlist
 
   for (const d of watch) {
-    if ((d.recommend === 'Buy') && (d.ytd !== null && d.ytd > 0) && (d.s30d !== null && d.s30d > 0)) {
-      promote.push({ ...d, reason: 'Buy signal + positive YTD + positive 30-day momentum' });
+    const cachedVerdict = (_rbReportCache['g_' + d.ticker] || {}).verdict || '';
+    const hasFundamentalsPromote = /promote to core sip/i.test(cachedVerdict);
+    const hasSignal = (d.recommend === 'Buy') || (d.s30d !== null && d.s30d > 0);
+    if (hasFundamentalsPromote && hasSignal) {
+      promote.push({ ...d, reason: 'Fundamental verdict: Promote · confirmed by positive signal' });
     }
   }
   for (const d of main) {
@@ -5911,12 +5951,11 @@ function _rbRenderCommandStrip(deadWeight, profitAbove, planReport, watch, promo
     ...demote.map(d => ({ name: d.shortName, tag: '(J) demotion' })),
   ].slice(0, MAX + 4);
 
-  // Card 4 — Watchlist Candidates (G)
-  const card4Items = watch.map(d => {
-    const v = (_rbReportCache['g_' + d.ticker] || {}).verdict || '';
-    const tag = /promote/i.test(v) ? 'promote' : /one.?time/i.test(v) ? 'one-time' : 'pending verdict';
-    return { name: d.shortName, tag };
-  });
+  // Card 4 — Ready to Promote (fundamental verdict = Promote to Core SIP)
+  const promoteToCore = watch.filter(d => /promote to core sip/i.test((_rbReportCache['g_' + d.ticker] || {}).verdict || ''));
+  const card4Items = promoteToCore.map(d => ({ name: d.shortName, tag: 'promote' }));
+  const notReadyCount = watch.length - promoteToCore.length;
+  const card4Label = 'Ready to Promote to Core SIP' + (notReadyCount > 0 ? ' (' + notReadyCount + ' not ready · Sect G)' : '');
 
   // Card 3 items: demote candidates pending fundamental review (Sect. J)
   const card3ItemsFiltered = demote.map(d => {
@@ -5929,13 +5968,22 @@ function _rbRenderCommandStrip(deadWeight, profitAbove, planReport, watch, promo
     (dwNeedingReport.length > 0 ? mkCard('cs-card-amber', '⚠', dwNeedingReport.length, 'Dead Weight — Fundamental Report Required', card1Items, 'F') : '') +
     mkCard('cs-card-green',  '↗',  profitAbove.length,      'Positions Above +20% — Review for Overweight',        card2Items, 'E') +
     (planReport.length > 0 ? mkCard('cs-card-blue', '◎', planReport.length, 'Reports Needed Before Any Move — Check Sect. F & J', card3ItemsFiltered, 'F/J') : '') +
-    mkCard('cs-card-purple', '☆',  watch.length,            'Watchlist Candidates — Promotion Decision Pending',   card4Items, 'G');
+    mkCard('cs-card-purple', '☆',  promoteToCore.length,    card4Label,                                            card4Items, 'G');
 
   // ── Movement block ────────────────────────────────────────────────────────
+  // SIP suggestion: freed capital from demoted stocks ÷ number of promoted stocks
+  const freedMonthlyCAD = demote.reduce((sum, d) => sum + (d.sip || 0), 0);
+  const sipPerNew = (promote.length > 0 && freedMonthlyCAD > 0)
+    ? Math.round(freedMonthlyCAD / promote.length)
+    : 0;
+
   const totalSug = promote.length + demote.length;
   const promHtml = promote.length > 0
-    ? promote.map(d => `<div class="cs-move-row"><span>${d.shortName} (${d.ticker})</span><span class="cs-move-row-tag">suggest promote</span></div>`).join('')
-    : `<div class="cs-movement-empty">No promote suggestions based on current signals</div>`;
+    ? promote.map(d => {
+        const sipTag = sipPerNew > 0 ? `CAD $${sipPerNew}/mo` : 'promote';
+        return `<div class="cs-move-row"><span>${d.shortName} (${d.ticker})</span><span class="cs-move-row-tag">${sipTag}</span></div>`;
+      }).join('')
+    : `<div class="cs-movement-empty">No stocks match both promote verdict &amp; positive signal</div>`;
 
   const demHtml = demote.length > 0
     ? demote.map(d => {
@@ -5943,12 +5991,16 @@ function _rbRenderCommandStrip(deadWeight, profitAbove, planReport, watch, promo
         const tag = /exit/i.test(cached.verdict || '') ? 'exit flagged — review' : 'sell signal — read report first';
         return `<div class="cs-move-row"><span>${d.shortName} (${d.ticker})</span><span class="cs-move-row-tag">${tag}</span></div>`;
       }).join('')
-    : `<div class="cs-movement-empty">No demotion suggestions</div>`;
+    : `<div class="cs-movement-empty">No demotion suggestions — all reviewed fundamentals say Hold</div>`;
+
+  const sipNote = sipPerNew > 0
+    ? `<strong>Suggested monthly SIP for new additions:</strong> CAD $${sipPerNew}/mo each — freed from ${demote.length} demoted stock${demote.length !== 1 ? 's' : ''} (${freedMonthlyCAD} CAD/mo total ÷ ${promote.length} promoted).`
+    : `<strong>No freed capital from demotions.</strong> Set your own starting SIP amount for each promoted stock — a common starting point is CAD $50–$100/mo, scaling up as conviction grows.`;
 
   document.getElementById('cs-movement').innerHTML =
     `<div class="cs-movement-head">
        <div class="cs-movement-title">⇌ Core ↔ Watchlist Movement &amp; Capital Distribution</div>
-       <div class="cs-movement-meta">${totalSug} Suggestion${totalSug !== 1 ? 's' : ''} · Stocks cleared by fundamentals (Hold verdict) are already excluded</div>
+       <div class="cs-movement-meta">${totalSug} Suggestion${totalSug !== 1 ? 's' : ''} · Hold-verdict stocks excluded · ${promoteToCore.length} fundamentally ready, ${promote.length} match signal too</div>
      </div>
      <div class="cs-movement-grid">
        <div class="cs-col-promote">
@@ -5958,11 +6010,11 @@ function _rbRenderCommandStrip(deadWeight, profitAbove, planReport, watch, promo
        <div class="cs-col-demote">
          <div class="cs-movement-col-title">▼ CORE → WATCHLIST (STOP SIP)</div>
          ${demHtml}
-         ${demote.length > 0 ? '<div style="font-size:11px;color:#6b7a90;margin-top:8px">⚠ Rule: Sell signal alone is not enough — fundamentals must also confirm the move. See Section J for full report.</div>' : ''}
+         ${demote.length > 0 ? '<div style="font-size:11px;color:#6b7a90;margin-top:8px">⚠ Rule: Sell signal alone is not enough — fundamentals must also confirm the move. See Section J.</div>' : ''}
        </div>
      </div>
      <div class="cs-capital-note">
-       <strong>💡 Capital Distribution Rule:</strong> If you promote N stocks to Core SIP and remove M stocks from Core, the freed SIP capital is redistributed equally among new additions. Example: if 3 stocks are removed and 8 promoted, divide freed monthly amount by 8 as the starting SIP for each new stock. One-time investments stay within your $2,000 per-stock invested capital cap.
+       💡 ${sipNote}
      </div>`;
 
   document.getElementById('rb-cmd-strip').style.display = 'block';
