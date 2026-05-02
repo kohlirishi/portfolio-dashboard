@@ -212,12 +212,12 @@ header{background:var(--surface);border-bottom:1px solid var(--border);padding:1
 .rb-wrap{max-width:1400px;margin:0 auto;padding:18px 24px 64px}
 .rb-hero{display:flex;align-items:flex-start;justify-content:space-between;flex-wrap:wrap;gap:12px;margin-bottom:20px}
 .rb-title{font-size:26px;font-weight:800;color:var(--text);letter-spacing:-.5px}
-.rb-title span{color:var(--purple)}
+.rb-title span{color:#f5a623}
 .rb-meta{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:4px}
-.rb-quarter{background:rgba(155,109,255,.15);border:1px solid rgba(155,109,255,.35);color:var(--purple);font-size:12px;font-weight:700;padding:3px 10px;border-radius:20px;letter-spacing:.5px}
+.rb-quarter{background:rgba(245,166,35,.15);border:1px solid rgba(245,166,35,.35);color:#f5a623;font-size:12px;font-weight:700;padding:3px 10px;border-radius:20px;letter-spacing:.5px}
 .rb-last{font-size:12px;color:var(--text3)}
-.rb-run-btn{display:flex;align-items:center;gap:8px;padding:11px 24px;background:var(--purple);border:none;border-radius:8px;color:#fff;font-size:14px;font-weight:700;cursor:pointer;transition:all .15s;letter-spacing:.2px}
-.rb-run-btn:hover{background:#8457e6;transform:translateY(-1px)}
+.rb-run-btn{display:flex;align-items:center;gap:8px;padding:11px 24px;background:#f5a623;border:none;border-radius:8px;color:#0d0e10;font-size:14px;font-weight:700;cursor:pointer;transition:all .15s;letter-spacing:.2px}
+.rb-run-btn:hover{background:#e09520;transform:translateY(-1px)}
 .rb-run-btn:disabled{background:var(--surface3);color:var(--text3);cursor:not-allowed;transform:none}
 .rb-run-btn svg{width:16px;height:16px}
 /* Hero context pills (market data, top-right, compact) */
@@ -5200,7 +5200,70 @@ function runRebalance() {
 
     // Auto-fetch fundamentals for watchlist stocks missing a fresh report
     await _rbAutoFetchWatchlist();
+    // Auto-fetch fundamentals for demote candidates (stale > 7 days or missing)
+    // then filter out stocks where fundamentals say Hold — no demotion needed
+    await _rbAutoFetchAndFilterDemote();
   }, 80);
+}
+
+// ── Auto-fetch fundamentals for demote candidates, filter out Hold verdicts ──
+async function _rbAutoFetchAndFilterDemote() {
+  const data = _rbAnalysisData;
+  if (!data || !data.demote || data.demote.length === 0) return;
+
+  const SEVEN_DAYS = 7 * 24 * 3600 * 1000;
+  const toFetch = data.demote.filter(d => {
+    const cached = _rbReportCache['j_' + d.ticker] || _rbReportCache['c_' + d.ticker] || {};
+    if (!cached.reportText) return true;
+    return cached.analyzedOn && (Date.now() - new Date(cached.analyzedOn).getTime() > SEVEN_DAYS);
+  });
+
+  const lastRunEl = document.getElementById('rb-last-run');
+
+  if (toFetch.length > 0) {
+    console.log('[AutoFetch] Fetching demote fundamentals for ' + toFetch.length + ' stock(s)…');
+    for (let i = 0; i < toFetch.length; i++) {
+      const d = toFetch[i];
+      if (lastRunEl) lastRunEl.textContent = `Checking fundamentals: ${d.ticker} (${i+1}/${toFetch.length})…`;
+      try {
+        await rbFetchFundamentals('j_' + d.ticker, d.ticker, 'core', d.ticker_v || d.ticker);
+      } catch(e) {
+        console.error('[AutoFetch Demote] Error for ' + d.ticker + ':', e);
+      }
+      if (i < toFetch.length - 1) await new Promise(r => setTimeout(r, 300));
+    }
+    if (lastRunEl) lastRunEl.textContent = 'Last run: ' + new Date().toLocaleTimeString('en-CA', { hour:'2-digit', minute:'2-digit' });
+  }
+
+  // Filter: keep demote only if no verdict OR verdict is Exit (Hold/Recovery = stay in SIP)
+  const demoteFiltered = data.demote.filter(d => {
+    const cached = _rbReportCache['j_' + d.ticker] || _rbReportCache['c_' + d.ticker] || {};
+    if (!cached.verdict) return true;
+    return /exit/i.test(cached.verdict);
+  });
+
+  if (demoteFiltered.length === data.demote.length) return; // nothing changed
+
+  // Recompute planReport with filtered demote
+  const THIRTY_DAYS_F = 30 * 24 * 3600 * 1000;
+  const dwNeedingReportNow = data.deadWeight.filter(d => {
+    const c = _rbReportCache['f_' + d.ticker] || {};
+    return !c.reportText || (c.analyzedOn && (Date.now() - new Date(c.analyzedOn).getTime() > THIRTY_DAYS_F));
+  });
+  const planReportFiltered = [
+    ...data.stocksDown.map(d => d.shortName + ' (C)'),
+    ...dwNeedingReportNow.map(d => d.shortName + ' (F)'),
+    ...demoteFiltered.map(d => d.shortName + ' (J)'),
+  ];
+
+  _rbRenderCommandStrip(
+    data.deadWeight, data.profitAbove, planReportFiltered, data.watch,
+    data.promote, demoteFiltered,
+    data.planMonitor, data.planAction, data.overallVerdict,
+    dwNeedingReportNow
+  );
+  // Update stored demote so subsequent re-renders use the filtered list
+  _rbAnalysisData.demote = demoteFiltered;
 }
 
 // ── Auto-fetch fundamentals for all watchlist stocks without a fresh report ──
@@ -5855,10 +5918,17 @@ function _rbRenderCommandStrip(deadWeight, profitAbove, planReport, watch, promo
     return { name: d.shortName, tag };
   });
 
+  // Card 3 items: demote candidates pending fundamental review (Sect. J)
+  const card3ItemsFiltered = demote.map(d => {
+    const cached = _rbReportCache['j_' + d.ticker] || _rbReportCache['c_' + d.ticker] || {};
+    const tag = cached.verdict ? 'Sect. J — exit flagged' : 'Sect. J — report needed';
+    return { name: d.shortName, tag };
+  });
+
   document.getElementById('cs-cards-grid').innerHTML =
-    mkCard('cs-card-amber',  '⚠',  dwNeedingReport.length, 'Dead Weight — Fundamental Report Required',           card1Items, 'F') +
+    (dwNeedingReport.length > 0 ? mkCard('cs-card-amber', '⚠', dwNeedingReport.length, 'Dead Weight — Fundamental Report Required', card1Items, 'F') : '') +
     mkCard('cs-card-green',  '↗',  profitAbove.length,      'Positions Above +20% — Review for Overweight',        card2Items, 'E') +
-    mkCard('cs-card-blue',   '◎',  planReport.length,       'Fundamental Reports Blocked — No Conclusion Without These', card3Items, 'F/J') +
+    (planReport.length > 0 ? mkCard('cs-card-blue', '◎', planReport.length, 'Reports Needed Before Any Move — Check Sect. F & J', card3ItemsFiltered, 'F/J') : '') +
     mkCard('cs-card-purple', '☆',  watch.length,            'Watchlist Candidates — Promotion Decision Pending',   card4Items, 'G');
 
   // ── Movement block ────────────────────────────────────────────────────────
@@ -5868,13 +5938,17 @@ function _rbRenderCommandStrip(deadWeight, profitAbove, planReport, watch, promo
     : `<div class="cs-movement-empty">No promote suggestions based on current signals</div>`;
 
   const demHtml = demote.length > 0
-    ? demote.map(d => `<div class="cs-move-row"><span>${d.shortName} (${d.ticker})</span><span class="cs-move-row-tag">dead weight — report first</span></div>`).join('')
+    ? demote.map(d => {
+        const cached = _rbReportCache['j_' + d.ticker] || _rbReportCache['c_' + d.ticker] || {};
+        const tag = /exit/i.test(cached.verdict || '') ? 'exit flagged — review' : 'sell signal — read report first';
+        return `<div class="cs-move-row"><span>${d.shortName} (${d.ticker})</span><span class="cs-move-row-tag">${tag}</span></div>`;
+      }).join('')
     : `<div class="cs-movement-empty">No demotion suggestions</div>`;
 
   document.getElementById('cs-movement').innerHTML =
     `<div class="cs-movement-head">
        <div class="cs-movement-title">⇌ Core ↔ Watchlist Movement &amp; Capital Distribution</div>
-       <div class="cs-movement-meta">${totalSug} Suggestion${totalSug !== 1 ? 's' : ''} · Reports required before acting</div>
+       <div class="cs-movement-meta">${totalSug} Suggestion${totalSug !== 1 ? 's' : ''} · Stocks cleared by fundamentals (Hold verdict) are already excluded</div>
      </div>
      <div class="cs-movement-grid">
        <div class="cs-col-promote">
@@ -5884,7 +5958,7 @@ function _rbRenderCommandStrip(deadWeight, profitAbove, planReport, watch, promo
        <div class="cs-col-demote">
          <div class="cs-movement-col-title">▼ CORE → WATCHLIST (STOP SIP)</div>
          ${demHtml}
-         ${demote.length > 0 ? '<div style="font-size:11px;color:#6b7a90;margin-top:8px">⚠ Rule: Do NOT stop SIP without reviewing fundamental reports first. Dead weight by price alone is not a valid reason.</div>' : ''}
+         ${demote.length > 0 ? '<div style="font-size:11px;color:#6b7a90;margin-top:8px">⚠ Rule: Sell signal alone is not enough — fundamentals must also confirm the move. See Section J for full report.</div>' : ''}
        </div>
      </div>
      <div class="cs-capital-note">
