@@ -487,6 +487,15 @@ table.div-ht tfoot td{padding:10px 14px;font-size:13px;font-weight:700;backgroun
 .cs-movement-empty{font-size:12px;color:#4a5a70;padding:6px 0}
 .cs-capital-note{background:rgba(91,143,255,.07);border:1px solid rgba(91,143,255,.2);border-radius:8px;padding:12px 14px;font-size:12px;color:#8aaccc;line-height:1.6;margin-top:12px}
 .cs-capital-note strong{color:#5b8fff}
+/* Top 3 Picks card */
+.cs-top3-item{padding:9px 0;border-top:1px solid rgba(255,255,255,.05)}
+.cs-top3-item:first-child{border-top:none;padding-top:0}
+.cs-top3-row1{display:flex;align-items:baseline;gap:7px;margin-bottom:3px}
+.cs-top3-rank{font-size:10px;font-weight:800;color:#5b8fff;flex-shrink:0;min-width:20px}
+.cs-top3-name{font-size:12px;font-weight:700;color:#c8d8e8;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1}
+.cs-top3-score{font-size:10px;font-weight:700;color:#6b7a90;flex-shrink:0;white-space:nowrap}
+.cs-top3-reason{font-size:10px;color:#4a5a70;line-height:1.4;margin-bottom:3px}
+.cs-top3-sip{font-size:11px;font-weight:800;color:#3ecf6e;letter-spacing:.2px}
 </style>
 
 <!-- ANALYSER STYLES -->
@@ -5905,6 +5914,63 @@ function _doRebalance() {
   _rbAnalysisData = { main, watch, totalInv, totalVal, etfInv, stkInv, usInv, caInv, totalSIP, sipFunds, sectorRows, capViolations, stocksDown, etfsDown, profitAbove, deadWeight, promote, demote, planAction, planMonitor, planOk, planReport, hScore, hGrade, overallVerdict, fxRate };
 }
 
+// ── Score a watchlist promote candidate (0–10) ───────────────────────────────
+// Weights: Fundamentals 60% (max 6) + Momentum 30% (max 3) + P/L 10% (max 1)
+function rbScorePromote(d) {
+  const rpt = (_rbReportCache['g_' + d.ticker] || {}).reportText || '';
+
+  const epsBeat  = /EPS:Beat/i.test(rpt) ? true : /EPS:Miss/i.test(rpt) ? false : null;
+  const revMatch = rpt.match(/RevG:([\-\d.]+)%/);
+  const revG     = revMatch ? parseFloat(revMatch[1]) : null; // already a %, e.g. 21.5
+  const analM    = rpt.match(/Analyst:([^|]+)/);
+  const analyst  = analM ? analM[1].trim().toLowerCase() : '';
+
+  // Fundamental score (max 6)
+  let fs = 0;
+  if (epsBeat === true)   fs += 2;
+  if (revG !== null) {
+    if      (revG >= 15) fs += 2;
+    else if (revG >= 5)  fs += 1.5;
+    else if (revG >= 0)  fs += 0.75;
+  }
+  if (/strong.?buy|outperform|overweight/.test(analyst)) fs += 2;
+  else if (/\bbuy\b/.test(analyst))                      fs += 1.5;
+  else if (/hold|neutral/.test(analyst))                 fs += 0.5;
+  fs = Math.min(6, fs);
+
+  // Momentum score (max 3)
+  let ms = 0;
+  if (d.s30d !== null) {
+    if      (d.s30d > 10) ms += 1.5;
+    else if (d.s30d > 5)  ms += 1.0;
+    else if (d.s30d > 0)  ms += 0.5;
+  }
+  if (d.ytd !== null) {
+    if      (d.ytd > 15) ms += 1.5;
+    else if (d.ytd > 5)  ms += 1.0;
+    else if (d.ytd > 0)  ms += 0.5;
+  }
+  ms = Math.min(3, ms);
+
+  // Portfolio P/L score (max 1) — positive P/L = proven entry point
+  let ps = 0;
+  if      (d.plP !== null && d.plP > 0)   ps = 1.0;
+  else if (d.plP !== null && d.plP > -15) ps = 0.5;
+
+  const total = Math.round((fs + ms + ps) * 10) / 10;
+
+  // Short reason string
+  const parts = [];
+  if (epsBeat === true)  parts.push('EPS beat');
+  else if (epsBeat === false) parts.push('EPS miss');
+  if (revG !== null)     parts.push((revG >= 0 ? '+' : '') + revG.toFixed(1) + '% revenue');
+  if (analyst)           parts.push(analyst.replace(/\b\w/g, c => c.toUpperCase()));
+  if (d.s30d !== null && d.s30d > 5)  parts.push('+' + d.s30d.toFixed(1) + '% 30d');
+  else if (d.ytd !== null && d.ytd > 10) parts.push('+' + d.ytd.toFixed(1) + '% YTD');
+
+  return { score: total, reason: parts.slice(0, 3).join(' · ') || 'Fundamental signals checked' };
+}
+
 // ── COMMAND STRIP RENDERER ────────────────────────────────────────────────────
 function _rbRenderCommandStrip(deadWeight, profitAbove, planReport, watch, promote, demote, planMonitor, planAction, overallVerdict, dwNeedingReport) {
   const MAX = 5;
@@ -5953,7 +6019,7 @@ function _rbRenderCommandStrip(deadWeight, profitAbove, planReport, watch, promo
 
   // Card 4 — Ready to Promote (fundamental verdict = Promote to Core SIP)
   const promoteToCore = watch.filter(d => /promote to core sip/i.test((_rbReportCache['g_' + d.ticker] || {}).verdict || ''));
-  const card4Items = promoteToCore.map(d => ({ name: d.shortName, tag: 'promote' }));
+  const card4Items = promoteToCore.slice(0, MAX).map(d => ({ name: d.shortName, tag: 'promote' }));
   const notReadyCount = watch.length - promoteToCore.length;
   const card4Label = 'Ready to Promote to Core SIP' + (notReadyCount > 0 ? ' (' + notReadyCount + ' not ready · Sect G)' : '');
 
@@ -5964,58 +6030,90 @@ function _rbRenderCommandStrip(deadWeight, profitAbove, planReport, watch, promo
     return { name: d.shortName, tag };
   });
 
-  document.getElementById('cs-cards-grid').innerHTML =
+  // Card 5 — Top 3 Picks (scored by fundamentals 60% + momentum 30% + P/L 10%)
+  const top3Scored = promoteToCore
+    .map(d => ({ d, ...rbScorePromote(d) }))
+    .sort((a, b) => b.score - a.score)
+    .slice(0, 3);
+  const top3Html = top3Scored.length > 0
+    ? top3Scored.map((item, i) => {
+        const sip = item.score >= 9 ? 75 : item.score >= 8 ? 65 : 55;
+        return `<div class="cs-top3-item">
+          <div class="cs-top3-row1">
+            <span class="cs-top3-rank">#${i + 1}</span>
+            <span class="cs-top3-name">${item.d.shortName} (${item.d.ticker})</span>
+            <span class="cs-top3-score">${item.score.toFixed(1)}/10</span>
+          </div>
+          <div class="cs-top3-reason">${item.reason}</div>
+          <div class="cs-top3-sip">CAD $${sip}/mo</div>
+        </div>`;
+      }).join('')
+    : `<div style="font-size:12px;color:#4a5a70;padding:6px 0">No promote candidates scored yet — run analysis</div>`;
+  const top3Card = `<div class="cs-card cs-card-blue">
+    <div class="cs-card-icon">🎯</div>
+    <div class="cs-card-count" style="font-size:28px">${top3Scored.length}</div>
+    <div class="cs-card-label">Top Picks — Start SIP Now (max CAD $75/mo)</div>
+    <div class="cs-card-items">${top3Html}</div>
+  </div>`;
+
+  // Set grid columns dynamically based on visible card count
+  const numCards = (dwNeedingReport.length > 0 ? 1 : 0) + 1 + (planReport.length > 0 ? 1 : 0) + 1 + 1;
+  const gridEl = document.getElementById('cs-cards-grid');
+  gridEl.style.gridTemplateColumns = `repeat(${Math.min(numCards, 3)}, 1fr)`;
+
+  gridEl.innerHTML =
     (dwNeedingReport.length > 0 ? mkCard('cs-card-amber', '⚠', dwNeedingReport.length, 'Dead Weight — Fundamental Report Required', card1Items, 'F') : '') +
-    mkCard('cs-card-green',  '↗',  profitAbove.length,      'Positions Above +20% — Review for Overweight',        card2Items, 'E') +
+    mkCard('cs-card-green',  '↗',  profitAbove.length,   'Positions Above +20% — Review for Overweight',         card2Items, 'E') +
     (planReport.length > 0 ? mkCard('cs-card-blue', '◎', planReport.length, 'Reports Needed Before Any Move — Check Sect. F & J', card3ItemsFiltered, 'F/J') : '') +
-    mkCard('cs-card-purple', '☆',  promoteToCore.length,    card4Label,                                            card4Items, 'G');
+    mkCard('cs-card-purple', '☆',  promoteToCore.length, card4Label,                                             card4Items, 'G') +
+    top3Card;
 
-  // ── Movement block ────────────────────────────────────────────────────────
-  // SIP suggestion: freed capital from demoted stocks ÷ number of promoted stocks
-  const freedMonthlyCAD = demote.reduce((sum, d) => sum + (d.sip || 0), 0);
-  const sipPerNew = (promote.length > 0 && freedMonthlyCAD > 0)
-    ? Math.round(freedMonthlyCAD / promote.length)
-    : 0;
+  // ── Movement block — only visible when there are actual demotion candidates ──
+  const moveEl = document.getElementById('cs-movement');
+  if (demote.length === 0) {
+    moveEl.style.display = 'none';
+  } else {
+    const freedMonthlyCAD = demote.reduce((sum, d) => sum + (d.sip || 0), 0);
+    const sipPerNew = (promote.length > 0 && freedMonthlyCAD > 0)
+      ? Math.round(freedMonthlyCAD / promote.length) : 0;
+    const totalSug = promote.length + demote.length;
 
-  const totalSug = promote.length + demote.length;
-  const promHtml = promote.length > 0
-    ? promote.map(d => {
-        const sipTag = sipPerNew > 0 ? `CAD $${sipPerNew}/mo` : 'promote';
-        return `<div class="cs-move-row"><span>${d.shortName} (${d.ticker})</span><span class="cs-move-row-tag">${sipTag}</span></div>`;
-      }).join('')
-    : `<div class="cs-movement-empty">No stocks match both promote verdict &amp; positive signal</div>`;
+    const promHtml = promote.length > 0
+      ? promote.map(d => {
+          const sipTag = sipPerNew > 0 ? `CAD $${sipPerNew}/mo` : 'promote';
+          return `<div class="cs-move-row"><span>${d.shortName} (${d.ticker})</span><span class="cs-move-row-tag">${sipTag}</span></div>`;
+        }).join('')
+      : `<div class="cs-movement-empty">No stocks match both promote verdict &amp; positive signal</div>`;
 
-  const demHtml = demote.length > 0
-    ? demote.map(d => {
-        const cached = _rbReportCache['j_' + d.ticker] || _rbReportCache['c_' + d.ticker] || {};
-        const tag = /exit/i.test(cached.verdict || '') ? 'exit flagged — review' : 'sell signal — read report first';
-        return `<div class="cs-move-row"><span>${d.shortName} (${d.ticker})</span><span class="cs-move-row-tag">${tag}</span></div>`;
-      }).join('')
-    : `<div class="cs-movement-empty">No demotion suggestions — all reviewed fundamentals say Hold</div>`;
+    const demHtml = demote.map(d => {
+      const cached = _rbReportCache['j_' + d.ticker] || _rbReportCache['c_' + d.ticker] || {};
+      const tag = /exit/i.test(cached.verdict || '') ? 'exit flagged — review' : 'sell signal — read report first';
+      return `<div class="cs-move-row"><span>${d.shortName} (${d.ticker})</span><span class="cs-move-row-tag">${tag}</span></div>`;
+    }).join('');
 
-  const sipNote = sipPerNew > 0
-    ? `<strong>Suggested monthly SIP for new additions:</strong> CAD $${sipPerNew}/mo each — freed from ${demote.length} demoted stock${demote.length !== 1 ? 's' : ''} (${freedMonthlyCAD} CAD/mo total ÷ ${promote.length} promoted).`
-    : `<strong>No freed capital from demotions.</strong> Set your own starting SIP amount for each promoted stock — a common starting point is CAD $50–$100/mo, scaling up as conviction grows.`;
+    const sipNote = sipPerNew > 0
+      ? `<strong>Freed SIP capital:</strong> CAD $${freedMonthlyCAD}/mo from ${demote.length} demoted stock${demote.length !== 1 ? 's' : ''} ÷ ${promote.length} promoted = <strong>CAD $${sipPerNew}/mo each</strong>.`
+      : `<strong>No freed capital from demotions yet.</strong> See Top 3 card for suggested SIP amounts.`;
 
-  document.getElementById('cs-movement').innerHTML =
-    `<div class="cs-movement-head">
-       <div class="cs-movement-title">⇌ Core ↔ Watchlist Movement &amp; Capital Distribution</div>
-       <div class="cs-movement-meta">${totalSug} Suggestion${totalSug !== 1 ? 's' : ''} · Hold-verdict stocks excluded · ${promoteToCore.length} fundamentally ready, ${promote.length} match signal too</div>
-     </div>
-     <div class="cs-movement-grid">
-       <div class="cs-col-promote">
-         <div class="cs-movement-col-title">▲ WATCHLIST → CORE SIP</div>
-         ${promHtml}
+    moveEl.style.display = '';
+    moveEl.innerHTML =
+      `<div class="cs-movement-head">
+         <div class="cs-movement-title">⇌ Core ↔ Watchlist Movement</div>
+         <div class="cs-movement-meta">${totalSug} Suggestion${totalSug !== 1 ? 's' : ''} · Hold-verdict stocks are excluded</div>
        </div>
-       <div class="cs-col-demote">
-         <div class="cs-movement-col-title">▼ CORE → WATCHLIST (STOP SIP)</div>
-         ${demHtml}
-         ${demote.length > 0 ? '<div style="font-size:11px;color:#6b7a90;margin-top:8px">⚠ Rule: Sell signal alone is not enough — fundamentals must also confirm the move. See Section J.</div>' : ''}
+       <div class="cs-movement-grid">
+         <div class="cs-col-promote">
+           <div class="cs-movement-col-title">▲ WATCHLIST → CORE SIP</div>
+           ${promHtml}
+         </div>
+         <div class="cs-col-demote">
+           <div class="cs-movement-col-title">▼ CORE → WATCHLIST (STOP SIP)</div>
+           ${demHtml}
+           <div style="font-size:11px;color:#6b7a90;margin-top:8px">⚠ Sell signal alone is not enough — fundamentals must confirm. See Section J.</div>
+         </div>
        </div>
-     </div>
-     <div class="cs-capital-note">
-       💡 ${sipNote}
-     </div>`;
+       <div class="cs-capital-note">💡 ${sipNote}</div>`;
+  }
 
   document.getElementById('rb-cmd-strip').style.display = 'block';
 }
