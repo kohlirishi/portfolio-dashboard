@@ -220,13 +220,12 @@ header{background:var(--surface);border-bottom:1px solid var(--border);padding:1
 .rb-run-btn:hover{background:#8457e6;transform:translateY(-1px)}
 .rb-run-btn:disabled{background:var(--surface3);color:var(--text3);cursor:not-allowed;transform:none}
 .rb-run-btn svg{width:16px;height:16px}
-/* Macro strip */
-.rb-macro{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:14px 18px;margin-bottom:16px;display:flex;align-items:center;gap:6px;flex-wrap:wrap}
-.rb-macro-title{font-size:10px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.8px;margin-right:6px}
-.rb-macro-item{display:flex;align-items:center;gap:6px;background:var(--surface2);border:1px solid var(--border2);border-radius:7px;padding:7px 12px}
-.rb-macro-label{font-size:11px;font-weight:700;color:var(--text3)}
-.rb-macro-val{font-size:14px;font-weight:700}
-.rb-macro-note{font-size:11px;color:var(--text3);margin-left:auto}
+/* Hero context pills (market data, top-right, compact) */
+.rb-hero-ctx{display:flex;align-items:center;gap:5px;flex-wrap:wrap;justify-content:flex-end}
+.rb-hero-ctx-label{font-size:9px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.6px;margin-right:2px}
+.rb-ctx-pill{display:inline-flex;align-items:center;gap:4px;background:var(--surface2);border:1px solid var(--border2);border-radius:5px;padding:3px 7px;white-space:nowrap}
+.rb-ctx-pill-label{font-size:9px;font-weight:700;color:var(--text3)}
+.rb-ctx-pill-val{font-size:11px;font-weight:700}
 /* Section cards */
 .rb-section{background:var(--surface);border:1px solid var(--border);border-radius:10px;margin-bottom:14px;overflow:hidden}
 .rb-sec-head{display:flex;align-items:center;gap:10px;padding:13px 18px;border-bottom:1px solid var(--border);cursor:pointer;user-select:none}
@@ -1606,20 +1605,19 @@ table.div-ht tfoot td{padding:10px 14px;font-size:13px;font-weight:700;backgroun
         <span class="rb-last" id="rb-last-run">Not run yet this session</span>
       </div>
     </div>
-    <button class="rb-run-btn" id="rb-run-btn" onclick="runRebalance()">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg>
-      Run Rebalance Analysis
-    </button>
-  </div>
-
-  <!-- Macro strip -->
-  <div class="rb-macro" id="rb-macro-strip">
-    <span class="rb-macro-title">Market Context · Last 90 Days</span>
-    <div class="rb-macro-item"><span class="rb-macro-label">SPY</span><span class="rb-macro-val" id="rb-spy">Loading…</span></div>
-    <div class="rb-macro-item"><span class="rb-macro-label">QQQ</span><span class="rb-macro-val" id="rb-qqq">Loading…</span></div>
-    <div class="rb-macro-item"><span class="rb-macro-label">GOLD (GLD)</span><span class="rb-macro-val" id="rb-gld">Loading…</span></div>
-    <div class="rb-macro-item"><span class="rb-macro-label">USD/CAD</span><span class="rb-macro-val" id="rb-fx">Loading…</span></div>
-    <span class="rb-macro-note">Auto-fetched · used for context only</span>
+    <div style="display:flex;flex-direction:column;align-items:flex-end;gap:10px">
+      <div class="rb-hero-ctx">
+        <span class="rb-hero-ctx-label">90d</span>
+        <span class="rb-ctx-pill"><span class="rb-ctx-pill-label">SPY</span><span class="rb-ctx-pill-val" id="rb-spy">—</span></span>
+        <span class="rb-ctx-pill"><span class="rb-ctx-pill-label">QQQ</span><span class="rb-ctx-pill-val" id="rb-qqq">—</span></span>
+        <span class="rb-ctx-pill"><span class="rb-ctx-pill-label">GLD</span><span class="rb-ctx-pill-val" id="rb-gld">—</span></span>
+        <span class="rb-ctx-pill"><span class="rb-ctx-pill-label">USD/CAD</span><span class="rb-ctx-pill-val" id="rb-fx">—</span></span>
+      </div>
+      <button class="rb-run-btn" id="rb-run-btn" onclick="runRebalance()">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+        Run Rebalance Analysis
+      </button>
+    </div>
   </div>
 
   <!-- Results container (hidden until Run is clicked) -->
@@ -1628,10 +1626,7 @@ table.div-ht tfoot td{padding:10px 14px;font-size:13px;font-weight:700;backgroun
     <!-- COMMAND STRIP — populated by _rbRenderCommandStrip() after analysis runs -->
     <div id="rb-cmd-strip">
       <div class="cs-header">
-        <div>
-          <div class="cs-title">Quarterly <span class="cs-accent">Rebalance</span> Review</div>
-          <div class="cs-subtitle" id="cs-subtitle"></div>
-        </div>
+        <div class="cs-subtitle" id="cs-subtitle"></div>
         <div class="cs-chips" id="cs-chips"></div>
       </div>
       <div class="cs-cards-grid" id="cs-cards-grid"></div>
@@ -5815,8 +5810,8 @@ function _rbRenderCommandStrip(deadWeight, profitAbove, planReport, watch, promo
   const hasAction  = planAction.length > 0;
   const hasMonitor = planMonitor.length > 0;
   const verdictText  = hasAction ? 'Action Required' : hasMonitor ? 'No Immediate Action' : 'Stay Disciplined';
-  const verdictClass = hasAction ? 'cs-chip-red' : 'cs-chip-green';
-  const verdictDotColor = hasAction ? '#ff5c5c' : '#3ecf6e';
+  const verdictClass = hasAction ? 'cs-chip-amber' : 'cs-chip-green';
+  const verdictDotColor = hasAction ? '#f5a623' : '#3ecf6e';
 
   const lastRunText = (document.getElementById('rb-last-run') || {}).textContent || '';
   const phaseLine = hasAction ? 'Immediate action needed' : 'Structural maintenance — not a reaction';
