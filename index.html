@@ -4251,7 +4251,7 @@ async function loadAllRatings(){
       <span>📅 Runs daily: <strong>8:00 AM EST</strong> &amp; <strong>1:00 PM EST</strong> · Weekdays only · Skips market holidays</span>
       <span id="lastRunInfo">Last run: <strong>never</strong></span>
       <span id="nextRunInfo">Next: <strong>calculating…</strong></span>
-      <span id="stExitRules">🎯 ATH: <strong>&gt;70%</strong> · Swing: <strong>&gt;50%</strong> · Stage 1: <strong>50% @ +3%</strong> · Stage 2: <strong>25% @ +5%</strong> · Stage 3: <strong>25% @ +8%</strong> · Stop: <strong>−2% trail</strong></span>
+      <span id="stExitRules">🎯 ATH: <strong>&gt;50%</strong> · Swing: <strong>&gt;50%</strong> · Stage 1: <strong>50% @ +3%</strong> · Stage 2: <strong>25% @ +5%</strong> · Stage 3: <strong>25% @ +8%</strong> · Stop: <strong>−2% trail</strong></span>
       <span>⏳ Entry: <strong>next-session confirmation</strong> · Cooldown: <strong>48h after stop loss</strong></span>
     </div>
     <div id="screenerProgressWrap" class="progress-wrap-inner" style="display:none">
@@ -6440,13 +6440,32 @@ async function _fetchOneBreakout(elId, symbol, label) {
   }
 }
 
+// ── Proxy fetch helper: corsproxy.io with allorigins.win fallback ─────────────
+// corsproxy.io occasionally returns gzip/binary data for Yahoo Finance index
+// tickers (^VIX, ^GSPC) instead of JSON.  Reading as text first lets us detect
+// that and transparently retry via allorigins.win, which decompresses properly.
+async function _proxyFetch(url) {
+  try {
+    const r    = await fetch('https://corsproxy.io/?url=' + encodeURIComponent(url),
+                             { signal: AbortSignal.timeout(10000) });
+    const text = await r.text();
+    const t    = text.trim();
+    if (t.startsWith('{') || t.startsWith('[')) return JSON.parse(t);
+  } catch(e) {}
+  // Fallback: allorigins.win wraps the response in {contents:"…"} and handles
+  // server-side decompression correctly.
+  const r2 = await fetch('https://api.allorigins.win/get?url=' + encodeURIComponent(url),
+                         { signal: AbortSignal.timeout(14000) });
+  const w  = await r2.json();
+  return JSON.parse(w.contents);
+}
+
 async function _fetchVixPanel() {
   const el = document.getElementById('breakout-vix');
   if (!el) return;
   try {
     const url = `https://query1.finance.yahoo.com/v8/finance/chart/%5EVIX?interval=1d&range=5d`;
-    const r   = await fetch(`https://corsproxy.io/?url=${encodeURIComponent(url)}`, { signal: AbortSignal.timeout(12000) });
-    const d   = await r.json();
+    const d   = await _proxyFetch(url);
     const res = d?.chart?.result?.[0];
     if (!res) throw new Error('No data');
     const closes = (res.indicators.quote[0].close || []).filter(c => c != null && !isNaN(c));
@@ -6574,13 +6593,10 @@ async function _fetchBullModePanel() {
   const el = document.getElementById('breakout-bull');
   if (!el) return;
   try {
-    const proxy = s => 'https://corsproxy.io/?url=' + encodeURIComponent(s);
-    const [vixRes, spxRes] = await Promise.all([
-      fetch(proxy('https://query2.finance.yahoo.com/v8/finance/chart/%5EVIX?interval=1d&range=5d')),
-      fetch(proxy('https://query2.finance.yahoo.com/v8/finance/chart/%5EGSPC?interval=1d&range=70d')),
+    const [vixJson, spxJson] = await Promise.all([
+      _proxyFetch('https://query1.finance.yahoo.com/v8/finance/chart/%5EVIX?interval=1d&range=5d'),
+      _proxyFetch('https://query1.finance.yahoo.com/v8/finance/chart/%5EGSPC?interval=1d&range=70d'),
     ]);
-    const vixJson = await vixRes.json();
-    const spxJson = await spxRes.json();
 
     const vixCloses = (vixJson.chart.result[0].indicators.quote[0].close || []).filter(v => v != null);
     const vix = vixCloses[vixCloses.length - 1];
@@ -6616,7 +6632,7 @@ async function _fetchBullModePanel() {
       if (bullOn) {
         rulesEl.innerHTML = '🐂 <strong style="color:#3fb950">BULL MODE</strong> · Stage 1: <strong>25% @ +3%</strong> · Stage 2: <strong>25% @ +6%</strong> · Stage 3: <strong>25% @ +9%</strong> · Last 25%: <strong>−2% trail</strong>';
       } else {
-        rulesEl.innerHTML = '🎯 ATH: <strong>&gt;70%</strong> · Swing: <strong>&gt;50%</strong> · Stage 1: <strong>50% @ +3%</strong> · Stage 2: <strong>25% @ +5%</strong> · Stage 3: <strong>25% @ +8%</strong> · Stop: <strong>−2% trail</strong>';
+        rulesEl.innerHTML = '🎯 ATH: <strong>&gt;50%</strong> · Swing: <strong>&gt;50%</strong> · Stage 1: <strong>50% @ +3%</strong> · Stage 2: <strong>25% @ +5%</strong> · Stage 3: <strong>25% @ +8%</strong> · Stop: <strong>−2% trail</strong>';
       }
     }
   } catch(e) {
