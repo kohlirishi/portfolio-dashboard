@@ -6310,90 +6310,35 @@ Using all the data above, evaluate:
 
 Provide your analysis in sections A through J as per the master rebalance framework. End with a Final Action Plan and an overall verdict: Rebalance Required / Monitor / Stay Disciplined.`;
 
-  document.getElementById('rb-prompt-textarea').value = prompt;
-  // Ensure prompt section is open
-  const promptBody = document.getElementById('rb-body-prompt');
-  if (promptBody) promptBody.style.display = '';
-  document.getElementById('rb-tog-prompt').textContent = '▾';
-  document.getElementById('rb-prompt-textarea').scrollIntoView({ behavior: 'smooth', block: 'start' });
-
-  // Fire a silent warm-up call so the DeepSeek model container is hot by the time
-  // the user clicks "Run AI Analysis" (avoids the ~5-min cold-start timeout).
-  _warmUpDeepSeek();
-}
-
-function _warmUpDeepSeek() {
-  if (!_rbScriptUrl) return;
-  console.log('[DeepSeek] Warm-up ping started (model may be cold)…');
-  fetch(_rbScriptUrl, {
-    method: 'POST',
-    headers: { 'Content-Type': 'text/plain' }, // avoid CORS preflight
-    body: JSON.stringify({ action: 'callDeepSeek', prompt: 'Reply with only the word: warm', maxTokens: 8 }),
-    signal: AbortSignal.timeout(360000),
-  })
-  .then(r => r.json())
-  .then(j => console.log('[DeepSeek] Warm-up complete:', j.ok ? '"' + (j.content || '').trim() + '"' : j.error))
-  .catch(e => console.log('[DeepSeek] Warm-up error (non-fatal):', e.message));
-}
-
-function copyRebalancePrompt() {
-  const ta = document.getElementById('rb-prompt-textarea');
-  if (!ta || !ta.value) { alert('Generate the prompt first.'); return; }
-  navigator.clipboard.writeText(ta.value).then(() => {
-    const btn = document.getElementById('rb-copy-btn');
-    btn.classList.add('copied');
-    btn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg> Copied!';
-    setTimeout(() => {
-      btn.classList.remove('copied');
-      btn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg> Copy to Clipboard';
-    }, 2500);
-  }).catch(() => { ta.select(); document.execCommand('copy'); });
-}
-
-// ── DeepSeek AI Analysis (NVIDIA endpoint) ─────────────────────────────────
-let _dsApiKey = null;
-
-async function _fetchDeepSeekKey() {
-  if (_dsApiKey) return _dsApiKey;
-  console.log('[DeepSeek] Fetching API key from App Script Config sheet...');
-  try {
-    const resp = await fetch(_rbScriptUrl + '?action=getApiKey&t=' + Date.now(),
-                             { signal: AbortSignal.timeout(15000) });
-    if (!resp.ok) { console.warn('[DeepSeek] getApiKey HTTP ' + resp.status); return null; }
-    const json = await resp.json();
-    console.log('[DeepSeek] getApiKey response ok:', json.ok);
-    if (json.ok && json.key) { _dsApiKey = json.key; return _dsApiKey; }
-    console.warn('[DeepSeek] getApiKey error:', json.error || 'no key returned');
-    return null;
-  } catch(e) {
-    console.error('[DeepSeek] Failed to fetch API key:', e.message);
-    return null;
-  }
-}
-
-function _buildDeepSeekPrompt() {
-  const masterPrompt = (document.getElementById('rb-prompt-textarea') || {}).value || '';
-  if (!masterPrompt.trim()) return null;
-  const d = _rbAnalysisData;
-  if (!d) return null;
-
-  const seen = new Set();
-  const fundLines = [];
-  const addFunds = (arr, label) => (arr || []).forEach(f => {
-    if (!seen.has(f.ticker)) { seen.add(f.ticker); fundLines.push(`• ${f.ticker} — ${f.shortName} [${label}]`); }
+  // ── Append fundamental analysis section for flagged funds ──────────────────
+  const seen2 = new Set(); const fundLines2 = [];
+  const addF2 = (arr, lbl) => (arr || []).forEach(f => {
+    if (!seen2.has(f.ticker)) { seen2.add(f.ticker); fundLines2.push(`• ${f.ticker} — ${f.shortName} [${lbl}]`); }
   });
-  addFunds(d.deadWeight, 'Dead Weight');
-  addFunds(d.stocksDown, 'Stock Down >20%');
-  addFunds(d.etfsDown,   'ETF Down >15%');
-  addFunds(d.demote,     'Demote Candidate');
-  addFunds(d.watch,      'Watchlist');
-  if (fundLines.length === 0) {
-    addFunds(d.main,  'Core Portfolio');
-    addFunds(d.watch, 'Watchlist');
-  }
-  console.log('[DeepSeek] Funds for analysis (' + fundLines.length + '):', fundLines.map(l => l.split('•')[1]?.trim()).join(', '));
+  addF2(d.deadWeight, 'Dead Weight');
+  addF2(d.stocksDown, 'Stock Down >20%');
+  addF2(d.etfsDown,   'ETF Down >15%');
+  addF2(d.demote,     'Demote Candidate');
+  addF2(d.watch,      'Watchlist');
+  if (fundLines2.length === 0) { addF2(d.main, 'Core'); addF2(d.watch, 'Watchlist'); }
 
-  const FUNDAMENTAL_FRAMEWORK = `ROLE 🎭
+  if (fundLines2.length > 0) {
+    prompt += `
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+🔬 FUNDAMENTAL ANALYSIS TASK — DeepSeek AI
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Using the framework below, provide a deep fundamental analysis for EACH of the following flagged funds. Analyze them one by one with full detail.
+
+FUNDS TO ANALYZE (${fundLines2.length} funds):
+${fundLines2.join('\n')}
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+FUNDAMENTAL ANALYSIS FRAMEWORK
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+ROLE 🎭
 
 You have 200 IQ in your profession. You are a senior equity research analyst and fundamental investing expert with 20+ years of experience in stock market analysis, valuation, financial statement analysis, and long term wealth creation across global markets.
 
@@ -6440,43 +6385,71 @@ You must analyze ALL of the following without missing anything:
 • Institutional Ownership and Insider Ownership breakdown
 • Top Holders and Top Institutional Holders (table)
 • Is this Stock Part of Any ETF? List those ETFs and % holding in a table.
-• Check Technical Charts: 50-Day MA, 200-Day MA, 21-Day EMA, 10-week and 30-week MA. RSI, MACD, Bollinger Bands with plain-English interpretation. Volume trend. Chart pattern identification (cup & handle, double bottom, head & shoulders, etc.). Fibonacci retracement levels. Ideal entry price, stop-loss, profit target. Risk-to-reward ratio. Confidence rating: strong buy/buy/neutral/sell/strong sell.
+• Check Technical Charts: 50-Day MA, 200-Day MA, 21-Day EMA, 10-week and 30-week MA. RSI, MACD, Bollinger Bands with plain-English interpretation. Volume trend. Chart pattern identification. Fibonacci retracement levels. Ideal entry price, stop-loss, profit target. Risk-to-reward ratio. Confidence rating: strong buy/buy/neutral/sell/strong sell.
 • Pattern Detection (Weekly Chart): Cup with Handle, Double Bottom, Triple Bottom, Head & Shoulder Bottom, Saucer Bottom, Falling Wedge, Three Line Strike, Morning Star, Engulfing Pattern, Hammer/Inverted Hammer, etc.
-• Management Scoring: Final Score 1-10, Key Strengths, Areas of Concern, Track Record (promises vs delivery)
-• Analyze 10-K filing: Identify new Risk Factors not in last year's filing. Quantify potential EBITDA impact. Highlight changes in management tone regarding debt covenants.
-• Run a backtest: Did a similar pattern occur in the last 10 years? When, and what followed (up/down, by how much)? If nothing found, state "Backtest found nothing."
+• Management Scoring: Final Score 1-10, Key Strengths, Areas of Concern, Track Record
+• Analyze 10-K filing: Identify new Risk Factors not in last year's filing. Quantify potential EBITDA impact.
+• Run a backtest: Did a similar pattern occur in the last 10 years? When, and what followed? If nothing found, state "Backtest found nothing."
 • Total return for the past 5 years — MANDATORY
 • SIP ETF overlap check against: SMH $150, IBIT $150, DTCR $100, IHE $60, URA $60, VOO $400, PICK $80, VPU $100, XLP $80, VEQT.TO $400, SIVR $50, IWR $80, IAU $350, ROKT $100, XLF $80, CIB520 $300, CIB530 $700, ATL8099 $350, CIB524 $700, ATL496 $500
 • Seasonal/day-of-week patterns, Fed/CPI correlation, insider buying/selling, institutional trend, short interest, unusual options activity, earnings behavior, sector rotation signals
 • Should I invest if I am a 35-year-old investor looking at a 10-year investment horizon with Bi-Weekly SIP?
 
 PETER LYNCH FRAMEWORK ANALYSIS:
-1. Classify the stock into one of Lynch's 6 categories: Slow Grower / Stalwart / Fast Grower / Cyclical / Turnaround / Asset Play
+1. Classify into one of Lynch's 6 categories: Slow Grower / Stalwart / Fast Grower / Cyclical / Turnaround / Asset Play
 2. Apply Lynch's criteria for that category (PEG ratio, D/E, EBITDA growth, market cap, etc.)
 3. Check Lynch's Perfect Stock Checklist (13 qualities) — score e.g. 9/13
 4. Red Flags Check: PEG > 2, growth slowing, heavy debt, unprofitable at high valuation, hot industry, insider dumping
 5. Final Recommendation: BUY NOW / WAIT / AVOID with full reasoning
 6. Lynch's Ongoing Rules: When to sell, when to add more, biggest risk, one metric to check quarterly
 
-DATA CUTOFF NOTE: State your data cutoff clearly. Flag any metric the user should independently verify on Guru Focus, Macrotrends, Simply Wall St, or the company's latest earnings report.`;
+DATA CUTOFF NOTE: State your data cutoff clearly. Flag any metric the user should verify on Guru Focus, Macrotrends, Simply Wall St, or the company's latest earnings report.`;
+  }
 
-  return masterPrompt + `
+  document.getElementById('rb-prompt-textarea').value = prompt;
+  // Ensure prompt section is open
+  const promptBody = document.getElementById('rb-body-prompt');
+  if (promptBody) promptBody.style.display = '';
+  document.getElementById('rb-tog-prompt').textContent = '▾';
+  document.getElementById('rb-prompt-textarea').scrollIntoView({ behavior: 'smooth', block: 'start' });
 
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-🔬 FUNDAMENTAL ANALYSIS TASK
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-Using the framework below, provide a deep fundamental analysis for EACH of the following flagged funds from the portfolio above. Analyze them one by one with full detail.
-
-FUNDS TO ANALYZE:
-${fundLines.join('\n')}
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-FUNDAMENTAL ANALYSIS FRAMEWORK (apply to each fund above)
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-${FUNDAMENTAL_FRAMEWORK}`;
+  // Fire a silent warm-up call so the DeepSeek model container is hot by the time
+  // the user clicks "Run AI Analysis" (avoids the ~5-min cold-start timeout).
+  _warmUpDeepSeek();
 }
+
+function _warmUpDeepSeek() {
+  if (!_rbScriptUrl) return;
+  console.log('[DeepSeek] Warm-up ping started (model may be cold)…');
+  fetch(_rbScriptUrl, {
+    method: 'POST',
+    headers: { 'Content-Type': 'text/plain' }, // avoid CORS preflight
+    body: JSON.stringify({ action: 'callDeepSeek', prompt: 'Reply with only the word: warm', maxTokens: 8 }),
+    signal: AbortSignal.timeout(360000),
+  })
+  .then(r => r.json())
+  .then(j => console.log('[DeepSeek] Warm-up complete:', j.ok ? '"' + (j.content || '').trim() + '"' : j.error))
+  .catch(e => console.log('[DeepSeek] Warm-up error (non-fatal):', e.message));
+}
+
+function copyRebalancePrompt() {
+  const ta = document.getElementById('rb-prompt-textarea');
+  if (!ta || !ta.value) { alert('Generate the prompt first.'); return; }
+  navigator.clipboard.writeText(ta.value).then(() => {
+    const btn = document.getElementById('rb-copy-btn');
+    btn.classList.add('copied');
+    btn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg> Copied!';
+    setTimeout(() => {
+      btn.classList.remove('copied');
+      btn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg> Copy to Clipboard';
+    }, 2500);
+  }).catch(() => { ta.select(); document.execCommand('copy'); });
+}
+
+// ── DeepSeek AI Analysis (NVIDIA endpoint, proxied via App Script) ──────────
+// The full combined prompt (master + fund list + fundamental framework) is
+// built by generateRebalancePrompt() and stored in the textarea.
+// runDeepSeekAnalysis() simply reads the textarea and POSTs it to the proxy.
 
 async function runDeepSeekAnalysis() {
   const btn    = document.getElementById('rb-ai-btn');
@@ -6500,15 +6473,9 @@ async function runDeepSeekAnalysis() {
   area.value = '';
 
   try {
-    // Step 1: build combined prompt
-    setStatus('⏳ Building combined prompt (master + fundamental framework)…');
-    const fullPrompt = _buildDeepSeekPrompt();
-    if (!fullPrompt) {
-      setStatus('✗ Failed to build prompt. Ensure rebalance analysis has been run.', 'ai-error');
-      btn.disabled = false; btn.classList.remove('running');
-      return;
-    }
-    console.log('[DeepSeek] Combined prompt length:', fullPrompt.length, 'chars (~' + Math.round(fullPrompt.length / 4) + ' tokens)');
+    // Step 1: read full prompt from textarea (generateRebalancePrompt already built it)
+    const fullPrompt = masterPrompt; // textarea already contains master + fund list + fundamental framework
+    console.log('[DeepSeek] Prompt length:', fullPrompt.length, 'chars (~' + Math.round(fullPrompt.length / 4) + ' tokens)');
 
     // Step 3: POST to App Script proxy → App Script calls NVIDIA server-side (no CORS)
     setStatus('⏳ Sending to App Script proxy → DeepSeek (may take 30–120 seconds)…');
