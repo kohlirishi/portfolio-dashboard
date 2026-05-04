@@ -6316,6 +6316,24 @@ Provide your analysis in sections A through J as per the master rebalance framew
   if (promptBody) promptBody.style.display = '';
   document.getElementById('rb-tog-prompt').textContent = '▾';
   document.getElementById('rb-prompt-textarea').scrollIntoView({ behavior: 'smooth', block: 'start' });
+
+  // Fire a silent warm-up call so the DeepSeek model container is hot by the time
+  // the user clicks "Run AI Analysis" (avoids the ~5-min cold-start timeout).
+  _warmUpDeepSeek();
+}
+
+function _warmUpDeepSeek() {
+  if (!_rbScriptUrl) return;
+  console.log('[DeepSeek] Warm-up ping started (model may be cold)…');
+  fetch(_rbScriptUrl, {
+    method: 'POST',
+    headers: { 'Content-Type': 'text/plain' }, // avoid CORS preflight
+    body: JSON.stringify({ action: 'callDeepSeek', prompt: 'Reply with only the word: warm', maxTokens: 8 }),
+    signal: AbortSignal.timeout(360000),
+  })
+  .then(r => r.json())
+  .then(j => console.log('[DeepSeek] Warm-up complete:', j.ok ? '"' + (j.content || '').trim() + '"' : j.error))
+  .catch(e => console.log('[DeepSeek] Warm-up error (non-fatal):', e.message));
 }
 
 function copyRebalancePrompt() {
@@ -6498,9 +6516,9 @@ async function runDeepSeekAnalysis() {
 
     const apiResp = await fetch(_rbScriptUrl, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'text/plain' }, // avoid CORS preflight (Apps Script parses body regardless)
       body: JSON.stringify({ action: 'callDeepSeek', prompt: fullPrompt, maxTokens: 4096 }),
-      signal: AbortSignal.timeout(300000), // 5-min timeout (App Script can take ~2-3 min for long responses)
+      signal: AbortSignal.timeout(300000),
     });
 
     console.log('[DeepSeek] Proxy response status:', apiResp.status, apiResp.statusText);
