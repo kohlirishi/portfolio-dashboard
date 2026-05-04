@@ -1321,13 +1321,14 @@ table.div-ht tfoot td{padding:10px 14px;font-size:13px;font-weight:700;backgroun
             <tr style="background:var(--bg,#1a1d27);position:sticky;top:0;z-index:1">
               <th style="padding:10px 14px;text-align:left;color:var(--text3);font-weight:600;white-space:nowrap;border-bottom:1px solid var(--border)">Month</th>
               <th style="padding:10px 14px;text-align:right;color:var(--text3);font-weight:600;white-space:nowrap;border-bottom:1px solid var(--border)">Portfolio Value (CAD)</th>
+              <th style="padding:10px 14px;text-align:right;color:var(--text3);font-weight:600;white-space:nowrap;border-bottom:1px solid var(--border)">Total Profit $</th>
               <th style="padding:10px 14px;text-align:right;color:var(--text3);font-weight:600;white-space:nowrap;border-bottom:1px solid var(--border)">Total Profit %</th>
               <th style="padding:10px 14px;text-align:right;color:var(--text3);font-weight:600;white-space:nowrap;border-bottom:1px solid var(--border)">CAGR %</th>
               <th style="padding:10px 14px;text-align:right;color:var(--text3);font-weight:600;white-space:nowrap;border-bottom:1px solid var(--border)">vs Prev Month</th>
             </tr>
           </thead>
           <tbody id="mh-tbody">
-            <tr><td colspan="5" style="text-align:center;padding:20px;color:var(--text3)">Loading…</td></tr>
+            <tr><td colspan="6" style="text-align:center;padding:20px;color:var(--text3)">Loading…</td></tr>
           </tbody>
         </table>
       </div>
@@ -3062,7 +3063,7 @@ async function fetchMonthlyPerformance() {
 
     if (!json.ok || !Array.isArray(json.rows) || !json.rows.length) {
       document.getElementById('mh-tbody').innerHTML =
-        '<tr><td colspan="5" style="text-align:center;padding:20px;color:var(--text3)">No performance data yet</td></tr>';
+        '<tr><td colspan="6" style="text-align:center;padding:20px;color:var(--text3)">No performance data yet</td></tr>';
       return;
     }
 
@@ -3079,6 +3080,17 @@ async function fetchMonthlyPerformance() {
       (v !== null && v !== undefined)
         ? 'CAD $' + Number(v).toLocaleString('en-CA', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
         : '—';
+    // Total Profit $: use stored value if available; fall back to deriving from portfolioValue + totalProfitPct
+    const fmtProfitDollar = (r) => {
+      let d = r.totalProfitDollar;
+      if ((d === null || d === undefined) && r.portfolioValue !== null && r.portfolioValue !== undefined
+          && r.totalProfitPct !== null && r.totalProfitPct !== undefined && r.totalProfitPct !== -1) {
+        d = r.portfolioValue * r.totalProfitPct / (1 + r.totalProfitPct);
+      }
+      if (d === null || d === undefined) return '—';
+      const sign = d >= 0 ? '+' : '';
+      return sign + 'CAD $' + Math.abs(d).toLocaleString('en-CA', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    };
 
     document.getElementById('mh-tbody').innerHTML = rows.map((r, idx) => {
       const vs       = r.vsPrevPct;
@@ -3089,9 +3101,12 @@ async function fetchMonthlyPerformance() {
       const rowStyle = idx % 2 === 0
         ? 'background:rgba(255,255,255,0.02)'
         : 'background:transparent';
+      const profitDollar = fmtProfitDollar(r);
+      const pdColor = profitDollar.startsWith('+') ? 'color:#4caf7d' : profitDollar.startsWith('-') ? 'color:#f44336' : 'color:var(--text3)';
       return `<tr style="${rowStyle};border-top:1px solid var(--border)">
         <td style="padding:9px 14px;color:var(--text);font-weight:600">${r.month}</td>
         <td style="padding:9px 14px;text-align:right;color:var(--text)">${fmtVal(r.portfolioValue)}</td>
+        <td style="padding:9px 14px;text-align:right;${pdColor};font-weight:600">${profitDollar}</td>
         <td style="padding:9px 14px;text-align:right;color:var(--green)">${fmtPct(r.totalProfitPct, true)}</td>
         <td style="padding:9px 14px;text-align:right;color:var(--blue)">${fmtPct(r.cagrPct, false)}</td>
         <td style="padding:9px 14px;text-align:right;${vsColor}">${vsArrow}${fmtPct(vs, true)}</td>
@@ -3099,7 +3114,7 @@ async function fetchMonthlyPerformance() {
     }).join('');
   } catch(err) {
     document.getElementById('mh-tbody').innerHTML =
-      `<tr><td colspan="5" style="text-align:center;padding:20px;color:#f44336">Could not load: ${err.message}</td></tr>`;
+      `<tr><td colspan="6" style="text-align:center;padding:20px;color:#f44336">Could not load: ${err.message}</td></tr>`;
   }
 }
 
