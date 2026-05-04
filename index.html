@@ -6480,18 +6480,9 @@ async function runDeepSeekAnalysis() {
   label.style.display = '';
   area.style.display  = '';
   area.value = '';
-  setStatus('⏳ Fetching API key from Google Sheet Config…');
 
   try {
-    // Step 1: get API key
-    const key = await _fetchDeepSeekKey();
-    if (!key) {
-      setStatus('✗ Could not retrieve API key. Make sure "NVIDIA_API_KEY" is in col A and the key in col B of the "Config" sheet, then redeploy the App Script.', 'ai-error');
-      btn.disabled = false; btn.classList.remove('running');
-      return;
-    }
-
-    // Step 2: build combined prompt
+    // Step 1: build combined prompt
     setStatus('⏳ Building combined prompt (master + fundamental framework)…');
     const fullPrompt = _buildDeepSeekPrompt();
     if (!fullPrompt) {
@@ -6501,54 +6492,49 @@ async function runDeepSeekAnalysis() {
     }
     console.log('[DeepSeek] Combined prompt length:', fullPrompt.length, 'chars (~' + Math.round(fullPrompt.length / 4) + ' tokens)');
 
-    // Step 3: call NVIDIA/DeepSeek API
-    setStatus('⏳ Calling DeepSeek API — this may take 30–120 seconds…');
-    console.log('[DeepSeek] POST → https://integrate.api.nvidia.com/v1/chat/completions');
+    // Step 3: POST to App Script proxy → App Script calls NVIDIA server-side (no CORS)
+    setStatus('⏳ Sending to App Script proxy → DeepSeek (may take 30–120 seconds)…');
+    console.log('[DeepSeek] POST → App Script proxy (' + _rbScriptUrl + ')');
 
-    const apiResp = await fetch('https://integrate.api.nvidia.com/v1/chat/completions', {
+    const apiResp = await fetch(_rbScriptUrl, {
       method: 'POST',
-      headers: {
-        'Authorization': 'Bearer ' + key,
-        'Content-Type':  'application/json',
-      },
-      body: JSON.stringify({
-        model:       'deepseek-ai/deepseek-r1',
-        messages:    [{ role: 'user', content: fullPrompt }],
-        max_tokens:  4096,
-        temperature: 0.6,
-        stream:      false,
-      }),
-      signal: AbortSignal.timeout(180000), // 3-min timeout for long responses
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'callDeepSeek', prompt: fullPrompt, maxTokens: 4096 }),
+      signal: AbortSignal.timeout(300000), // 5-min timeout (App Script can take ~2-3 min for long responses)
     });
 
-    console.log('[DeepSeek] Response status:', apiResp.status, apiResp.statusText);
+    console.log('[DeepSeek] Proxy response status:', apiResp.status, apiResp.statusText);
 
     if (!apiResp.ok) {
       let errBody = '';
       try { errBody = await apiResp.text(); } catch(_) {}
-      console.error('[DeepSeek] API error body:', errBody);
-      setStatus(`✗ API error ${apiResp.status}: ${errBody.slice(0, 300)}`, 'ai-error');
+      console.error('[DeepSeek] Proxy HTTP error:', errBody);
+      setStatus(`✗ Proxy error ${apiResp.status}: ${errBody.slice(0, 300)}`, 'ai-error');
       btn.disabled = false; btn.classList.remove('running');
       return;
     }
 
-    const apiJson = await apiResp.json();
-    console.log('[DeepSeek] Usage:', JSON.stringify(apiJson.usage || {}));
-    console.log('[DeepSeek] Model:', apiJson.model, '| Finish reason:', apiJson?.choices?.[0]?.finish_reason);
+    const proxyJson = await apiResp.json();
+    console.log('[DeepSeek] Proxy ok:', proxyJson.ok, '| Usage:', JSON.stringify(proxyJson.usage || {}));
 
-    const responseText = apiJson?.choices?.[0]?.message?.content || '';
+    if (!proxyJson.ok) {
+      setStatus('✗ ' + (proxyJson.error || 'Unknown error from proxy'), 'ai-error');
+      btn.disabled = false; btn.classList.remove('running');
+      return;
+    }
+
+    const responseText = proxyJson.content || '';
     if (!responseText) {
-      setStatus('✗ API returned empty response content. Check console for details.', 'ai-error');
-      console.warn('[DeepSeek] Full API response:', JSON.stringify(apiJson));
+      setStatus('✗ API returned empty response content. Check Apps Script logs for details.', 'ai-error');
       btn.disabled = false; btn.classList.remove('running');
       return;
     }
 
     area.value = responseText;
-    const usage     = apiJson.usage || {};
+    const usage     = proxyJson.usage || {};
     const tokenInfo = usage.completion_tokens ? ` | ${usage.prompt_tokens || '?'} prompt + ${usage.completion_tokens} completion tokens` : '';
     setStatus(`✓ AI analysis complete${tokenInfo}`, 'ai-ok');
-    console.log('[DeepSeek] Done. Response length:', responseText.length, 'chars');
+    console.log('[DeepSeek] Done. Response length:', responseText.length, 'chars | Finish:', proxyJson.finishReason);
     area.scrollIntoView({ behavior: 'smooth', block: 'start' });
 
   } catch(e) {
