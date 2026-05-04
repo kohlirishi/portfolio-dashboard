@@ -6440,10 +6440,9 @@ async function _fetchOneBreakout(elId, symbol, label) {
   }
 }
 
-// ── Proxy fetch helper: corsproxy.io with allorigins.win fallback ─────────────
+// ── Proxy fetch helper: corsproxy.io → allorigins.win/get → allorigins.win/raw ─
 // corsproxy.io occasionally returns gzip/binary data for Yahoo Finance index
-// tickers (^VIX, ^GSPC) instead of JSON.  Reading as text first lets us detect
-// that and transparently retry via allorigins.win, which decompresses properly.
+// tickers (^VIX, ^GSPC).  Reading as text first detects that and retries.
 async function _proxyFetch(url) {
   try {
     const r    = await fetch('https://corsproxy.io/?url=' + encodeURIComponent(url),
@@ -6452,26 +6451,54 @@ async function _proxyFetch(url) {
     const t    = text.trim();
     if (t.startsWith('{') || t.startsWith('[')) return JSON.parse(t);
   } catch(e) {}
-  // Fallback: allorigins.win wraps the response in {contents:"…"} and handles
-  // server-side decompression correctly.
-  const r2 = await fetch('https://api.allorigins.win/get?url=' + encodeURIComponent(url),
+  try {
+    // allorigins.win/get wraps response in {contents:"…"} and decompresses server-side.
+    const r2 = await fetch('https://api.allorigins.win/get?url=' + encodeURIComponent(url),
+                           { signal: AbortSignal.timeout(14000) });
+    const w  = await r2.json();
+    return JSON.parse(w.contents);
+  } catch(e) {}
+  // Last resort: raw passthrough — no wrapping, decompresses server-side.
+  const r3 = await fetch('https://api.allorigins.win/raw?url=' + encodeURIComponent(url),
                          { signal: AbortSignal.timeout(14000) });
-  const w  = await r2.json();
-  return JSON.parse(w.contents);
+  return r3.json();
+}
+
+// ── Shared App Script market panel data (VIX + SPX, fetched server-side) ──────
+// Single shared Promise so both _fetchVixPanel and _fetchBullModePanel make
+// only one network request between them, even when called in parallel.
+let _marketDataPromise = null;
+function _getMarketPanelData() {
+  if (!_marketDataPromise) {
+    _marketDataPromise = fetch(GS_SCRIPT_URL + '?path=vix&t=' + Date.now(),
+                               { signal: AbortSignal.timeout(22000) })
+      .then(r => r.json())
+      .catch(() => null);
+  }
+  return _marketDataPromise;
 }
 
 async function _fetchVixPanel() {
   const el = document.getElementById('breakout-vix');
   if (!el) return;
   try {
-    const url = `https://query1.finance.yahoo.com/v8/finance/chart/%5EVIX?interval=1d&range=5d`;
-    const d   = await _proxyFetch(url);
-    const res = d?.chart?.result?.[0];
-    if (!res) throw new Error('No data');
-    const closes = (res.indicators.quote[0].close || []).filter(c => c != null && !isNaN(c));
-    if (closes.length < 2) throw new Error('Not enough history');
-    const vix      = closes[closes.length - 1];
-    const prevClose= closes[closes.length - 2];
+    // Primary: App Script Web App (server-side fetch — no CORS proxy needed, much more reliable)
+    let vix, prevClose;
+    const gs = await _getMarketPanelData();
+    if (gs && gs.vix > 0) {
+      vix       = gs.vix;
+      prevClose = gs.vixPrevClose;
+    } else {
+      // Fallback: CORS proxy chain (corsproxy.io → allorigins.win)
+      const url = `https://query1.finance.yahoo.com/v8/finance/chart/%5EVIX?interval=1d&range=5d`;
+      const d   = await _proxyFetch(url);
+      const res = d?.chart?.result?.[0];
+      if (!res) throw new Error('No data');
+      const closes = (res.indicators.quote[0].close || []).filter(c => c != null && !isNaN(c));
+      if (closes.length < 2) throw new Error('Not enough history');
+      vix       = closes[closes.length - 1];
+      prevClose = closes[closes.length - 2];
+    }
     const dayChg   = ((vix - prevClose) / prevClose * 100);
     const chgStr   = (dayChg >= 0 ? '+' : '') + dayChg.toFixed(1) + '%';
 
@@ -6593,18 +6620,27 @@ async function _fetchBullModePanel() {
   const el = document.getElementById('breakout-bull');
   if (!el) return;
   try {
-    const [vixJson, spxJson] = await Promise.all([
-      _proxyFetch('https://query1.finance.yahoo.com/v8/finance/chart/%5EVIX?interval=1d&range=5d'),
-      _proxyFetch('https://query1.finance.yahoo.com/v8/finance/chart/%5EGSPC?interval=1d&range=70d'),
-    ]);
-
-    const vixCloses = (vixJson.chart.result[0].indicators.quote[0].close || []).filter(v => v != null);
-    const vix = vixCloses[vixCloses.length - 1];
-
-    const spxCloses = (spxJson.chart.result[0].indicators.quote[0].close || []).filter(v => v != null);
-    const spxCurrent = spxCloses[spxCloses.length - 1];
-    const spx50ma    = spxCloses.length >= 50 ? spxCloses.slice(-50).reduce((a,b)=>a+b,0)/50 : null;
-    const spxAbove   = spx50ma !== null && spxCurrent >= spx50ma;
+    // Primary: App Script Web App (server-side, no CORS proxy — same request shared with _fetchVixPanel)
+    let vix, spxCurrent, spx50ma, spxAbove;
+    const gs = await _getMarketPanelData();
+    if (gs && gs.vix > 0) {
+      vix        = gs.vix;
+      spxCurrent = gs.spxCurrent;
+      spx50ma    = gs.spx50ma;
+      spxAbove   = gs.spxAbove50ma;
+    } else {
+      // Fallback: CORS proxy chain (corsproxy.io → allorigins.win)
+      const [vixJson, spxJson] = await Promise.all([
+        _proxyFetch('https://query1.finance.yahoo.com/v8/finance/chart/%5EVIX?interval=1d&range=5d'),
+        _proxyFetch('https://query1.finance.yahoo.com/v8/finance/chart/%5EGSPC?interval=1d&range=70d'),
+      ]);
+      const vixCloses = (vixJson.chart.result[0].indicators.quote[0].close || []).filter(v => v != null);
+      vix        = vixCloses[vixCloses.length - 1];
+      const spxCloses = (spxJson.chart.result[0].indicators.quote[0].close || []).filter(v => v != null);
+      spxCurrent = spxCloses[spxCloses.length - 1];
+      spx50ma    = spxCloses.length >= 50 ? spxCloses.slice(-50).reduce((a,b)=>a+b,0)/50 : null;
+      spxAbove   = spx50ma !== null && spxCurrent >= spx50ma;
+    }
 
     const bullOn = vix < 20 && spxAbove;
     const borderCol = bullOn ? '#1a6b1a' : '#1e3250';
