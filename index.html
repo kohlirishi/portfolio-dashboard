@@ -1322,13 +1322,14 @@ table.div-ht tfoot td{padding:10px 14px;font-size:13px;font-weight:700;backgroun
               <th style="padding:10px 14px;text-align:left;color:var(--text3);font-weight:600;white-space:nowrap;border-bottom:1px solid var(--border)">Month</th>
               <th style="padding:10px 14px;text-align:right;color:var(--text3);font-weight:600;white-space:nowrap;border-bottom:1px solid var(--border)">Portfolio Value (CAD)</th>
               <th style="padding:10px 14px;text-align:right;color:var(--text3);font-weight:600;white-space:nowrap;border-bottom:1px solid var(--border)">Total Profit $</th>
+              <th style="padding:10px 14px;text-align:right;color:var(--text3);font-weight:600;white-space:nowrap;border-bottom:1px solid var(--border)">Monthly Gain $</th>
               <th style="padding:10px 14px;text-align:right;color:var(--text3);font-weight:600;white-space:nowrap;border-bottom:1px solid var(--border)">Total Profit %</th>
               <th style="padding:10px 14px;text-align:right;color:var(--text3);font-weight:600;white-space:nowrap;border-bottom:1px solid var(--border)">CAGR %</th>
               <th style="padding:10px 14px;text-align:right;color:var(--text3);font-weight:600;white-space:nowrap;border-bottom:1px solid var(--border)">vs Prev Month</th>
             </tr>
           </thead>
           <tbody id="mh-tbody">
-            <tr><td colspan="6" style="text-align:center;padding:20px;color:var(--text3)">Loading…</td></tr>
+            <tr><td colspan="7" style="text-align:center;padding:20px;color:var(--text3)">Loading…</td></tr>
           </tbody>
         </table>
       </div>
@@ -3063,7 +3064,7 @@ async function fetchMonthlyPerformance() {
 
     if (!json.ok || !Array.isArray(json.rows) || !json.rows.length) {
       document.getElementById('mh-tbody').innerHTML =
-        '<tr><td colspan="6" style="text-align:center;padding:20px;color:var(--text3)">No performance data yet</td></tr>';
+        '<tr><td colspan="7" style="text-align:center;padding:20px;color:var(--text3)">No performance data yet</td></tr>';
       return;
     }
 
@@ -3080,15 +3081,28 @@ async function fetchMonthlyPerformance() {
       (v !== null && v !== undefined)
         ? 'CAD $' + Number(v).toLocaleString('en-CA', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
         : '—';
-    // Total Profit $: use stored value if available; fall back to deriving from portfolioValue + totalProfitPct
-    const fmtProfitDollar = (r) => {
-      let d = r.totalProfitDollar;
-      if ((d === null || d === undefined) && r.portfolioValue !== null && r.portfolioValue !== undefined
+
+    // Resolve Total Profit $ for a row (stored value preferred, formula fallback for historical rows)
+    const getEffectiveProfitDollar = (r) => {
+      if (r.totalProfitDollar !== null && r.totalProfitDollar !== undefined) return r.totalProfitDollar;
+      if (r.portfolioValue !== null && r.portfolioValue !== undefined
           && r.totalProfitPct !== null && r.totalProfitPct !== undefined && r.totalProfitPct !== -1) {
-        d = r.portfolioValue * r.totalProfitPct / (1 + r.totalProfitPct);
+        return r.portfolioValue * r.totalProfitPct / (1 + r.totalProfitPct);
       }
+      return null;
+    };
+
+    // Total Profit $: no + sign (just the number; − for negative)
+    const fmtProfitDollar = (d) => {
       if (d === null || d === undefined) return '—';
-      const sign = d >= 0 ? '+' : '';
+      if (d < 0) return '-CAD $' + Math.abs(d).toLocaleString('en-CA', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+      return 'CAD $' + d.toLocaleString('en-CA', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    };
+
+    // Monthly Gain $: difference vs previous month's Total Profit $ — shows +/- before CAD
+    const fmtMonthlyGain = (d) => {
+      if (d === null || d === undefined) return '—';
+      const sign = d >= 0 ? '+' : '-';
       return sign + 'CAD $' + Math.abs(d).toLocaleString('en-CA', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
     };
 
@@ -3101,12 +3115,28 @@ async function fetchMonthlyPerformance() {
       const rowStyle = idx % 2 === 0
         ? 'background:rgba(255,255,255,0.02)'
         : 'background:transparent';
-      const profitDollar = fmtProfitDollar(r);
-      const pdColor = profitDollar.startsWith('+') ? 'color:#4caf7d' : profitDollar.startsWith('-') ? 'color:#f44336' : 'color:var(--text3)';
+
+      // Total Profit $ — no sign for positive
+      const profitDollarVal = getEffectiveProfitDollar(r);
+      const profitDollar    = fmtProfitDollar(profitDollarVal);
+      const pdColor = profitDollarVal !== null && profitDollarVal >= 0 ? 'color:#4caf7d'
+                    : profitDollarVal !== null && profitDollarVal <  0 ? 'color:#f44336'
+                    : 'color:var(--text3)';
+
+      // Monthly Gain $ — difference from the previous row (rows are newest-first, so rows[idx+1] = prior month)
+      const prevProfitVal = idx + 1 < rows.length ? getEffectiveProfitDollar(rows[idx + 1]) : null;
+      const monthlyGainVal = (profitDollarVal !== null && prevProfitVal !== null)
+        ? profitDollarVal - prevProfitVal : null;
+      const monthlyGain  = fmtMonthlyGain(monthlyGainVal);
+      const mgColor = monthlyGainVal !== null && monthlyGainVal >= 0 ? 'color:#4caf7d'
+                    : monthlyGainVal !== null && monthlyGainVal <  0 ? 'color:#f44336'
+                    : 'color:var(--text3)';
+
       return `<tr style="${rowStyle};border-top:1px solid var(--border)">
         <td style="padding:9px 14px;color:var(--text);font-weight:600">${r.month}</td>
         <td style="padding:9px 14px;text-align:right;color:var(--text)">${fmtVal(r.portfolioValue)}</td>
         <td style="padding:9px 14px;text-align:right;${pdColor};font-weight:600">${profitDollar}</td>
+        <td style="padding:9px 14px;text-align:right;${mgColor};font-weight:600">${monthlyGain}</td>
         <td style="padding:9px 14px;text-align:right;color:var(--green)">${fmtPct(r.totalProfitPct, true)}</td>
         <td style="padding:9px 14px;text-align:right;color:var(--blue)">${fmtPct(r.cagrPct, false)}</td>
         <td style="padding:9px 14px;text-align:right;${vsColor}">${vsArrow}${fmtPct(vs, true)}</td>
@@ -3114,7 +3144,7 @@ async function fetchMonthlyPerformance() {
     }).join('');
   } catch(err) {
     document.getElementById('mh-tbody').innerHTML =
-      `<tr><td colspan="6" style="text-align:center;padding:20px;color:#f44336">Could not load: ${err.message}</td></tr>`;
+      `<tr><td colspan="7" style="text-align:center;padding:20px;color:#f44336">Could not load: ${err.message}</td></tr>`;
   }
 }
 
