@@ -316,6 +316,17 @@ header{background:var(--surface);border-bottom:1px solid var(--border);padding:1
 .rb-copy-btn.copied{background:var(--green)}
 .rb-gen-btn{display:flex;align-items:center;gap:6px;padding:9px 18px;background:var(--surface2);border:1px solid var(--border);border-radius:7px;color:var(--text2);font-size:13px;font-weight:600;cursor:pointer;transition:all .15s}
 .rb-gen-btn:hover{border-color:var(--purple);color:var(--purple)}
+/* DeepSeek AI Analysis */
+.rb-ai-btn{display:flex;align-items:center;gap:6px;padding:9px 18px;background:#1c6b3a;border:none;border-radius:7px;color:#fff;font-size:13px;font-weight:600;cursor:pointer;transition:all .15s}
+.rb-ai-btn:hover{background:#238a4a}
+.rb-ai-btn:disabled{opacity:.5;cursor:not-allowed}
+.rb-ai-btn.running{background:#7a5800}
+.rb-ai-status{font-size:12px;color:var(--text2);margin-top:10px;min-height:18px;padding:4px 0}
+.rb-ai-status.ai-error{color:var(--red)}
+.rb-ai-status.ai-ok{color:var(--green)}
+.rb-ai-label{font-size:12px;font-weight:700;color:var(--text);margin-top:16px;margin-bottom:6px;display:flex;align-items:center;gap:6px}
+.rb-ai-response-area{width:100%;min-height:400px;background:var(--bg2);border:1px solid var(--border);border-radius:8px;color:var(--text2);font-size:12px;padding:12px;font-family:monospace;resize:vertical;line-height:1.6;margin-top:6px}
+.rb-ai-response-area:focus{outline:none;border-color:var(--purple)}
 /* Watchlist promotion */
 .rb-verdict-btns{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}
 .rb-verdict-btn{padding:5px 12px;border-radius:6px;font-size:11px;font-weight:600;border:1px solid;cursor:pointer;transition:all .12s;background:transparent}
@@ -1774,7 +1785,17 @@ table.div-ht tfoot td{padding:10px 14px;font-size:13px;font-weight:700;backgroun
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
             Copy to Clipboard
           </button>
+          <button class="rb-ai-btn" id="rb-ai-btn" onclick="runDeepSeekAnalysis()">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+            Run AI Analysis
+          </button>
         </div>
+        <div class="rb-ai-status" id="rb-ai-status"></div>
+        <div class="rb-ai-label" id="rb-ai-label" style="display:none">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+          DeepSeek AI Response
+        </div>
+        <textarea class="rb-ai-response-area" id="rb-ai-response-area" readonly placeholder="AI response will appear here after clicking 'Run AI Analysis'…" style="display:none"></textarea>
       </div>
     </div>
 
@@ -6309,6 +6330,235 @@ function copyRebalancePrompt() {
       btn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg> Copy to Clipboard';
     }, 2500);
   }).catch(() => { ta.select(); document.execCommand('copy'); });
+}
+
+// ── DeepSeek AI Analysis (NVIDIA endpoint) ─────────────────────────────────
+let _dsApiKey = null;
+
+async function _fetchDeepSeekKey() {
+  if (_dsApiKey) return _dsApiKey;
+  console.log('[DeepSeek] Fetching API key from App Script Config sheet...');
+  try {
+    const resp = await fetch(_rbScriptUrl + '?action=getApiKey&t=' + Date.now(),
+                             { signal: AbortSignal.timeout(15000) });
+    if (!resp.ok) { console.warn('[DeepSeek] getApiKey HTTP ' + resp.status); return null; }
+    const json = await resp.json();
+    console.log('[DeepSeek] getApiKey response ok:', json.ok);
+    if (json.ok && json.key) { _dsApiKey = json.key; return _dsApiKey; }
+    console.warn('[DeepSeek] getApiKey error:', json.error || 'no key returned');
+    return null;
+  } catch(e) {
+    console.error('[DeepSeek] Failed to fetch API key:', e.message);
+    return null;
+  }
+}
+
+function _buildDeepSeekPrompt() {
+  const masterPrompt = (document.getElementById('rb-prompt-textarea') || {}).value || '';
+  if (!masterPrompt.trim()) return null;
+  const d = _rbAnalysisData;
+  if (!d) return null;
+
+  const seen = new Set();
+  const fundLines = [];
+  const addFunds = (arr, label) => (arr || []).forEach(f => {
+    if (!seen.has(f.ticker)) { seen.add(f.ticker); fundLines.push(`• ${f.ticker} — ${f.shortName} [${label}]`); }
+  });
+  addFunds(d.deadWeight, 'Dead Weight');
+  addFunds(d.stocksDown, 'Stock Down >20%');
+  addFunds(d.etfsDown,   'ETF Down >15%');
+  addFunds(d.demote,     'Demote Candidate');
+  addFunds(d.watch,      'Watchlist');
+  if (fundLines.length === 0) {
+    addFunds(d.main,  'Core Portfolio');
+    addFunds(d.watch, 'Watchlist');
+  }
+  console.log('[DeepSeek] Funds for analysis (' + fundLines.length + '):', fundLines.map(l => l.split('•')[1]?.trim()).join(', '));
+
+  const FUNDAMENTAL_FRAMEWORK = `ROLE 🎭
+
+You have 200 IQ in your profession. You are a senior equity research analyst and fundamental investing expert with 20+ years of experience in stock market analysis, valuation, financial statement analysis, and long term wealth creation across global markets.
+
+CONTEXT 🧩
+
+Input will always be just a stock name or ticker, nothing else.
+You must independently gather, infer, and analyze all relevant information.
+Do not ask follow up questions.
+Assume the user is a serious long term investor who wants depth, accuracy, and clarity, not hype.
+Explain in Very Simple English like I am 15 Year Old.
+Be objective and data driven.
+Call out risks clearly and honestly.
+If information is missing or uncertain, state assumptions transparently.
+Avoid buzzwords. Avoid promotional tone.
+Structure the response with clear headings and bullet points.
+
+You must analyze ALL of the following without missing anything:
+
+• Provide CMP at the very first along with Current Date
+• What this Company Does?
+• Recent News on this Stocks which is causing it to go up or down
+• Summarize the most recent news related to this Stock/ETF and convert it into actionable trading insights. Outline the potential short-term and long-term impact, expected price movement range, and suggested positioning
+• Check Net Revenue from the past 8 Quarters and Net Profit from the Past 8 Quarters (show in a table). Tell whether it is increasing or not
+• Is this Company profitable? And If Yes, then Since When
+• Check for Debt-to-Equity Ratio - Must be less than 1.0 for conservative leverage
+• Reserves vs Borrowings - Reserves must be greater than borrowings for financial strength
+• Compare Stock valuation (P/E ratio) against its peers to see if the stock is currently "expensive" or "cheap"
+• Check/Calculate for Future PE also and explain if it is good time to entry or not
+• Major Update/Highlights from Recent ConCall Report and the Date of Report
+• Comparison of DCF value vs current market price - Explain in Simple English
+• Clear verdict: undervalued, fairly valued, or overvalued
+• Key assumptions that could break the model
+• 5-year revenue projection with growth assumptions
+• Is it a Small Cap / Mid Cap / Large Cap?
+• Also Provide Last 1 day return in %
+• Also Provide Last 30 day return in %
+• Will this Company Survive for Next 15 Years?
+• News Sentiment Score: Score between -1 to +1
+• Valuation Assessment: Current Valuation, Relative Valuation, Intrinsic Value Estimate (DCF), Value Catalysts
+• 220-Day MA Strategy: Check if the price has recently reclaimed the 220-day MA (within the last 60 bars) after a period below it.
+• ATH Breakout: Is the stock currently within 1% of its All-Time High or breaking above it?
+• Pledged Promoter Shares < 5%
+• Promoter Holding - No drop > 5%
+• Institutional Ownership and Insider Ownership breakdown
+• Top Holders and Top Institutional Holders (table)
+• Is this Stock Part of Any ETF? List those ETFs and % holding in a table.
+• Check Technical Charts: 50-Day MA, 200-Day MA, 21-Day EMA, 10-week and 30-week MA. RSI, MACD, Bollinger Bands with plain-English interpretation. Volume trend. Chart pattern identification (cup & handle, double bottom, head & shoulders, etc.). Fibonacci retracement levels. Ideal entry price, stop-loss, profit target. Risk-to-reward ratio. Confidence rating: strong buy/buy/neutral/sell/strong sell.
+• Pattern Detection (Weekly Chart): Cup with Handle, Double Bottom, Triple Bottom, Head & Shoulder Bottom, Saucer Bottom, Falling Wedge, Three Line Strike, Morning Star, Engulfing Pattern, Hammer/Inverted Hammer, etc.
+• Management Scoring: Final Score 1-10, Key Strengths, Areas of Concern, Track Record (promises vs delivery)
+• Analyze 10-K filing: Identify new Risk Factors not in last year's filing. Quantify potential EBITDA impact. Highlight changes in management tone regarding debt covenants.
+• Run a backtest: Did a similar pattern occur in the last 10 years? When, and what followed (up/down, by how much)? If nothing found, state "Backtest found nothing."
+• Total return for the past 5 years — MANDATORY
+• SIP ETF overlap check against: SMH $150, IBIT $150, DTCR $100, IHE $60, URA $60, VOO $400, PICK $80, VPU $100, XLP $80, VEQT.TO $400, SIVR $50, IWR $80, IAU $350, ROKT $100, XLF $80, CIB520 $300, CIB530 $700, ATL8099 $350, CIB524 $700, ATL496 $500
+• Seasonal/day-of-week patterns, Fed/CPI correlation, insider buying/selling, institutional trend, short interest, unusual options activity, earnings behavior, sector rotation signals
+• Should I invest if I am a 35-year-old investor looking at a 10-year investment horizon with Bi-Weekly SIP?
+
+PETER LYNCH FRAMEWORK ANALYSIS:
+1. Classify the stock into one of Lynch's 6 categories: Slow Grower / Stalwart / Fast Grower / Cyclical / Turnaround / Asset Play
+2. Apply Lynch's criteria for that category (PEG ratio, D/E, EBITDA growth, market cap, etc.)
+3. Check Lynch's Perfect Stock Checklist (13 qualities) — score e.g. 9/13
+4. Red Flags Check: PEG > 2, growth slowing, heavy debt, unprofitable at high valuation, hot industry, insider dumping
+5. Final Recommendation: BUY NOW / WAIT / AVOID with full reasoning
+6. Lynch's Ongoing Rules: When to sell, when to add more, biggest risk, one metric to check quarterly
+
+DATA CUTOFF NOTE: State your data cutoff clearly. Flag any metric the user should independently verify on Guru Focus, Macrotrends, Simply Wall St, or the company's latest earnings report.`;
+
+  return masterPrompt + `
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+🔬 FUNDAMENTAL ANALYSIS TASK
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Using the framework below, provide a deep fundamental analysis for EACH of the following flagged funds from the portfolio above. Analyze them one by one with full detail.
+
+FUNDS TO ANALYZE:
+${fundLines.join('\n')}
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+FUNDAMENTAL ANALYSIS FRAMEWORK (apply to each fund above)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+${FUNDAMENTAL_FRAMEWORK}`;
+}
+
+async function runDeepSeekAnalysis() {
+  const btn    = document.getElementById('rb-ai-btn');
+  const status = document.getElementById('rb-ai-status');
+  const area   = document.getElementById('rb-ai-response-area');
+  const label  = document.getElementById('rb-ai-label');
+
+  const setStatus = (msg, cls = '') => {
+    status.textContent = msg;
+    status.className = 'rb-ai-status' + (cls ? ' ' + cls : '');
+  };
+
+  if (!_rbAnalysisData) { setStatus('⚠ Run the rebalance analysis first, then click Run AI Analysis.', 'ai-error'); return; }
+  const masterPrompt = (document.getElementById('rb-prompt-textarea') || {}).value || '';
+  if (!masterPrompt.trim()) { setStatus('⚠ Click "Generate Prompt" first, then click Run AI Analysis.', 'ai-error'); return; }
+
+  btn.disabled = true;
+  btn.classList.add('running');
+  label.style.display = '';
+  area.style.display  = '';
+  area.value = '';
+  setStatus('⏳ Fetching API key from Google Sheet Config…');
+
+  try {
+    // Step 1: get API key
+    const key = await _fetchDeepSeekKey();
+    if (!key) {
+      setStatus('✗ Could not retrieve API key. Make sure "NVIDIA_API_KEY" is in col A and the key in col B of the "Config" sheet, then redeploy the App Script.', 'ai-error');
+      btn.disabled = false; btn.classList.remove('running');
+      return;
+    }
+
+    // Step 2: build combined prompt
+    setStatus('⏳ Building combined prompt (master + fundamental framework)…');
+    const fullPrompt = _buildDeepSeekPrompt();
+    if (!fullPrompt) {
+      setStatus('✗ Failed to build prompt. Ensure rebalance analysis has been run.', 'ai-error');
+      btn.disabled = false; btn.classList.remove('running');
+      return;
+    }
+    console.log('[DeepSeek] Combined prompt length:', fullPrompt.length, 'chars (~' + Math.round(fullPrompt.length / 4) + ' tokens)');
+
+    // Step 3: call NVIDIA/DeepSeek API
+    setStatus('⏳ Calling DeepSeek API — this may take 30–120 seconds…');
+    console.log('[DeepSeek] POST → https://integrate.api.nvidia.com/v1/chat/completions');
+
+    const apiResp = await fetch('https://integrate.api.nvidia.com/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Authorization': 'Bearer ' + key,
+        'Content-Type':  'application/json',
+      },
+      body: JSON.stringify({
+        model:       'deepseek-ai/deepseek-r1',
+        messages:    [{ role: 'user', content: fullPrompt }],
+        max_tokens:  4096,
+        temperature: 0.6,
+        stream:      false,
+      }),
+      signal: AbortSignal.timeout(180000), // 3-min timeout for long responses
+    });
+
+    console.log('[DeepSeek] Response status:', apiResp.status, apiResp.statusText);
+
+    if (!apiResp.ok) {
+      let errBody = '';
+      try { errBody = await apiResp.text(); } catch(_) {}
+      console.error('[DeepSeek] API error body:', errBody);
+      setStatus(`✗ API error ${apiResp.status}: ${errBody.slice(0, 300)}`, 'ai-error');
+      btn.disabled = false; btn.classList.remove('running');
+      return;
+    }
+
+    const apiJson = await apiResp.json();
+    console.log('[DeepSeek] Usage:', JSON.stringify(apiJson.usage || {}));
+    console.log('[DeepSeek] Model:', apiJson.model, '| Finish reason:', apiJson?.choices?.[0]?.finish_reason);
+
+    const responseText = apiJson?.choices?.[0]?.message?.content || '';
+    if (!responseText) {
+      setStatus('✗ API returned empty response content. Check console for details.', 'ai-error');
+      console.warn('[DeepSeek] Full API response:', JSON.stringify(apiJson));
+      btn.disabled = false; btn.classList.remove('running');
+      return;
+    }
+
+    area.value = responseText;
+    const usage     = apiJson.usage || {};
+    const tokenInfo = usage.completion_tokens ? ` | ${usage.prompt_tokens || '?'} prompt + ${usage.completion_tokens} completion tokens` : '';
+    setStatus(`✓ AI analysis complete${tokenInfo}`, 'ai-ok');
+    console.log('[DeepSeek] Done. Response length:', responseText.length, 'chars');
+    area.scrollIntoView({ behavior: 'smooth', block: 'start' });
+
+  } catch(e) {
+    console.error('[DeepSeek] Exception:', e);
+    const msg = e.name === 'TimeoutError' ? 'Request timed out after 3 minutes. Try again — the model may have been busy.' : e.message;
+    setStatus('✗ Error: ' + msg, 'ai-error');
+  } finally {
+    btn.disabled = false;
+    btn.classList.remove('running');
+  }
 }
 
 </script>
