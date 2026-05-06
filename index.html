@@ -5226,13 +5226,46 @@ function _fmtOrdinalDate(d) {
 async function _updateWatchlistVerdictWithAI(uid, sym, ticker, reportText) {
   const innerEl  = document.getElementById('rb-ai-verdict-inner-' + uid);
   const statusEl = document.getElementById('rb-rpt-status-' + uid);
-  if (statusEl) statusEl.innerHTML = `<span style="color:var(--blue);font-size:11px">🤖 AI Agent analysing ${ticker}…</span>`;
+
+  // ── Live elapsed timer ────────────────────────────────────────────────────
+  const _startTs = Date.now();
+  const _logEl   = document.getElementById('rb-ai-verdict-inner-' + uid);
+  let   _phase   = 'Trying Gemini AI…';
+  const _timer   = setInterval(() => {
+    const secs = Math.floor((Date.now() - _startTs) / 1000);
+    if (secs >= 15 && _phase === 'Trying Gemini AI…') _phase = 'Gemini slow — may fall back to NVIDIA…';
+    if (innerEl) {
+      const logEl2 = document.getElementById('rb-ai-log-' + uid);
+      if (logEl2) logEl2.textContent = `${_phase} (${secs}s)`;
+    }
+    if (statusEl) statusEl.innerHTML = `<span style="color:var(--blue);font-size:11px">🤖 ${_phase} ${secs}s elapsed…</span>`;
+  }, 1000);
+
+  // Show initial state with live log line
+  if (innerEl) innerEl.innerHTML = `
+    <div style="font-size:18px">🤖</div>
+    <div>
+      <div style="font-size:13px;font-weight:700;color:var(--text2)">AI Agent analysing…</div>
+      <div id="rb-ai-log-${uid}" style="font-size:11px;color:var(--blue);margin-top:3px">Trying Gemini AI… (0s)</div>
+      <div style="font-size:11px;color:var(--text3);margin-top:2px">Check Apps Script → Executions for server logs</div>
+    </div>`;
 
   try {
-    const resp = await fetch(`${_rbScriptUrl}?action=getSipVerdict&ticker=${encodeURIComponent(sym)}`).catch(() => null);
-    if (!resp || !resp.ok) throw new Error('Network error');
-    const json = await resp.json().catch(() => null);
+    // 60s timeout — NVIDIA cold starts can hang indefinitely without one
+    const _ctrl   = new AbortController();
+    const _toutId = setTimeout(() => _ctrl.abort(), 60000);
+    let resp, json;
+    try {
+      resp = await fetch(`${_rbScriptUrl}?action=getSipVerdict&ticker=${encodeURIComponent(sym)}`, { signal: _ctrl.signal });
+      clearTimeout(_toutId);
+    } catch(fetchErr) {
+      clearTimeout(_toutId);
+      throw new Error(fetchErr.name === 'AbortError' ? 'Timed out after 60s — check GAS Executions log' : 'Network error: ' + fetchErr.message);
+    }
+    if (!resp || !resp.ok) throw new Error('HTTP ' + (resp ? resp.status : '?'));
+    json = await resp.json().catch(() => null);
     if (!json || !json.ok) throw new Error(json ? json.error : 'Parse error');
+    clearInterval(_timer);
 
     const aiYes    = json.verdict === 'YES';
     const aiSource = json.source || 'AI Agent';
@@ -5269,21 +5302,17 @@ async function _updateWatchlistVerdictWithAI(uid, sym, ticker, reportText) {
     rbSaveReportToSheets(uid, ticker, 'watchlist', reportText, verdict, reason, now2);
 
   } catch(err) {
+    clearInterval(_timer);
     console.error('[AI SIP Verdict]', err);
-    if (innerEl) innerEl.innerHTML += `<div style="font-size:11px;color:var(--red);margin-top:6px">⚠ AI Agent failed: ${err.message} — using Yahoo scoring.</div>`;
-    if (statusEl) statusEl.innerHTML = `<span style="color:var(--yellow);font-size:11px">⚠ AI failed — Yahoo-based verdict shown above</span>`;
-    // Fall back to Yahoo-based verdict for buttons
-    if (_rbReportCache[uid]) {
-      const fbVerdict = _rbReportCache[uid].verdict;
-      const map = { 'Promote to Core SIP': 'promote', 'One-Time Investment': 'onetime', 'Hold in Watchlist': 'stay', 'Not Ready for Promotion': 'stay' };
-      const v = map[fbVerdict] || 'stay';
-      ['promote','onetime','stay'].forEach(vv => {
-        const b = document.getElementById(`vbtn-${vv}-${uid}`);
-        if (b) b.classList.toggle('sel', vv === v);
-      });
-      _rbVerdicts[uid] = v;
-      rbSaveReportToSheets(uid, ticker, 'watchlist', reportText, fbVerdict, _rbReportCache[uid].reason, new Date().toISOString());
-    }
+    const elapsed = Math.floor((Date.now() - _startTs) / 1000);
+    if (innerEl) innerEl.innerHTML = `
+      <div style="font-size:18px">⚠️</div>
+      <div>
+        <div style="font-size:13px;font-weight:700;color:var(--red)">AI Agent failed after ${elapsed}s</div>
+        <div style="font-size:12px;color:var(--text3);margin-top:2px">${err.message}</div>
+        <div style="font-size:11px;color:var(--text3);margin-top:4px">Check Apps Script → Executions for server-side logs. Re-Fetch to retry.</div>
+      </div>`;
+    if (statusEl) statusEl.innerHTML = `<span style="color:var(--red);font-size:11px">⚠ AI failed (${elapsed}s) — Re-Fetch to retry</span>`;
   }
 }
 
