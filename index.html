@@ -5229,7 +5229,7 @@ async function _updateWatchlistVerdictWithAI(uid, sym, ticker, reportText) {
 
   // ── Live elapsed timer ────────────────────────────────────────────────────
   const _startTs = Date.now();
-  let   _phase   = 'Trying Gemini AI…';
+  let   _phase   = 'Trying Mistral AI…';
   const _updateLog = () => {
     const secs   = Math.floor((Date.now() - _startTs) / 1000);
     const logEl2 = document.getElementById('rb-ai-log-' + uid);
@@ -5269,13 +5269,13 @@ async function _updateWatchlistVerdictWithAI(uid, sym, ticker, reportText) {
 
     if (json && json.rateLimited) {
       // ── Gemini rate-limited → countdown 60s → retry ──────────────────────
-      _phase = 'Gemini rate limited (429)';
+      _phase = 'Mistral rate limited (429)';
       _updateLog();
       let countdown = 60;
       await new Promise(resolve => {
         const cd = setInterval(() => {
           countdown--;
-          _phase = `Gemini rate limited — retrying in ${countdown}s…`;
+          _phase = `Mistral rate limited — retrying in ${countdown}s…`;
           const logEl2 = document.getElementById('rb-ai-log-' + uid);
           if (logEl2) logEl2.textContent = _phase;
           if (statusEl) statusEl.innerHTML = `<span style="color:var(--yellow);font-size:11px">⏳ ${_phase}</span>`;
