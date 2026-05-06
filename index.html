@@ -7862,8 +7862,11 @@ function _renderLive() {
     const partial2   = t.partial2Done    === true || t.partial2Done    === 'true';
     const partPnl    = parseFloat(t.partialExitPnl) || 0;
     const part2Pnl   = parseFloat(t.partial2Pnl)    || 0;
-    // openInv: 100% before stage1, 50% after stage1, 25% after stage2
-    const openInv    = partial2 ? inv/4 : partial ? inv/2 : inv;
+    const s1Pct      = parseInt(t.partialExitPct) || 50; // 25 in Bull Mode, 50 in Normal Mode
+    const sharesOpenN = parseFloat(t.sharesOpen) || 0;
+    const sharesTotalN = parseFloat(t.sharesTotal) || 0;
+    // openInv derived from live sharesOpen ratio for accuracy across Bull/Normal mode
+    const openInv    = sharesTotalN > 0 ? inv * (sharesOpenN / sharesTotalN) : (partial2 ? inv/4 : partial ? inv/2 : inv);
     const openPnl    = (cp * shares) - openInv;
     const totalUnreal = openPnl + partPnl + part2Pnl;
     const chg        = bp > 0 ? (cp - bp) / bp * 100 : 0;
@@ -7887,9 +7890,9 @@ function _renderLive() {
 
     // Tag line showing completed exits under ticker name
     const partTag = partial2
-      ? `<div style="font-size:10px;color:#e3b341;margin-top:2px">⚡ 50%@$${_fmtUSD(t.partialExitPrice)} · 25%@$${_fmtUSD(t.partial2Price)}</div>`
+      ? `<div style="font-size:10px;color:#e3b341;margin-top:2px">⚡ ${s1Pct}%@$${_fmtUSD(t.partialExitPrice)} · 25%@$${_fmtUSD(t.partial2Price)}</div>`
       : partial
-        ? `<div style="font-size:10px;color:#e3b341;margin-top:2px">⚡ 50% @ $${_fmtUSD(t.partialExitPrice)} (+$${_fmtUSD(partPnl)})</div>`
+        ? `<div style="font-size:10px;color:#e3b341;margin-top:2px">⚡ ${s1Pct}% @ $${_fmtUSD(t.partialExitPrice)} (+$${_fmtUSD(partPnl)})</div>`
         : '';
 
     // Target display: show next pending stage
@@ -8012,8 +8015,9 @@ function _renderClosed() {
     else if (t.exitReason === 'timestop')  reasonBadge = '<span class="badge-timestop">⏱ Time Stop</span>';
     else if (t.exitReason === 'crashexit') reasonBadge = '<span class="badge-crash">🚨 Crash Exit</span>';
     else                                   reasonBadge = '<span class="badge-manual">Manual</span>';
+    const s1PctClosed = parseInt(t.partialExitPct) || 50; // 25 in Bull Mode, 50 in Normal Mode
     const partNote = (t.partialExitDone===true || t.partialExitDone==='true')
-      ? `<br><small style="color:#e3b341">⚡ 50% @ $${_fmtUSD(t.partialExitPrice)} (+$${_fmtUSD(t.partialExitPnl)})</small>` : '';
+      ? `<br><small style="color:#e3b341">⚡ ${s1PctClosed}% @ $${_fmtUSD(t.partialExitPrice)} (+$${_fmtUSD(t.partialExitPnl)})</small>` : '';
     const name = (window.COMPANY_NAMES && COMPANY_NAMES[t.ticker]) || '';
 
     // SL context shown under sell price for stop-loss exits
