@@ -5064,7 +5064,7 @@ function sheetTickerToFMP(sheetTicker) {
 }
 
 // ── Yahoo Finance fundamentals via App Script proxy ───────────────────────────
-async function rbFetchFundamentals(uid, ticker, context, sheetTicker) {
+async function rbFetchFundamentals(uid, ticker, context, sheetTicker, skipAi) {
   const statusEl = document.getElementById('rb-rpt-status-' + uid);
   const btn      = document.getElementById('rb-fetch-btn-' + uid);
   const FETCH_BTN_HTML = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 6v16l7-4 8 4 7-4V2l-7 4-8-4-7 4z"/><path d="M8 2v16M16 6v16"/></svg> Fetch Fundamentals';
@@ -5199,7 +5199,7 @@ async function rbFetchFundamentals(uid, ticker, context, sheetTicker) {
     // Auto-select watchlist verdict buttons
     if (context === 'watchlist') {
       // Fire AI verdict async — updates verdict div, buttons, cache, and sheet when done
-      _updateWatchlistVerdictWithAI(uid, sym, ticker, reportText);
+      if (!skipAi) _updateWatchlistVerdictWithAI(uid, sym, ticker, reportText);
     } else {
       // Save to Google Sheets immediately for non-watchlist
       rbSaveReportToSheets(uid, ticker, context, reportText, result.verdict, result.reason, now);
@@ -5263,7 +5263,7 @@ async function _updateWatchlistVerdictWithAI(uid, sym, ticker, reportText) {
   try {
     // ── Attempt 1: Gemini only (fast, ~2s) ───────────────────────────────────
     _phase = 'Trying Gemini AI…';
-    let resp = await _fetchWithTimeout(`${_rbScriptUrl}?action=getSipVerdict&ticker=${encodeURIComponent(sym)}&attempt=1`, 30000);
+    let resp = await _fetchWithTimeout(`${_rbScriptUrl}?action=getSipVerdict&ticker=${encodeURIComponent(sym)}&attempt=1`, 45000);
     if (!resp.ok) throw new Error('HTTP ' + resp.status);
     let json = await resp.json().catch(() => null);
 
@@ -5500,7 +5500,7 @@ async function _rbAutoFetchWatchlist() {
     try {
       const uid = 'g_' + d.ticker;
       const sheetTicker = typeof sheetTickerToFMP === 'function' ? (sheetTickerToFMP(d.ticker_v || '') || '') : '';
-      await rbFetchFundamentals(uid, d.ticker, 'watchlist', sheetTicker);
+      await rbFetchFundamentals(uid, d.ticker, 'watchlist', sheetTicker, true); // skipAi — AI only on manual Re-Fetch
       _rbBuildWatchlistSummaryTable(); // refresh table row in real-time
     } catch(e) {
       console.error('[AutoFetch] Error for ' + d.ticker + ':', e);
