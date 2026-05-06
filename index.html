@@ -5235,6 +5235,7 @@ async function _updateWatchlistVerdictWithAI(uid, sym, ticker, reportText) {
     if (!json || !json.ok) throw new Error(json ? json.error : 'Parse error');
 
     const aiYes    = json.verdict === 'YES';
+    const aiSource = json.source || 'AI Agent';
     const verdict  = aiYes ? 'Promote to Core SIP'        : 'Not suitable for Core SIP';
     const reason   = aiYes ? 'AI Agent said: Promote to Core SIP — suitable for Bi-Weekly SIP investment.'
                            : 'AI Agent said: Not suitable for Core SIP — does not meet SIP criteria right now.';
@@ -5248,10 +5249,11 @@ async function _updateWatchlistVerdictWithAI(uid, sym, ticker, reportText) {
         <div>
           <div style="font-size:13px;font-weight:700;color:${color}">${verdict}</div>
           <div style="font-size:12px;color:var(--text2);margin-top:2px">${reason}</div>
-          <div style="font-size:11px;color:var(--text3);margin-top:4px">Source: Gemini AI · ${dateStr}</div>
+          <div style="font-size:11px;color:var(--text3);margin-top:4px">Source: ${aiSource} · ${dateStr}</div>
         </div>`;
     }
     if (statusEl) statusEl.innerHTML = `<span style="color:var(--green);font-size:11px">✓ AI verdict received — ${dateStr}</span>`;
+
 
     // Update cache + buttons
     const now2 = new Date().toISOString();
