@@ -5229,41 +5229,68 @@ async function _updateWatchlistVerdictWithAI(uid, sym, ticker, reportText) {
 
   // ── Live elapsed timer ────────────────────────────────────────────────────
   const _startTs = Date.now();
-  const _logEl   = document.getElementById('rb-ai-verdict-inner-' + uid);
   let   _phase   = 'Trying Gemini AI…';
-  const _timer   = setInterval(() => {
-    const secs = Math.floor((Date.now() - _startTs) / 1000);
-    if (secs >= 15 && _phase === 'Trying Gemini AI…') _phase = 'Gemini slow — may fall back to NVIDIA…';
-    if (innerEl) {
-      const logEl2 = document.getElementById('rb-ai-log-' + uid);
-      if (logEl2) logEl2.textContent = `${_phase} (${secs}s)`;
-    }
+  const _updateLog = () => {
+    const secs   = Math.floor((Date.now() - _startTs) / 1000);
+    const logEl2 = document.getElementById('rb-ai-log-' + uid);
+    if (logEl2) logEl2.textContent = `${_phase} (${secs}s)`;
     if (statusEl) statusEl.innerHTML = `<span style="color:var(--blue);font-size:11px">🤖 ${_phase} ${secs}s elapsed…</span>`;
-  }, 1000);
+  };
+  const _timer = setInterval(_updateLog, 1000);
 
-  // Show initial state with live log line
+  // Helper: fetch with 30s timeout
+  const _fetchWithTimeout = async (url, ms) => {
+    const ctrl = new AbortController();
+    const tid  = setTimeout(() => ctrl.abort(), ms);
+    try {
+      const r = await fetch(url, { signal: ctrl.signal });
+      clearTimeout(tid);
+      return r;
+    } catch(e) {
+      clearTimeout(tid);
+      throw new Error(e.name === 'AbortError' ? `Timed out after ${ms/1000}s` : e.message);
+    }
+  };
+
+  // Show initial state
   if (innerEl) innerEl.innerHTML = `
     <div style="font-size:18px">🤖</div>
     <div>
       <div style="font-size:13px;font-weight:700;color:var(--text2)">AI Agent analysing…</div>
       <div id="rb-ai-log-${uid}" style="font-size:11px;color:var(--blue);margin-top:3px">Trying Gemini AI… (0s)</div>
-      <div style="font-size:11px;color:var(--text3);margin-top:2px">Check Apps Script → Executions for server logs</div>
     </div>`;
 
   try {
-    // 60s timeout — NVIDIA cold starts can hang indefinitely without one
-    const _ctrl   = new AbortController();
-    const _toutId = setTimeout(() => _ctrl.abort(), 60000);
-    let resp, json;
-    try {
-      resp = await fetch(`${_rbScriptUrl}?action=getSipVerdict&ticker=${encodeURIComponent(sym)}`, { signal: _ctrl.signal });
-      clearTimeout(_toutId);
-    } catch(fetchErr) {
-      clearTimeout(_toutId);
-      throw new Error(fetchErr.name === 'AbortError' ? 'Timed out after 60s — check GAS Executions log' : 'Network error: ' + fetchErr.message);
+    // ── Attempt 1: Gemini only (fast, ~2s) ───────────────────────────────────
+    _phase = 'Trying Gemini AI…';
+    let resp = await _fetchWithTimeout(`${_rbScriptUrl}?action=getSipVerdict&ticker=${encodeURIComponent(sym)}&attempt=1`, 30000);
+    if (!resp.ok) throw new Error('HTTP ' + resp.status);
+    let json = await resp.json().catch(() => null);
+
+    if (json && json.rateLimited) {
+      // ── Gemini rate-limited → countdown 60s → retry ──────────────────────
+      _phase = 'Gemini rate limited (429)';
+      _updateLog();
+      let countdown = 60;
+      await new Promise(resolve => {
+        const cd = setInterval(() => {
+          countdown--;
+          _phase = `Gemini rate limited — retrying in ${countdown}s…`;
+          const logEl2 = document.getElementById('rb-ai-log-' + uid);
+          if (logEl2) logEl2.textContent = _phase;
+          if (statusEl) statusEl.innerHTML = `<span style="color:var(--yellow);font-size:11px">⏳ ${_phase}</span>`;
+          if (countdown <= 0) { clearInterval(cd); resolve(); }
+        }, 1000);
+      });
+
+      // ── Attempt 2: Gemini again → NVIDIA fallback if still fails ─────────
+      _phase = 'Retrying Gemini AI… (attempt 2)';
+      _updateLog();
+      resp = await _fetchWithTimeout(`${_rbScriptUrl}?action=getSipVerdict&ticker=${encodeURIComponent(sym)}&attempt=2`, 60000);
+      if (!resp.ok) throw new Error('HTTP ' + resp.status);
+      json = await resp.json().catch(() => null);
     }
-    if (!resp || !resp.ok) throw new Error('HTTP ' + (resp ? resp.status : '?'));
-    json = await resp.json().catch(() => null);
+
     if (!json || !json.ok) throw new Error(json ? json.error : 'Parse error');
     clearInterval(_timer);
 
@@ -5310,7 +5337,7 @@ async function _updateWatchlistVerdictWithAI(uid, sym, ticker, reportText) {
       <div>
         <div style="font-size:13px;font-weight:700;color:var(--red)">AI Agent failed after ${elapsed}s</div>
         <div style="font-size:12px;color:var(--text3);margin-top:2px">${err.message}</div>
-        <div style="font-size:11px;color:var(--text3);margin-top:4px">Check Apps Script → Executions for server-side logs. Re-Fetch to retry.</div>
+        <div style="font-size:11px;color:var(--text3);margin-top:4px">Re-Fetch to retry.</div>
       </div>`;
     if (statusEl) statusEl.innerHTML = `<span style="color:var(--red);font-size:11px">⚠ AI failed (${elapsed}s) — Re-Fetch to retry</span>`;
   }
