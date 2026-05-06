@@ -5173,31 +5173,37 @@ async function rbFetchFundamentals(uid, ticker, context, sheetTicker) {
     const vEl = document.getElementById('rb-verdict-' + uid);
     if (vEl) {
       vEl.style.display = 'block';
-      vEl.innerHTML = metricsHtml + `<div style="display:flex;align-items:flex-start;gap:10px">
-        <div style="font-size:18px">${_verdictIcon(result.verdict)}</div>
-        <div>
-          <div style="font-size:13px;font-weight:700;color:${_verdictColor(result.verdict)}">${result.verdict}</div>
-          <div style="font-size:12px;color:var(--text2);margin-top:2px">${result.reason}</div>
-          <div style="font-size:11px;color:var(--text3);margin-top:4px">Source: Yahoo Finance · ${new Date().toLocaleDateString('en-CA')}</div>
-        </div>
-      </div>`;
+      if (context === 'watchlist') {
+        // Show metrics immediately; AI verdict will replace the placeholder below
+        vEl.innerHTML = metricsHtml + `<div id="rb-ai-verdict-inner-${uid}" style="display:flex;align-items:flex-start;gap:10px">
+          <div style="font-size:18px">🤖</div>
+          <div>
+            <div style="font-size:13px;font-weight:700;color:var(--text2)">AI Agent analysing…</div>
+            <div style="font-size:12px;color:var(--text3);margin-top:2px">⏳ Running SIP suitability check…</div>
+          </div>
+        </div>`;
+      } else {
+        vEl.innerHTML = metricsHtml + `<div style="display:flex;align-items:flex-start;gap:10px">
+          <div style="font-size:18px">${_verdictIcon(result.verdict)}</div>
+          <div>
+            <div style="font-size:13px;font-weight:700;color:${_verdictColor(result.verdict)}">${result.verdict}</div>
+            <div style="font-size:12px;color:var(--text2);margin-top:2px">${result.reason}</div>
+            <div style="font-size:11px;color:var(--text3);margin-top:4px">Source: Yahoo Finance · ${new Date().toLocaleDateString('en-CA')}</div>
+          </div>
+        </div>`;
+      }
     }
 
     if (statusEl) statusEl.innerHTML = `<span style="color:var(--green);font-size:11px">✓ Fundamentals fetched — ${new Date().toLocaleDateString('en-CA')}</span>`;
 
     // Auto-select watchlist verdict buttons
     if (context === 'watchlist') {
-      const map = { 'Promote to Core SIP': 'promote', 'One-Time Investment': 'onetime', 'Hold in Watchlist': 'stay', 'Not Ready for Promotion': 'stay' };
-      const v = map[result.verdict] || 'stay';
-      ['promote','onetime','stay'].forEach(vv => {
-        const b = document.getElementById(`vbtn-${vv}-${uid}`);
-        if (b) b.classList.toggle('sel', vv === v);
-      });
-      _rbVerdicts[uid] = v;
+      // Fire AI verdict async — updates verdict div, buttons, cache, and sheet when done
+      _updateWatchlistVerdictWithAI(uid, sym, ticker, reportText);
+    } else {
+      // Save to Google Sheets immediately for non-watchlist
+      rbSaveReportToSheets(uid, ticker, context, reportText, result.verdict, result.reason, now);
     }
-
-    // Save to Google Sheets
-    rbSaveReportToSheets(uid, ticker, context, reportText, result.verdict, result.reason, now);
 
   } catch(err) {
     console.error('[YF Fundamentals]', err);
@@ -5207,6 +5213,75 @@ async function rbFetchFundamentals(uid, ticker, context, sheetTicker) {
   if (btn) {
     btn.disabled = false;
     btn.innerHTML = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 6v16l7-4 8 4 7-4V2l-7 4-8-4-7 4z"/><path d="M8 2v16M16 6v16"/></svg> Re-Fetch';
+  }
+}
+
+function _fmtOrdinalDate(d) {
+  const day = d.getDate();
+  const sfx = (day === 1 || day === 21 || day === 31) ? 'st' : (day === 2 || day === 22) ? 'nd' : (day === 3 || day === 23) ? 'rd' : 'th';
+  const months = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+  return String(day).padStart(2,'0') + sfx + ' ' + months[d.getMonth()] + ' ' + d.getFullYear();
+}
+
+async function _updateWatchlistVerdictWithAI(uid, sym, ticker, reportText) {
+  const innerEl  = document.getElementById('rb-ai-verdict-inner-' + uid);
+  const statusEl = document.getElementById('rb-rpt-status-' + uid);
+  if (statusEl) statusEl.innerHTML = `<span style="color:var(--blue);font-size:11px">🤖 AI Agent analysing ${ticker}…</span>`;
+
+  try {
+    const resp = await fetch(`${_rbScriptUrl}?action=getSipVerdict&ticker=${encodeURIComponent(sym)}`).catch(() => null);
+    if (!resp || !resp.ok) throw new Error('Network error');
+    const json = await resp.json().catch(() => null);
+    if (!json || !json.ok) throw new Error(json ? json.error : 'Parse error');
+
+    const aiYes    = json.verdict === 'YES';
+    const verdict  = aiYes ? 'Promote to Core SIP'        : 'Not suitable for Core SIP';
+    const reason   = aiYes ? 'AI Agent said: Promote to Core SIP — suitable for Bi-Weekly SIP investment.'
+                           : 'AI Agent said: Not suitable for Core SIP — does not meet SIP criteria right now.';
+    const color    = aiYes ? 'var(--green)' : 'var(--red)';
+    const icon     = aiYes ? '🟢' : '🔴';
+    const dateStr  = _fmtOrdinalDate(new Date());
+
+    if (innerEl) {
+      innerEl.innerHTML = `
+        <div style="font-size:18px">${icon}</div>
+        <div>
+          <div style="font-size:13px;font-weight:700;color:${color}">${verdict}</div>
+          <div style="font-size:12px;color:var(--text2);margin-top:2px">${reason}</div>
+          <div style="font-size:11px;color:var(--text3);margin-top:4px">Source: Gemini AI · ${dateStr}</div>
+        </div>`;
+    }
+    if (statusEl) statusEl.innerHTML = `<span style="color:var(--green);font-size:11px">✓ AI verdict received — ${dateStr}</span>`;
+
+    // Update cache + buttons
+    const now2 = new Date().toISOString();
+    if (_rbReportCache[uid]) { _rbReportCache[uid].verdict = verdict; _rbReportCache[uid].reason = reason; _rbReportCache[uid].analyzedOn = now2; }
+    const btnKey = aiYes ? 'promote' : 'stay';
+    ['promote','onetime','stay'].forEach(vv => {
+      const b = document.getElementById(`vbtn-${vv}-${uid}`);
+      if (b) b.classList.toggle('sel', vv === btnKey);
+    });
+    _rbVerdicts[uid] = btnKey;
+
+    // Save AI verdict to Google Sheets
+    rbSaveReportToSheets(uid, ticker, 'watchlist', reportText, verdict, reason, now2);
+
+  } catch(err) {
+    console.error('[AI SIP Verdict]', err);
+    if (innerEl) innerEl.innerHTML += `<div style="font-size:11px;color:var(--red);margin-top:6px">⚠ AI Agent failed: ${err.message} — using Yahoo scoring.</div>`;
+    if (statusEl) statusEl.innerHTML = `<span style="color:var(--yellow);font-size:11px">⚠ AI failed — Yahoo-based verdict shown above</span>`;
+    // Fall back to Yahoo-based verdict for buttons
+    if (_rbReportCache[uid]) {
+      const fbVerdict = _rbReportCache[uid].verdict;
+      const map = { 'Promote to Core SIP': 'promote', 'One-Time Investment': 'onetime', 'Hold in Watchlist': 'stay', 'Not Ready for Promotion': 'stay' };
+      const v = map[fbVerdict] || 'stay';
+      ['promote','onetime','stay'].forEach(vv => {
+        const b = document.getElementById(`vbtn-${vv}-${uid}`);
+        if (b) b.classList.toggle('sel', vv === v);
+      });
+      _rbVerdicts[uid] = v;
+      rbSaveReportToSheets(uid, ticker, 'watchlist', reportText, fbVerdict, _rbReportCache[uid].reason, new Date().toISOString());
+    }
   }
 }
 
