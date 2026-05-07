@@ -1608,18 +1608,6 @@ table.div-ht tfoot td{padding:10px 14px;font-size:13px;font-weight:700;backgroun
 
 <!-- PORTFOLIO REBALANCE PAGE -->
 <div id="pg-rebalance">
-<div id="rb-ai-banner" style="display:none;position:fixed;top:68px;left:0;right:0;z-index:999;background:#0a1827;border-bottom:1px solid rgba(61,159,255,.25);padding:10px 24px">
-  <div style="max-width:1400px;margin:0 auto;display:flex;align-items:center;gap:14px">
-    <span style="font-size:16px">🤖</span>
-    <div style="flex:1">
-      <div id="rb-ai-banner-text" style="font-size:12px;font-weight:600;color:var(--text);margin-bottom:5px">AI Analyzing portfolios…</div>
-      <div style="height:3px;background:var(--surface3);border-radius:2px;overflow:hidden">
-        <div id="rb-ai-banner-bar" style="height:100%;background:var(--blue);border-radius:2px;transition:width .5s;width:0%"></div>
-      </div>
-    </div>
-    <span id="rb-ai-banner-pct" style="font-size:11px;color:var(--text3);min-width:36px;text-align:right">0%</span>
-  </div>
-</div>
 <div class="rb-wrap">
 
   <!-- Back -->
@@ -1656,6 +1644,20 @@ table.div-ht tfoot td{padding:10px 14px;font-size:13px;font-weight:700;backgroun
 
   <!-- Results container (hidden until Run is clicked) -->
   <div id="rb-results" style="display:none">
+
+    <!-- AI PROGRESS BANNER — inline, just above command strip -->
+    <div id="rb-ai-banner" style="display:none;background:#0a1827;border:1px solid rgba(61,159,255,.25);border-radius:10px;padding:12px 20px;margin-bottom:14px">
+      <div style="display:flex;align-items:center;gap:14px">
+        <span style="font-size:16px">🤖</span>
+        <div style="flex:1">
+          <div id="rb-ai-banner-text" style="font-size:12px;font-weight:600;color:var(--text);margin-bottom:5px">AI Analyzing portfolios…</div>
+          <div style="height:4px;background:var(--surface3);border-radius:2px;overflow:hidden">
+            <div id="rb-ai-banner-bar" style="height:100%;background:var(--blue);border-radius:2px;transition:width .5s;width:0%"></div>
+          </div>
+        </div>
+        <span id="rb-ai-banner-pct" style="font-size:11px;color:var(--text3);min-width:36px;text-align:right">0%</span>
+      </div>
+    </div>
 
     <!-- COMMAND STRIP — populated by _rbRenderCommandStrip() after analysis runs -->
     <div id="rb-cmd-strip">
