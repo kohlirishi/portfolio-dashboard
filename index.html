@@ -1608,6 +1608,18 @@ table.div-ht tfoot td{padding:10px 14px;font-size:13px;font-weight:700;backgroun
 
 <!-- PORTFOLIO REBALANCE PAGE -->
 <div id="pg-rebalance">
+<div id="rb-ai-banner" style="display:none;position:sticky;top:68px;z-index:500;background:#0a1827;border-bottom:1px solid rgba(61,159,255,.25);padding:10px 24px">
+  <div style="max-width:1400px;margin:0 auto;display:flex;align-items:center;gap:14px">
+    <span style="font-size:16px">🤖</span>
+    <div style="flex:1">
+      <div id="rb-ai-banner-text" style="font-size:12px;font-weight:600;color:var(--text);margin-bottom:5px">AI Analyzing portfolios…</div>
+      <div style="height:3px;background:var(--surface3);border-radius:2px;overflow:hidden">
+        <div id="rb-ai-banner-bar" style="height:100%;background:var(--blue);border-radius:2px;transition:width .5s;width:0%"></div>
+      </div>
+    </div>
+    <span id="rb-ai-banner-pct" style="font-size:11px;color:var(--text3);min-width:36px;text-align:right">0%</span>
+  </div>
+</div>
 <div class="rb-wrap">
 
   <!-- Back -->
@@ -4886,6 +4898,8 @@ let _rbVerdicts     = {};   // watchlist promotion verdicts
 let _rbAnalysisData = null; // last computed analysis
 let _rbReportCache  = {};   // { [uid]: { reportText, verdict, reason, analyzedOn, savedToSheets } }
 let _rbFAICache     = {};   // { [ticker]: { verdict, analyzedOn } } — Section F AI verdicts, localStorage-backed
+let _rbAIBannerDone  = 0;  // completed AI calls (G + F combined) for progress banner
+let _rbAIBannerTotal = 0;  // total AI calls queued for progress banner
 (function _rbFAILoadCache() {
   try { const r = localStorage.getItem('rbFAICache'); if (r) Object.assign(_rbFAICache, JSON.parse(r)); } catch(e) {}
 })();
@@ -5186,6 +5200,11 @@ async function rbFetchFundamentals(uid, ticker, context, sheetTicker, skipAi) {
             <div style="font-size:12px;color:var(--text3);margin-top:2px">⏳ Running SIP suitability check…</div>
           </div>
         </div>`;
+      } else if (context === 'deadweight') {
+        // Show metrics grid only — no Yahoo verdict. AI verdict shown in rb-f-ai-TICKER below.
+        vEl.innerHTML = metricsHtml;
+        const faiEl = document.getElementById('rb-f-ai-' + ticker);
+        if (faiEl) faiEl.innerHTML = `<span style="color:var(--blue);font-size:11px">🤖 AI analyzing ${ticker}… (0s)</span>`;
       } else {
         vEl.innerHTML = metricsHtml + `<div style="display:flex;align-items:flex-start;gap:10px">
           <div style="font-size:18px">${_verdictIcon(result.verdict)}</div>
@@ -5204,8 +5223,13 @@ async function rbFetchFundamentals(uid, ticker, context, sheetTicker, skipAi) {
     if (context === 'watchlist') {
       // Fire AI verdict async — updates verdict div, buttons, cache, and sheet when done
       if (!skipAi) _updateWatchlistVerdictWithAI(uid, sym, ticker, reportText);
+    } else if (context === 'deadweight') {
+      // Don't save Yahoo verdict — AI verdict will be saved when AI call completes
+      if (_rbReportCache[uid]) _rbReportCache[uid].verdict = '';
+      // Trigger single-stock AI analysis with live timer (non-blocking)
+      if (!skipAi) _rbRunSingleFAI(ticker);
     } else {
-      // Save to Google Sheets immediately for non-watchlist
+      // Save to Google Sheets immediately for non-watchlist (core, J contexts)
       rbSaveReportToSheets(uid, ticker, context, reportText, result.verdict, result.reason, now);
     }
 
@@ -5415,11 +5439,12 @@ function runRebalance() {
     // Auto-fetch fundamentals for demote candidates (stale > 7 days or missing)
     // then filter out stocks where fundamentals say Hold — no demotion needed
     await _rbAutoFetchAndFilterDemote();
-    // Auto-run AI for Section G (watchlist) — sequential, skip if cached < 7 days
-    await _rbAutoRunSectionGAI();
-    // Auto-run AI for Section F (dead weight) after Section G completes to avoid rate-limit collision
-    await _rbAutoRunSectionFAI();
-    // Update command strip chips with final AI counts
+    // Run Section G and F AI queues in parallel (each internally sequential with 2s gap)
+    const _aiTotalCount = (typeof ALL !== 'undefined' ? ALL.filter(d => d.isWatch).length : 0) +
+      (_rbAnalysisData ? (_rbAnalysisData.deadWeight || []).length : 0);
+    _rbAIBannerShow(_aiTotalCount);
+    await Promise.all([_rbAutoRunSectionGAI(), _rbAutoRunSectionFAI()]);
+    _rbAIBannerHide();
     _rbUpdateCommandStripAfterAI();
   }, 80);
 }
@@ -6216,6 +6241,128 @@ function _rbFAISaveCache(ticker, verdict) {
   try { localStorage.setItem('rbFAICache', JSON.stringify(_rbFAICache)); } catch(e) {}
 }
 
+// ── Shared timeout helper for Section F AI calls ──────────────────────────────
+async function _rbFAIFetchWithTimeout(url, ms) {
+  const ctrl = new AbortController();
+  const tid  = setTimeout(() => ctrl.abort(), ms);
+  try {
+    const r = await fetch(url, { signal: ctrl.signal });
+    clearTimeout(tid);
+    return r;
+  } catch(e) {
+    clearTimeout(tid);
+    throw new Error(e.name === 'AbortError' ? `Timed out after ${ms / 1000}s` : e.message);
+  }
+}
+
+// ── Core GAS call: attempt 1 → rate-limit countdown → attempt 2. Live timer in aiEl. ──
+async function _rbFAICallGAS(ticker, aiEl) {
+  const startTs = Date.now();
+  let phase = 'Trying Mistral AI…';
+  const _tick = () => {
+    const secs = Math.floor((Date.now() - startTs) / 1000);
+    if (aiEl) aiEl.innerHTML = `<span style="color:var(--blue);font-size:11px">🤖 ${phase} (${secs}s)</span>`;
+  };
+  const timer = setInterval(_tick, 1000);
+  _tick();
+  try {
+    let resp = await _rbFAIFetchWithTimeout(
+      `${_rbScriptUrl}?action=getSipVerdict&ticker=${encodeURIComponent(ticker)}&attempt=1`, 45000);
+    if (!resp.ok) throw new Error('HTTP ' + resp.status);
+    let json = await resp.json().catch(() => null);
+
+    if (json && json.rateLimited) {
+      let countdown = 60;
+      await new Promise(resolve => {
+        const cd = setInterval(() => {
+          countdown--;
+          phase = `Rate limited — retrying in ${countdown}s…`;
+          _tick();
+          if (countdown <= 0) { clearInterval(cd); resolve(); }
+        }, 1000);
+      });
+      phase = 'Retrying (attempt 2)…';
+      _tick();
+      resp = await _rbFAIFetchWithTimeout(
+        `${_rbScriptUrl}?action=getSipVerdict&ticker=${encodeURIComponent(ticker)}&attempt=2`, 60000);
+      if (!resp.ok) throw new Error('HTTP ' + resp.status);
+      json = await resp.json().catch(() => null);
+    }
+
+    clearInterval(timer);
+    if (json && json.ok && (json.verdict === 'YES' || json.verdict === 'NO')) return json.verdict;
+    return 'ERROR';
+  } catch(err) {
+    clearInterval(timer);
+    console.error('[FAI] ' + ticker + ':', err.message);
+    return 'ERROR';
+  }
+}
+
+// ── Save AI verdict for dead weight stock and update Sheets ───────────────────
+function _rbFAISaveAndReport(ticker, verdict) {
+  _rbFAISaveCache(ticker, verdict);
+  _rbShowFAIVerdict(ticker, verdict);
+  const uid    = 'f_' + ticker;
+  const cached = _rbReportCache[uid] || {};
+  if (!cached.reportText) return;
+  const aiVerdict = verdict === 'YES' ? 'Keep in Core SIP — Thesis Intact'
+                  : verdict === 'NO'  ? 'Move to Watchlist — Stop SIP'
+                  : 'Manual Review Needed';
+  const aiReason  = verdict === 'YES' ? 'AI analysis confirms the long-term thesis is intact despite short-term price weakness.'
+                  : verdict === 'NO'  ? 'AI analysis suggests fundamentals may be weakening. Review fundamental report before acting.'
+                  : 'AI analysis inconclusive — manual review required.';
+  if (_rbReportCache[uid]) { _rbReportCache[uid].verdict = aiVerdict; _rbReportCache[uid].reason = aiReason; }
+  rbSaveReportToSheets(uid, ticker, 'deadweight', cached.reportText, aiVerdict, aiReason, new Date().toISOString());
+}
+
+// ── Single-stock AI for Section F — called by Re-Fetch button or manual trigger ──
+async function _rbRunSingleFAI(ticker) {
+  const faiEl = document.getElementById('rb-f-ai-' + ticker);
+  const verdict = await _rbFAICallGAS(ticker, faiEl);
+  _rbFAISaveAndReport(ticker, verdict);
+}
+
+// ── Progress banner helpers ────────────────────────────────────────────────────
+function _rbAIBannerShow(total) {
+  _rbAIBannerTotal = total || 0;
+  _rbAIBannerDone  = 0;
+  const el = document.getElementById('rb-ai-banner');
+  const textEl = document.getElementById('rb-ai-banner-text');
+  const barEl  = document.getElementById('rb-ai-banner-bar');
+  const pctEl  = document.getElementById('rb-ai-banner-pct');
+  if (textEl) textEl.textContent = `AI Analyzing portfolios… (0/${_rbAIBannerTotal})`;
+  if (barEl)  barEl.style.width  = '0%';
+  if (pctEl)  pctEl.textContent  = '0%';
+  if (el) el.style.display = 'block';
+}
+
+function _rbAIBannerUpdate(ticker, section) {
+  _rbAIBannerDone++;
+  const pct    = _rbAIBannerTotal > 0 ? Math.round(_rbAIBannerDone / _rbAIBannerTotal * 100) : 100;
+  const textEl = document.getElementById('rb-ai-banner-text');
+  const barEl  = document.getElementById('rb-ai-banner-bar');
+  const pctEl  = document.getElementById('rb-ai-banner-pct');
+  const label  = ticker ? `AI Analyzing: ${ticker} · Section ${section} (${_rbAIBannerDone}/${_rbAIBannerTotal})`
+                        : `AI Analyzing portfolios… (${_rbAIBannerDone}/${_rbAIBannerTotal})`;
+  if (textEl) textEl.textContent = label;
+  if (barEl)  barEl.style.width  = pct + '%';
+  if (pctEl)  pctEl.textContent  = pct + '%';
+}
+
+function _rbAIBannerHide() {
+  const textEl = document.getElementById('rb-ai-banner-text');
+  const barEl  = document.getElementById('rb-ai-banner-bar');
+  const pctEl  = document.getElementById('rb-ai-banner-pct');
+  if (textEl) textEl.textContent = `✅ AI Analysis complete (${_rbAIBannerTotal} stocks analyzed)`;
+  if (barEl)  barEl.style.width  = '100%';
+  if (pctEl)  pctEl.textContent  = '100%';
+  setTimeout(() => {
+    const el = document.getElementById('rb-ai-banner');
+    if (el) el.style.display = 'none';
+  }, 3000);
+}
+
 // ── Auto-run AI for Section G (watchlist stocks) ──────────────────────────────
 async function _rbAutoRunSectionGAI() {
   const watch = typeof ALL !== 'undefined' ? ALL.filter(d => d.isWatch) : [];
@@ -6235,10 +6382,11 @@ async function _rbAutoRunSectionGAI() {
     const isRecent    = cached.analyzedOn && (Date.now() - new Date(cached.analyzedOn).getTime() < SEVEN_DAYS);
     if (isAIVerdict && isRecent) {
       console.log('[AutoAI-G] Skipping ' + d.ticker + ' — AI verdict cached');
+      _rbAIBannerUpdate(d.ticker, 'G');
       continue;
     }
 
-    if (lastRunEl) lastRunEl.textContent = `AI Analyzing ${i + 1}/${watch.length}: ${d.ticker}…`;
+    if (lastRunEl) lastRunEl.textContent = `AI Analyzing G (${i + 1}/${watch.length}): ${d.ticker}…`;
 
     // Ensure rb-ai-verdict-inner-${uid} exists so _updateWatchlistVerdictWithAI can update it
     const verdictDiv = document.getElementById('rb-verdict-' + uid);
@@ -6255,6 +6403,7 @@ async function _rbAutoRunSectionGAI() {
     const sym        = typeof sheetTickerToFMP === 'function' ? (sheetTickerToFMP(d.ticker_v || '') || d.ticker) : d.ticker;
     const reportText = cached.reportText || ('[YF] ' + d.ticker);
     await _updateWatchlistVerdictWithAI(uid, sym, d.ticker, reportText);
+    _rbAIBannerUpdate(d.ticker, 'G');
 
     if (i < watch.length - 1) await new Promise(r => setTimeout(r, 2000));
   }
@@ -6274,19 +6423,6 @@ async function _rbAutoRunSectionFAI() {
   const lastRunEl  = document.getElementById('rb-last-run');
   console.log('[AutoAI-F] Starting Section F AI for ' + deadWeight.length + ' dead weight stock(s)…');
 
-  const _faiWithTimeout = async (url, ms) => {
-    const ctrl = new AbortController();
-    const tid  = setTimeout(() => ctrl.abort(), ms);
-    try {
-      const r = await fetch(url, { signal: ctrl.signal });
-      clearTimeout(tid);
-      return r;
-    } catch(e) {
-      clearTimeout(tid);
-      throw new Error(e.name === 'AbortError' ? `Timed out after ${ms / 1000}s` : e.message);
-    }
-  };
-
   for (let i = 0; i < deadWeight.length; i++) {
     const d = deadWeight[i];
 
@@ -6296,44 +6432,16 @@ async function _rbAutoRunSectionFAI() {
         (Date.now() - new Date(faiCached.analyzedOn).getTime() < SEVEN_DAYS)) {
       console.log('[AutoAI-F] Skipping ' + d.ticker + ' — cached');
       _rbShowFAIVerdict(d.ticker, faiCached.verdict);
+      _rbAIBannerUpdate(d.ticker, 'F');
       continue;
     }
 
-    if (lastRunEl) lastRunEl.textContent = `AI Analyzing Section F (${i + 1}/${deadWeight.length}): ${d.ticker}…`;
-    const aiEl = document.getElementById('rb-f-ai-' + d.ticker);
-    if (aiEl) aiEl.innerHTML = `<span style="color:var(--blue);font-size:11px">🤖 Analyzing ${d.ticker}…</span>`;
+    if (lastRunEl) lastRunEl.textContent = `AI Analyzing F (${i + 1}/${deadWeight.length}): ${d.ticker}…`;
+    _rbAIBannerUpdate(d.ticker, 'F');
 
-    let verdict = 'ERROR';
-    try {
-      let resp = await _faiWithTimeout(
-        `${_rbScriptUrl}?action=getSipVerdict&ticker=${encodeURIComponent(d.ticker)}&attempt=1`, 45000);
-      if (!resp.ok) throw new Error('HTTP ' + resp.status);
-      let json = await resp.json().catch(() => null);
-
-      if (json && json.rateLimited) {
-        let countdown = 60;
-        await new Promise(resolve => {
-          const cd = setInterval(() => {
-            countdown--;
-            if (aiEl) aiEl.innerHTML = `<span style="color:var(--yellow);font-size:11px">⏳ Rate limited — retrying in ${countdown}s…</span>`;
-            if (countdown <= 0) { clearInterval(cd); resolve(); }
-          }, 1000);
-        });
-        resp = await _faiWithTimeout(
-          `${_rbScriptUrl}?action=getSipVerdict&ticker=${encodeURIComponent(d.ticker)}&attempt=2`, 60000);
-        if (!resp.ok) throw new Error('HTTP ' + resp.status);
-        json = await resp.json().catch(() => null);
-      }
-
-      if (json && json.ok && (json.verdict === 'YES' || json.verdict === 'NO')) {
-        verdict = json.verdict;
-      }
-    } catch(err) {
-      console.error('[AutoAI-F] ' + d.ticker + ':', err.message);
-    }
-
-    _rbFAISaveCache(d.ticker, verdict);
-    _rbShowFAIVerdict(d.ticker, verdict);
+    const faiEl  = document.getElementById('rb-f-ai-' + d.ticker);
+    const verdict = await _rbFAICallGAS(d.ticker, faiEl);
+    _rbFAISaveAndReport(d.ticker, verdict);
 
     if (i < deadWeight.length - 1) await new Promise(r => setTimeout(r, 2000));
   }
