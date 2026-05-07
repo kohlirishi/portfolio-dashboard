@@ -6305,153 +6305,79 @@ function rbCopySipPrompt(ticker, btn) {
 
   const prompt =
     'ROLE:\n' +
-    'You are a senior equity research analyst with 200 IQ and 20+ years \n' +
-    'of experience. You are also a Peter Lynch-style fundamental analyst.\n\n' +
-    'INPUT:\n' +
-    'User will give you only a stock name or ticker symbol.\n\n' +
-    'YOUR JOB:\n' +
-    'Run a complete internal analysis of this stock covering every single \n' +
-    'item listed below. Do ALL the work silently inside your reasoning. \n' +
-    'Do not show any working, tables, charts, sections, or explanations.\n\n' +
-    'YOUR ONLY OUTPUT:\n' +
-    'A single word. Either YES or NO.\n' +
-    'Nothing else. No explanation. No punctuation. No emoji. Just the word.\n\n' +
-    'YES means: This stock is suitable for a Bi-Weekly SIP investment \n' +
-    'for a 35-year-old investor with a 10-year horizon starting today.\n\n' +
-    'NO means: This stock does NOT meet the criteria for a Bi-Weekly SIP \n' +
-    'investment for this investor profile right now.\n\n' +
+    'You are a senior equity research analyst with 20+ years of experience\n' +
+    'and deep expertise in Peter Lynch-style fundamental investing.\n\n' +
+    'QUESTION:\n' +
+    'The investor already owns this stock and is running a bi-weekly SIP.\n' +
+    'Should they CONTINUE or STOP their SIP?\n\n' +
+    'This is NOT about whether to buy today.\n' +
+    'This is ONLY about whether the underlying business is healthy enough\n' +
+    'to keep investing in over the next 10 years.\n\n' +
+    'YOUR ONLY OUTPUT: YES (continue SIP) or NO (stop SIP).\n' +
+    'One word only. No explanation. No punctuation. No emoji.\n\n' +
     '---\n\n' +
-    'INTERNAL ANALYSIS CHECKLIST (run silently, output nothing):\n\n' +
-    'FUNDAMENTALS:\n' +
-    '- Is revenue growing over the last 8 quarters?\n' +
-    '- Is net profit positive and growing?\n' +
-    '- Is Debt-to-Equity below 1.0?\n' +
-    '- Are reserves greater than borrowings?\n' +
-    '- Is the company profitable and has been for at least 3 years?\n' +
-    '- Will this company likely survive the next 15 years?\n\n' +
-    'VALUATION:\n' +
-    '- Is P/E ratio reasonable vs peers and historical average?\n' +
-    '- Is forward P/E attractive for entry today?\n' +
-    '- Is DCF intrinsic value above or near current market price?\n' +
-    '- Is the stock undervalued or fairly valued (not significantly overvalued)?\n\n' +
-    'TECHNICALS:\n' +
-    '- Is the stock above its 200-day MA on the weekly chart?\n' +
-    '- Is the stock above its 30-week MA?\n' +
-    '- Is RSI in a healthy range (not overbought above 75)?\n' +
-    '- Is MACD showing positive momentum or neutral?\n' +
-    '- Is there a bullish chart pattern present?\n' +
-    '- Has the stock recently reclaimed the 220-day MA after being below it (within last 60 bars)?\n\n' +
-    'MANAGEMENT AND GOVERNANCE:\n' +
-    '- Is promoter/insider holding stable (no drop more than 5%)?\n' +
-    '- Are pledged promoter shares below 5%?\n' +
-    '- Is management quality score 6 or above out of 10?\n' +
-    '- Are insiders buying or at least not aggressively dumping?\n\n' +
-    'PETER LYNCH FRAMEWORK:\n' +
-    '- Classify into one of Lynch\'s 6 categories\n' +
-    '- Is PEG ratio below 1.5?\n' +
-    '- Does it pass at least 7 out of 13 on Lynch\'s perfect stock checklist?\n' +
-    '- Are there NO major red flags as defined by Lynch?\n' +
-    '- Is Lynch\'s verdict BUY or at most WAIT (not AVOID)?\n\n' +
-    'RISK:\n' +
-    '- Is news sentiment score neutral to positive (above -0.2)?\n' +
-    '- Are there no new material risk factors that could break the thesis within 10 years?\n' +
-    '- Is short interest low and institutional ownership stable or growing?\n\n' +
-    'SIP SUITABILITY:\n' +
-    '- Is this stock suitable for systematic bi-weekly investment over 10 years for a 35-year-old?\n' +
-    '- Does dollar-cost averaging work well for this stock\'s volatility profile?\n' +
-    '- Is the long-term (5-year and 10-year) return history positive?\n' +
-    '- Is the stock part of a growing industry with tailwinds for the next decade?\n\n' +
-    'EXISTING ETF OVERLAP CHECK (run silently):\n' +
-    'Check if this stock already has significant exposure in these ETFs the investor holds.\n' +
-    'If the investor already gets heavy exposure via existing ETFs, reduce the YES conviction\n' +
-    'but do not override to NO based on overlap alone:\n' +
-    'SMH, IBIT, DTCR, IHE, URA, VOO, PICK, VPU, XLP, VEQT, SIVR, IWR, IAU, ROKT, XLF,\n' +
-    'CIB520, CIB530, ATL8099, CIB524, ATL496\n\n' +
+    'EVALUATE ONLY THESE FUNDAMENTALS (run silently, output nothing):\n\n' +
+    '1. Is revenue growing or stable over the last 4 to 8 quarters?\n' +
+    '2. Is the company profitable with positive net income?\n' +
+    '3. Is Debt-to-Equity below 2.0?\n' +
+    '4. Is the company likely to exist and be profitable in 10 years?\n' +
+    '5. Is the business deterioration temporary (macro/cycle) or structural?\n' +
+    '6. Would Peter Lynch classify this as a company worth holding long-term?\n' +
+    '7. Are there any fraud, governance, or irreversible trust issues?\n' +
+    '8. Is free cash flow positive or on a recovery trajectory?\n\n' +
+    'DO NOT EVALUATE ANY OF THE FOLLOWING — THEY ARE IRRELEVANT HERE:\n' +
+    '- Current stock price vs 200-day moving average\n' +
+    '- Stock price vs 30-week moving average\n' +
+    '- RSI, MACD, or any technical indicator\n' +
+    '- Whether today is a good entry point\n' +
+    '- Short-term price momentum or recent price action\n' +
+    '- Whether the stock is above or below any moving average\n\n' +
+    'Reason: The investor already owns this stock. Technical entry signals\n' +
+    'are irrelevant for someone deciding whether to continue an existing SIP.\n\n' +
     '---\n\n' +
-    'DECISION LOGIC:\n' +
-    'Score the stock on the full checklist above.\n\n' +
-    'Output YES only if ALL of the following are true:\n' +
-    '1. Fundamentals are healthy (revenue up, profitable, low debt)\n' +
-    '2. Valuation is not significantly overvalued vs intrinsic value\n' +
-    '3. Stock is above 200-day MA and 30-week MA on weekly chart\n' +
-    '4. No major red flags from Lynch framework\n' +
-    '5. PEG ratio is below 2.0\n' +
-    '6. Management quality is acceptable\n' +
-    '7. 5-year and 10-year return history is positive\n' +
-    '8. Long-term business survival for 15 years is likely\n' +
-    '9. Lynch verdict is BUY or WAIT with near-term catalyst, not AVOID\n' +
-    '10. News sentiment is not strongly negative (below -0.5)\n\n' +
-    'Output NO if ANY of the following are true:\n' +
-    '1. Company is unprofitable with no clear path to profit\n' +
-    '2. Debt-to-Equity is above 2.0\n' +
-    '3. Stock is below its 200-day MA and 30-week MA on weekly chart with no reclaim signal\n' +
-    '4. Lynch verdict is AVOID\n' +
-    '5. PEG ratio is above 3.0\n' +
-    '6. Major red flags present (heavy debt in turnaround, revenue declining multiple quarters,\n' +
-    '   insiders dumping)\n' +
-    '7. News sentiment is strongly negative (below -0.5) with no fundamental counter-argument\n' +
-    '8. Business survival for 15 years is doubtful\n' +
-    '9. RSI is above 80 AND no fundamental justification for momentum\n\n' +
+    'OUTPUT YES if ALL of the following are true:\n' +
+    '- Business is fundamentally sound\n' +
+    '- Likely to be stronger in 3 to 5 years than it is today\n' +
+    '- Price weakness is macro, sector, or cyclical — not structural\n' +
+    '- None of the hard NO conditions below are triggered\n\n' +
+    'OUTPUT NO only if ANY of these 6 hard conditions are met:\n' +
+    '1. Revenue declining for 3 or more consecutive quarters\n' +
+    '   with no recovery signal visible\n' +
+    '2. Debt-to-Equity above 2.0 AND actively rising quarter over quarter\n' +
+    '3. Company will likely not survive the next 10 years\n' +
+    '4. Management fraud or irreparably destroyed shareholder trust\n' +
+    '5. Free cash flow deeply negative with no recovery path in sight\n' +
+    '6. Peter Lynch would unambiguously classify verdict as AVOID\n' +
+    '   (not just WAIT or HOLD)\n\n' +
+    'IMPORTANT: Cyclical businesses (commodity, housing, telecom,\n' +
+    'healthcare) go through down cycles. A down cycle is NOT a reason\n' +
+    'to stop SIP. A broken business model IS a reason to stop SIP.\n' +
+    'Know the difference before deciding.\n\n' +
     '---\n\n' +
-    'SPECIAL RULE — THIS IS A DEAD WEIGHT STOCK (ALREADY OWNED):\n' +
-    'The investor already holds this stock. The question is NOT "should I buy today?"\n' +
-    'The question is "should I STOP my ongoing bi-weekly SIP on a stock I already own?"\n\n' +
-    'Apply a HIGHER BAR for NO than you normally would:\n' +
-    '- Cyclical weakness (housing slowdown, rate environment, sector rotation) → NOT sufficient for NO\n' +
-    '- Short-term price drops alone, even severe ones → NOT sufficient for NO\n' +
-    '- Temporary underperformance vs market → NOT sufficient for NO\n\n' +
-    'TECHNICAL OVERRIDE — 200-DAY MA RULE SUSPENDED FOR THIS ANALYSIS:\n' +
-    'Do NOT fire a NO verdict because the stock is below its 200-day MA or 30-week MA.\n' +
-    'A stock can be below its 200-day MA purely due to broad market selloffs, sector\n' +
-    'rotation, or macro headwinds — none of which break the long-term SIP thesis for\n' +
-    'a 10-year investor who already holds the position.\n' +
-    'Ignore the 200-day MA, 30-week MA, and RSI checks from the DECISION LOGIC above\n' +
-    'when evaluating this dead weight stock. They do not apply here.\n\n' +
-    'Only output NO if ANY of these 5 hard conditions are met:\n' +
-    '1. Revenue declining for 3 or more consecutive quarters with no recovery in sight\n' +
-    '2. Debt-to-Equity ratio above 2.0 AND rising\n' +
-    '3. Lynch verdict is unambiguously AVOID (not just WAIT)\n' +
-    '4. Business survival for the next 10–15 years is genuinely doubtful\n' +
-    '5. Management has committed fraud or destroyed shareholder trust irreparably\n\n' +
-    'Everything else — including below 200MA, RSI, sector rotation, macro headwinds —\n' +
-    'is considered noise for an existing long-term SIP position.\n\n' +
-    'Output YES if:\n' +
-    '- The business will likely be fundamentally stronger in 3–5 years than it is today\n' +
-    '- Temporary price weakness is driven by macro or sector forces, not business deterioration\n' +
-    '- Stopping SIP now would lock in losses and miss the recovery DCA benefit\n\n' +
+    'INVESTOR PROFILE:\n' +
+    '- Age: 35 years old\n' +
+    '- SIP horizon: 10 years\n' +
+    '- Already invested in this stock\n' +
+    '- Stopping SIP now = locking in losses permanently\n' +
+    '- Continuing SIP = dollar cost averaging at lower price\n' +
+    '- Only broken fundamentals justify stopping SIP\n\n' +
+    'EXISTING ETF OVERLAP (do not auto-reject based on overlap alone):\n' +
+    'Investor already holds: SMH, IBIT, DTCR, IHE, URA, VOO, PICK,\n' +
+    'VPU, XLP, VEQT, SIVR, IWR, IAU, ROKT, XLF, CIB520, CIB530,\n' +
+    'ATL8099, CIB524, ATL496\n\n' +
     '---\n\n' +
     'FINAL OUTPUT RULE:\n' +
     'Respond with exactly one word.\n' +
-    'If suitable for SIP: YES\n' +
-    'If not suitable for SIP: NO\n\n' +
+    'YES = continue SIP, business is fundamentally sound\n' +
+    'NO = stop SIP, fundamentals are broken\n\n' +
     'Stock to analyse: ' + tickerFull + '\n\n' +
-    'INVESTOR\'S CURRENT POSITION IN THIS STOCK:\n' +
-    '- Total Invested (Cost Basis): $' + inv + ' USD\n' +
-    '- Current Portfolio Value: $' + curval + ' USD\n' +
-    '- Personal P&L Percentage: ' + plP + '%\n' +
-    '- Personal P&L Amount: $' + plAmt + ' USD\n' +
+    'INVESTOR CURRENT POSITION:\n' +
+    '- Total Invested: ' + inv + ' USD\n' +
+    '- Current Value: ' + curval + ' USD\n' +
+    '- Personal P&L: ' + plP + '%\n' +
     '- Last 30-Day Return: ' + s30d + '%\n' +
     '- Year-to-Date Return: ' + ytd + '%\n' +
-    '- Monthly SIP Amount: CAD $' + sip + '\n\n' +
-    'CONTEXT FOR YOUR ANALYSIS:\n' +
-    'The investor has already deployed the above capital in this stock.\n' +
-    'This stock appeared in the Dead Weight section — it is BOTH YTD\n' +
-    'negative AND 30-day negative at the time of this analysis.\n\n' +
-    'Apply the following reasoning logic using the portfolio data above:\n\n' +
-    'If the stock is fundamentally sound (revenue growing, profitable,\n' +
-    'low debt, business survives 15 years) AND the price weakness is\n' +
-    'likely temporary (macro/sector headwinds, housing cycle, rate cycle)\n' +
-    '→ lean YES — investor should continue SIP to dollar-cost average down.\n' +
-    'Stopping SIP here would lock in the loss and miss the recovery.\n\n' +
-    'If fundamentals are deteriorating (revenue declining multiple quarters,\n' +
-    'rising debt, management issues, Lynch verdict AVOID)\n' +
-    '→ lean NO — investor should stop SIP and move stock to Watchlist.\n' +
-    'Continuing SIP into a fundamentally broken stock destroys capital.\n\n' +
-    'IMPORTANT RULE FOR THIS INVESTOR:\n' +
-    'This investor has a 10-year horizon. Short-term price drops alone\n' +
-    'are NEVER a reason to stop SIP if the business is fundamentally healthy.\n' +
-    'Only broken fundamentals justify a NO verdict here.\n\n' +
-    'Stock: ' + tickerFull;
+    '- Monthly SIP Amount: CAD $' + sip;
 
   navigator.clipboard.writeText(prompt).then(() => {
     const orig = btn.innerHTML;
