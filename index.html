@@ -6292,6 +6292,16 @@ function _rbFAISaveCache(ticker, verdict) {
 // ── Shared timeout helper for Section F AI calls ──────────────────────────────
 // ── Copy the exact SIP suitability prompt that GAS sends to the AI ────────────
 function rbCopySipPrompt(ticker, btn) {
+  const stock  = (typeof ALL !== 'undefined' ? ALL.find(d => d.ticker === ticker) : null) || {};
+  const inv    = stock.inv    != null ? stock.inv    : 'N/A';
+  const curval = stock.curval != null ? stock.curval : 'N/A';
+  const plP    = stock.plP    != null ? stock.plP    : 'N/A';
+  const s30d   = stock.s30d   != null ? stock.s30d   : 'N/A';
+  const ytd    = stock.ytd    != null ? stock.ytd    : 'N/A';
+  const sip    = stock.sip    != null ? stock.sip    : 'N/A';
+  const plAmt  = (inv !== 'N/A' && curval !== 'N/A')
+    ? (parseFloat(curval) - parseFloat(inv)).toFixed(2) : 'N/A';
+
   const prompt =
     'ROLE:\n' +
     'You are a senior equity research analyst with 200 IQ and 20+ years \n' +
@@ -6386,7 +6396,34 @@ function rbCopySipPrompt(ticker, btn) {
     'Respond with exactly one word.\n' +
     'If suitable for SIP: YES\n' +
     'If not suitable for SIP: NO\n\n' +
-    'Stock to analyse: ' + ticker;
+    'Stock to analyse: ' + ticker + '\n\n' +
+    'INVESTOR\'S CURRENT POSITION IN THIS STOCK:\n' +
+    '- Total Invested (Cost Basis): $' + inv + ' USD\n' +
+    '- Current Portfolio Value: $' + curval + ' USD\n' +
+    '- Personal P&L Percentage: ' + plP + '%\n' +
+    '- Personal P&L Amount: $' + plAmt + ' USD\n' +
+    '- Last 30-Day Return: ' + s30d + '%\n' +
+    '- Year-to-Date Return: ' + ytd + '%\n' +
+    '- Monthly SIP Amount: CAD $' + sip + '\n\n' +
+    'CONTEXT FOR YOUR ANALYSIS:\n' +
+    'The investor has already deployed the above capital in this stock.\n' +
+    'This stock appeared in the Dead Weight section — it is BOTH YTD\n' +
+    'negative AND 30-day negative at the time of this analysis.\n\n' +
+    'Apply the following reasoning logic using the portfolio data above:\n\n' +
+    'If the stock is fundamentally sound (revenue growing, profitable,\n' +
+    'low debt, business survives 15 years) AND the price weakness is\n' +
+    'likely temporary (macro/sector headwinds, housing cycle, rate cycle)\n' +
+    '→ lean YES — investor should continue SIP to dollar-cost average down.\n' +
+    'Stopping SIP here would lock in the loss and miss the recovery.\n\n' +
+    'If fundamentals are deteriorating (revenue declining multiple quarters,\n' +
+    'rising debt, management issues, Lynch verdict AVOID)\n' +
+    '→ lean NO — investor should stop SIP and move stock to Watchlist.\n' +
+    'Continuing SIP into a fundamentally broken stock destroys capital.\n\n' +
+    'IMPORTANT RULE FOR THIS INVESTOR:\n' +
+    'This investor has a 10-year horizon. Short-term price drops alone\n' +
+    'are NEVER a reason to stop SIP if the business is fundamentally healthy.\n' +
+    'Only broken fundamentals justify a NO verdict here.\n\n' +
+    'Stock: ' + ticker;
 
   navigator.clipboard.writeText(prompt).then(() => {
     const orig = btn.innerHTML;
@@ -6413,7 +6450,7 @@ async function _rbFAIFetchWithTimeout(url, ms) {
 }
 
 // ── Core GAS call: attempt 1 → rate-limit countdown → attempt 2. Live timer in aiEl. ──
-async function _rbFAICallGAS(ticker, aiEl) {
+async function _rbFAICallGAS(ticker, aiEl, stock) {
   const startTs = Date.now();
   let phase = 'Trying Mistral AI…';
   const _tick = () => {
@@ -6422,9 +6459,16 @@ async function _rbFAICallGAS(ticker, aiEl) {
   };
   const timer = setInterval(_tick, 1000);
   _tick();
+
+  // Portfolio context params — appended to GAS URL so the AI prompt includes real position data
+  const enc = encodeURIComponent;
+  const pp = stock
+    ? `&inv=${enc(stock.inv ?? '')}&curval=${enc(stock.curval ?? '')}&plP=${enc(stock.plP ?? '')}&s30d=${enc(stock.s30d ?? '')}&ytd=${enc(stock.ytd ?? '')}&sip=${enc(stock.sip ?? '')}`
+    : '';
+
   try {
     let resp = await _rbFAIFetchWithTimeout(
-      `${_rbScriptUrl}?action=getSipVerdict&ticker=${encodeURIComponent(ticker)}&attempt=1`, 45000);
+      `${_rbScriptUrl}?action=getSipVerdict&ticker=${enc(ticker)}&attempt=1${pp}`, 45000);
     if (!resp.ok) throw new Error('HTTP ' + resp.status);
     let json = await resp.json().catch(() => null);
 
@@ -6441,7 +6485,7 @@ async function _rbFAICallGAS(ticker, aiEl) {
       phase = 'Retrying (attempt 2)…';
       _tick();
       resp = await _rbFAIFetchWithTimeout(
-        `${_rbScriptUrl}?action=getSipVerdict&ticker=${encodeURIComponent(ticker)}&attempt=2`, 60000);
+        `${_rbScriptUrl}?action=getSipVerdict&ticker=${enc(ticker)}&attempt=2${pp}`, 60000);
       if (!resp.ok) throw new Error('HTTP ' + resp.status);
       json = await resp.json().catch(() => null);
     }
@@ -6476,7 +6520,8 @@ function _rbFAISaveAndReport(ticker, verdict) {
 // ── Single-stock AI for Section F — called by Re-Fetch button or manual trigger ──
 async function _rbRunSingleFAI(ticker) {
   const faiEl = document.getElementById('rb-f-ai-' + ticker);
-  const verdict = await _rbFAICallGAS(ticker, faiEl);
+  const stock  = (typeof ALL !== 'undefined' ? ALL.find(d => d.ticker === ticker) : null) || null;
+  const verdict = await _rbFAICallGAS(ticker, faiEl, stock);
   _rbFAISaveAndReport(ticker, verdict);
 }
 
@@ -6597,7 +6642,7 @@ async function _rbAutoRunSectionFAI() {
     _rbAIBannerUpdate(d.ticker, 'F');
 
     const faiEl  = document.getElementById('rb-f-ai-' + d.ticker);
-    const verdict = await _rbFAICallGAS(d.ticker, faiEl);
+    const verdict = await _rbFAICallGAS(d.ticker, faiEl, d);
     _rbFAISaveAndReport(d.ticker, verdict);
 
     if (i < deadWeight.length - 1) await new Promise(r => setTimeout(r, 2000));
