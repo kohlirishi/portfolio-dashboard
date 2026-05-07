@@ -6292,7 +6292,8 @@ function _rbFAISaveCache(ticker, verdict) {
 // ── Shared timeout helper for Section F AI calls ──────────────────────────────
 // ── Copy the exact SIP suitability prompt that GAS sends to the AI ────────────
 function rbCopySipPrompt(ticker, btn) {
-  const stock  = (typeof ALL !== 'undefined' ? ALL.find(d => d.ticker === ticker) : null) || {};
+  const stock      = (typeof ALL !== 'undefined' ? ALL.find(d => d.ticker === ticker) : null) || {};
+  const tickerFull = stock.ticker_v || ticker; // e.g. TSE:L, NASDAQ:TMUS, NYSE:MCK
   const inv    = stock.inv    != null ? stock.inv    : 'N/A';
   const curval = stock.curval != null ? stock.curval : 'N/A';
   const plP    = stock.plP    != null ? stock.plP    : 'N/A';
@@ -6414,7 +6415,7 @@ function rbCopySipPrompt(ticker, btn) {
     'Respond with exactly one word.\n' +
     'If suitable for SIP: YES\n' +
     'If not suitable for SIP: NO\n\n' +
-    'Stock to analyse: ' + ticker + '\n\n' +
+    'Stock to analyse: ' + tickerFull + '\n\n' +
     'INVESTOR\'S CURRENT POSITION IN THIS STOCK:\n' +
     '- Total Invested (Cost Basis): $' + inv + ' USD\n' +
     '- Current Portfolio Value: $' + curval + ' USD\n' +
@@ -6441,7 +6442,7 @@ function rbCopySipPrompt(ticker, btn) {
     'This investor has a 10-year horizon. Short-term price drops alone\n' +
     'are NEVER a reason to stop SIP if the business is fundamentally healthy.\n' +
     'Only broken fundamentals justify a NO verdict here.\n\n' +
-    'Stock: ' + ticker;
+    'Stock: ' + tickerFull;
 
   navigator.clipboard.writeText(prompt).then(() => {
     const orig = btn.innerHTML;
@@ -6480,9 +6481,10 @@ async function _rbFAICallGAS(ticker, aiEl, stock) {
 
   // Portfolio context params — appended to GAS URL so the AI prompt includes real position data
   const enc = encodeURIComponent;
+  const tickerFull = (stock && stock.ticker_v) ? stock.ticker_v : ticker; // e.g. TSE:L, NASDAQ:TMUS
   const pp = stock
-    ? `&inv=${enc(stock.inv ?? '')}&curval=${enc(stock.curval ?? '')}&plP=${enc(stock.plP ?? '')}&s30d=${enc(stock.s30d ?? '')}&ytd=${enc(stock.ytd ?? '')}&sip=${enc(stock.sip ?? '')}`
-    : '';
+    ? `&tickerFull=${enc(tickerFull)}&inv=${enc(stock.inv ?? '')}&curval=${enc(stock.curval ?? '')}&plP=${enc(stock.plP ?? '')}&s30d=${enc(stock.s30d ?? '')}&ytd=${enc(stock.ytd ?? '')}&sip=${enc(stock.sip ?? '')}`
+    : `&tickerFull=${enc(tickerFull)}`;
 
   try {
     let resp = await _rbFAIFetchWithTimeout(
@@ -6541,6 +6543,8 @@ async function _rbRunSingleFAI(ticker) {
   const stock  = (typeof ALL !== 'undefined' ? ALL.find(d => d.ticker === ticker) : null) || null;
   const verdict = await _rbFAICallGAS(ticker, faiEl, stock);
   _rbFAISaveAndReport(ticker, verdict);
+  // Refresh command strip card so the top panel reflects the updated verdict immediately
+  _rbUpdateCommandStripAfterAI();
 }
 
 // ── Progress banner helpers ────────────────────────────────────────────────────
