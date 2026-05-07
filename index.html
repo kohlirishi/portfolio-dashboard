@@ -6712,7 +6712,7 @@ function _rbRenderCommandStrip(deadWeight, profitAbove, planReport, watch, promo
 
   // Card 4 — Ready to Promote (fundamental verdict = Promote to Core SIP)
   const promoteToCore = watch.filter(d => /promote to core sip/i.test((_rbReportCache['g_' + d.ticker] || {}).verdict || ''));
-  const card4Items = promoteToCore.slice(0, MAX).map(d => ({ name: d.shortName, tag: 'promote' }));
+  const card4Items = promoteToCore.slice(0, MAX).map(d => ({ name: (d.shortName || d.ticker) + ' (' + d.ticker + ')', tag: 'promote' }));
   const notReadyCount = watch.length - promoteToCore.length;
   const card4Label = 'Ready to Promote to Core SIP' + (notReadyCount > 0 ? ' (' + notReadyCount + ' not ready · Sect G)' : '');
 
@@ -6725,7 +6725,7 @@ function _rbRenderCommandStrip(deadWeight, profitAbove, planReport, watch, promo
 
   // Card 6 — AI-Flagged Dead Weight: stop SIP, move from Core to Watchlist
   const faiNoStocks = deadWeight.filter(d => (_rbFAICache[d.ticker] || {}).verdict === 'NO');
-  const card6Items  = faiNoStocks.slice(0, MAX).map(d => ({ name: d.shortName || d.ticker, tag: 'stop SIP · move to watchlist' }));
+  const card6Items  = faiNoStocks.slice(0, MAX).map(d => ({ name: (d.shortName || d.ticker) + ' (' + d.ticker + ')', tag: 'stop SIP · move to watchlist' }));
   const card6Html   = faiNoStocks.length > 0
     ? mkCard('cs-card-amber', '🚨', faiNoStocks.length, 'Stop SIP — Move from Core to Watchlist (AI verdict)', card6Items, 'F')
     : '';
