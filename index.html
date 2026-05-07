@@ -6400,12 +6400,21 @@ function rbCopySipPrompt(ticker, btn) {
     '- Cyclical weakness (housing slowdown, rate environment, sector rotation) → NOT sufficient for NO\n' +
     '- Short-term price drops alone, even severe ones → NOT sufficient for NO\n' +
     '- Temporary underperformance vs market → NOT sufficient for NO\n\n' +
-    'Only output NO if ANY of these hard conditions are met:\n' +
+    'TECHNICAL OVERRIDE — 200-DAY MA RULE SUSPENDED FOR THIS ANALYSIS:\n' +
+    'Do NOT fire a NO verdict because the stock is below its 200-day MA or 30-week MA.\n' +
+    'A stock can be below its 200-day MA purely due to broad market selloffs, sector\n' +
+    'rotation, or macro headwinds — none of which break the long-term SIP thesis for\n' +
+    'a 10-year investor who already holds the position.\n' +
+    'Ignore the 200-day MA, 30-week MA, and RSI checks from the DECISION LOGIC above\n' +
+    'when evaluating this dead weight stock. They do not apply here.\n\n' +
+    'Only output NO if ANY of these 5 hard conditions are met:\n' +
     '1. Revenue declining for 3 or more consecutive quarters with no recovery in sight\n' +
     '2. Debt-to-Equity ratio above 2.0 AND rising\n' +
     '3. Lynch verdict is unambiguously AVOID (not just WAIT)\n' +
     '4. Business survival for the next 10–15 years is genuinely doubtful\n' +
     '5. Management has committed fraud or destroyed shareholder trust irreparably\n\n' +
+    'Everything else — including below 200MA, RSI, sector rotation, macro headwinds —\n' +
+    'is considered noise for an existing long-term SIP position.\n\n' +
     'Output YES if:\n' +
     '- The business will likely be fundamentally stronger in 3–5 years than it is today\n' +
     '- Temporary price weakness is driven by macro or sector forces, not business deterioration\n' +
