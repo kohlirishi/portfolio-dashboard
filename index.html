@@ -1608,7 +1608,7 @@ table.div-ht tfoot td{padding:10px 14px;font-size:13px;font-weight:700;backgroun
 
 <!-- PORTFOLIO REBALANCE PAGE -->
 <div id="pg-rebalance">
-<div id="rb-ai-banner" style="display:none;position:sticky;top:68px;z-index:500;background:#0a1827;border-bottom:1px solid rgba(61,159,255,.25);padding:10px 24px">
+<div id="rb-ai-banner" style="display:none;position:fixed;top:68px;left:0;right:0;z-index:999;background:#0a1827;border-bottom:1px solid rgba(61,159,255,.25);padding:10px 24px">
   <div style="max-width:1400px;margin:0 auto;display:flex;align-items:center;gap:14px">
     <span style="font-size:16px">🤖</span>
     <div style="flex:1">
@@ -5436,6 +5436,8 @@ function runRebalance() {
 
     // Auto-fetch fundamentals for watchlist stocks missing a fresh report
     await _rbAutoFetchWatchlist();
+    // Auto-fetch Yahoo fundamentals for dead weight stocks missing a report
+    await _rbAutoFetchDeadWeight();
     // Auto-fetch fundamentals for demote candidates (stale > 7 days or missing)
     // then filter out stocks where fundamentals say Hold — no demotion needed
     await _rbAutoFetchAndFilterDemote();
@@ -5550,6 +5552,42 @@ async function _rbAutoFetchWatchlist() {
   _rbRefreshPlanWatchlistCard();
   // Re-render command strip with updated promote list now that fundamentals are fetched
   _rbRefreshCommandStripPromote();
+}
+
+// ── Auto-fetch Yahoo fundamentals for dead weight stocks missing metrics ──────
+async function _rbAutoFetchDeadWeight() {
+  const data = _rbAnalysisData;
+  if (!data || !data.deadWeight || data.deadWeight.length === 0) return;
+
+  const THIRTY_DAYS = 30 * 24 * 3600 * 1000;
+  const needsFetch = data.deadWeight.filter(d => {
+    const cached = _rbReportCache['f_' + d.ticker] || {};
+    if (!cached.reportText) return true;
+    return cached.analyzedOn && (Date.now() - new Date(cached.analyzedOn).getTime() > THIRTY_DAYS);
+  });
+
+  if (needsFetch.length === 0) {
+    console.log('[AutoFetch] All dead weight fundamentals are up to date.');
+    return;
+  }
+
+  console.log('[AutoFetch] Fetching fundamentals for ' + needsFetch.length + ' dead weight stock(s)…');
+  const lastRunEl = document.getElementById('rb-last-run');
+
+  for (let i = 0; i < needsFetch.length; i++) {
+    const d = needsFetch[i];
+    if (lastRunEl) lastRunEl.textContent = `Auto-fetching dead weight ${i + 1}/${needsFetch.length}: ${d.ticker}…`;
+    try {
+      const uid = 'f_' + d.ticker;
+      const sheetTicker = typeof sheetTickerToFMP === 'function' ? (sheetTickerToFMP(d.ticker_v || '') || '') : '';
+      await rbFetchFundamentals(uid, d.ticker, 'deadweight', sheetTicker, true); // skipAi — AI runs in _rbAutoRunSectionFAI
+    } catch(e) {
+      console.error('[AutoFetch] Dead weight error for ' + d.ticker + ':', e);
+    }
+    if (i < needsFetch.length - 1) await new Promise(r => setTimeout(r, 300));
+  }
+
+  if (lastRunEl) lastRunEl.textContent = 'Last run: ' + new Date().toLocaleTimeString('en-CA', { hour:'2-digit', minute:'2-digit' });
 }
 
 // ── Recompute promote list from cache and re-render command strip ─────────────
@@ -6458,6 +6496,32 @@ function _rbUpdateCommandStripAfterAI() {
   const watch      = data.watch || [];
   const deadWeight = data.deadWeight || [];
 
+  // Full re-render so Card 6 (AI-flagged dead weight) appears in the grid
+  const THIRTY_DAYS_F = 30 * 24 * 3600 * 1000;
+  const dwNeedingReportNow = deadWeight.filter(d => {
+    const c = _rbReportCache['f_' + d.ticker] || {};
+    return !c.reportText || (c.analyzedOn && (Date.now() - new Date(c.analyzedOn).getTime() > THIRTY_DAYS_F));
+  });
+  const planReportNow = [
+    ...(data.stocksDown || []).map(d => d.shortName + ' (C)'),
+    ...dwNeedingReportNow.map(d => d.shortName + ' (F)'),
+    ...(data.demote || []).map(d => d.shortName + ' (J)'),
+  ];
+  const promoteNow = watch.filter(d => {
+    const v = (_rbReportCache['g_' + d.ticker] || {}).verdict || '';
+    const hasFundamentals = /promote to core sip/i.test(v);
+    const hasSignal = (d.recommend === 'Buy') || (d.s30d !== null && d.s30d > 0);
+    return hasFundamentals && hasSignal;
+  }).map(d => ({ ...d }));
+
+  _rbRenderCommandStrip(
+    deadWeight, data.profitAbove, planReportNow, watch,
+    promoteNow, data.demote,
+    data.planMonitor, data.planAction, data.overallVerdict,
+    dwNeedingReportNow
+  );
+
+  // Override chips with AI-aware summary
   const gYes     = watch.filter(d => /Promote to Core SIP/i.test((_rbReportCache['g_' + d.ticker] || {}).verdict || '')).length;
   const fNo      = deadWeight.filter(d => (_rbFAICache[d.ticker] || {}).verdict === 'NO').length;
   const errCount = deadWeight.filter(d => (_rbFAICache[d.ticker] || {}).verdict === 'ERROR').length;
@@ -6540,6 +6604,13 @@ function _rbRenderCommandStrip(deadWeight, profitAbove, planReport, watch, promo
     return { name: d.shortName, tag };
   });
 
+  // Card 6 — AI-Flagged Dead Weight (Section F verdict = NO)
+  const faiNoStocks = deadWeight.filter(d => (_rbFAICache[d.ticker] || {}).verdict === 'NO');
+  const card6Items  = faiNoStocks.slice(0, MAX).map(d => ({ name: d.shortName || d.ticker, tag: 'AI: move to watchlist' }));
+  const card6Html   = faiNoStocks.length > 0
+    ? mkCard('cs-card-amber', '⚠', faiNoStocks.length, 'AI Flags Weak Fundamentals — Move to Watchlist', card6Items, 'F')
+    : '';
+
   // Card 5 — Top 3 Picks (scored by fundamentals 60% + momentum 30% + P/L 10%)
   const top3Scored = promoteToCore
     .map(d => ({ d, ...rbScorePromote(d) }))
@@ -6567,7 +6638,7 @@ function _rbRenderCommandStrip(deadWeight, profitAbove, planReport, watch, promo
   </div>`;
 
   // Set grid columns dynamically based on visible card count
-  const numCards = (dwNeedingReport.length > 0 ? 1 : 0) + 1 + (planReport.length > 0 ? 1 : 0) + 1 + 1;
+  const numCards = (dwNeedingReport.length > 0 ? 1 : 0) + 1 + (planReport.length > 0 ? 1 : 0) + 1 + 1 + (faiNoStocks.length > 0 ? 1 : 0);
   const gridEl = document.getElementById('cs-cards-grid');
   gridEl.style.gridTemplateColumns = `repeat(${Math.min(numCards, 3)}, 1fr)`;
 
@@ -6576,7 +6647,8 @@ function _rbRenderCommandStrip(deadWeight, profitAbove, planReport, watch, promo
     mkCard('cs-card-green',  '↗',  profitAbove.length,   'Positions Above +20% — Review for Overweight',         card2Items, 'E') +
     (planReport.length > 0 ? mkCard('cs-card-blue', '◎', planReport.length, 'Reports Needed Before Any Move — Check Sect. F & J', card3ItemsFiltered, 'F/J') : '') +
     mkCard('cs-card-purple', '☆',  promoteToCore.length, card4Label,                                             card4Items, 'G') +
-    top3Card;
+    top3Card +
+    card6Html;
 
   // ── Movement block — only visible when there are actual demotion candidates ──
   const moveEl = document.getElementById('cs-movement');
