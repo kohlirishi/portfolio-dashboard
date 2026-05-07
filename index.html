@@ -6604,11 +6604,11 @@ function _rbRenderCommandStrip(deadWeight, profitAbove, planReport, watch, promo
     return { name: d.shortName, tag };
   });
 
-  // Card 6 — AI-Flagged Dead Weight (Section F verdict = NO)
+  // Card 6 — AI-Flagged Dead Weight: stop SIP, move from Core to Watchlist
   const faiNoStocks = deadWeight.filter(d => (_rbFAICache[d.ticker] || {}).verdict === 'NO');
-  const card6Items  = faiNoStocks.slice(0, MAX).map(d => ({ name: d.shortName || d.ticker, tag: 'AI: move to watchlist' }));
+  const card6Items  = faiNoStocks.slice(0, MAX).map(d => ({ name: d.shortName || d.ticker, tag: 'stop SIP · move to watchlist' }));
   const card6Html   = faiNoStocks.length > 0
-    ? mkCard('cs-card-amber', '⚠', faiNoStocks.length, 'AI Flags Weak Fundamentals — Move to Watchlist', card6Items, 'F')
+    ? mkCard('cs-card-amber', '🚨', faiNoStocks.length, 'Stop SIP — Move from Core to Watchlist (AI verdict)', card6Items, 'F')
     : '';
 
   // Card 5 — Top 3 Picks (scored by fundamentals 60% + momentum 30% + P/L 10%)
@@ -6643,12 +6643,12 @@ function _rbRenderCommandStrip(deadWeight, profitAbove, planReport, watch, promo
   gridEl.style.gridTemplateColumns = `repeat(${Math.min(numCards, 3)}, 1fr)`;
 
   gridEl.innerHTML =
+    card6Html +
     (dwNeedingReport.length > 0 ? mkCard('cs-card-amber', '⚠', dwNeedingReport.length, 'Dead Weight — Fundamental Report Required', card1Items, 'F') : '') +
     mkCard('cs-card-green',  '↗',  profitAbove.length,   'Positions Above +20% — Review for Overweight',         card2Items, 'E') +
     (planReport.length > 0 ? mkCard('cs-card-blue', '◎', planReport.length, 'Reports Needed Before Any Move — Check Sect. F & J', card3ItemsFiltered, 'F/J') : '') +
     mkCard('cs-card-purple', '☆',  promoteToCore.length, card4Label,                                             card4Items, 'G') +
-    top3Card +
-    card6Html;
+    top3Card;
 
   // ── Movement block — only visible when there are actual demotion candidates ──
   const moveEl = document.getElementById('cs-movement');
