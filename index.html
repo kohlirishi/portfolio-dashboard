@@ -6785,9 +6785,18 @@ function _rbRenderCommandStrip(deadWeight, profitAbove, planReport, watch, promo
     ...demote.map(d => ({ name: d.shortName, tag: '(J) demotion' })),
   ].slice(0, MAX + 4);
 
-  // Card 4 — Ready to Promote (fundamental verdict = Promote to Core SIP)
+  // Card 4 — Ready to Promote (AI verdict = promote), sorted by score high→low
   const promoteToCore = watch.filter(d => /promote to core sip/i.test((_rbReportCache['g_' + d.ticker] || {}).verdict || ''));
-  const card4Items = promoteToCore.slice(0, MAX).map(d => ({ name: (d.shortName || d.ticker) + ' (' + d.ticker + ')', tag: 'promote' }));
+
+  // Score all promoted stocks upfront — reused for card4 display and all top-picks panels
+  const allScored = promoteToCore
+    .map(d => ({ d, ...rbScorePromote(d) }))
+    .sort((a, b) => b.score - a.score);
+
+  const card4Items = allScored.slice(0, MAX).map(item => ({
+    name: (item.d.shortName || item.d.ticker) + ' (' + item.d.ticker + ')',
+    tag:  item.score.toFixed(1) + '/10 · promote'
+  }));
   const notReadyCount = watch.length - promoteToCore.length;
   const card4Label = 'Ready to Promote to Core SIP' + (notReadyCount > 0 ? ' (' + notReadyCount + ' not ready · Sect G)' : '');
 
@@ -6805,15 +6814,15 @@ function _rbRenderCommandStrip(deadWeight, profitAbove, planReport, watch, promo
     ? mkCard('cs-card-amber', '🚨', faiNoStocks.length, 'Stop SIP — Move from Core to Watchlist (AI verdict)', card6Items, 'F')
     : '';
 
-  // Card 5 — Top Picks split: Group A (ready now) vs Group B (parabolic — wait for pullback)
-  const allScored = promoteToCore
-    .map(d => ({ d, ...rbScorePromote(d) }))
-    .sort((a, b) => b.score - a.score);
+  // Split scored stocks into 3 groups
+  const isParabolic   = item => (item.d.ytd || 0) > 80 || (item.d.s30d || 0) > 40;
+  const nonParabolic  = allScored.filter(item => !isParabolic(item));
+  const groupB        = allScored.filter(item =>  isParabolic(item));                    // parabolic — wait for pullback
+  const groupA        = nonParabolic.filter(item => item.score >= 7.0).slice(0, 3);      // ≥7.0 → start SIP now (top 3)
+  const groupBorderline = nonParabolic.filter(item => item.score >= 5.0 && item.score < 7.0); // 5.0–6.9 → needs more data
+  // stocks scoring <5.0 excluded from all panels (remain in Section G detail only)
 
-  const isParabolic = item => (item.d.ytd || 0) > 80 || (item.d.s30d || 0) > 40;
-  const groupA = allScored.filter(item => !isParabolic(item)).slice(0, 3);
-  const groupB = allScored.filter(item =>  isParabolic(item));
-
+  // Panel 2 — Top Picks (green): score ≥ 7.0, non-parabolic
   const groupAHtml = groupA.length > 0
     ? groupA.map((item, i) => {
         const sip = item.score >= 9 ? 75 : item.score >= 8 ? 65 : 55;
@@ -6827,7 +6836,7 @@ function _rbRenderCommandStrip(deadWeight, profitAbove, planReport, watch, promo
           <div class="cs-top3-sip">CAD $${sip}/mo</div>
         </div>`;
       }).join('')
-    : `<div style="font-size:12px;color:#4a5a70;padding:6px 0">No promote candidates scored yet — run analysis</div>`;
+    : `<div style="font-size:12px;color:#4a5a70;padding:6px 0">No promote candidates scored 7.0+ yet — run analysis</div>`;
 
   const top3Card = `<div class="cs-card cs-card-blue">
     <div class="cs-card-icon">🎯</div>
@@ -6836,6 +6845,27 @@ function _rbRenderCommandStrip(deadWeight, profitAbove, planReport, watch, promo
     <div class="cs-card-items">${groupAHtml}</div>
   </div>`;
 
+  // Panel 3 — Borderline (amber): score 5.0–6.9, non-parabolic
+  const borderlineCard = groupBorderline.length > 0
+    ? `<div class="cs-card cs-card-amber">
+    <div class="cs-card-icon">⚡</div>
+    <div class="cs-card-count" style="font-size:28px">${groupBorderline.length}</div>
+    <div class="cs-card-label">Borderline — Needs More Data</div>
+    <div class="cs-card-items">${groupBorderline.map((item, i) => {
+        return `<div class="cs-top3-item">
+          <div class="cs-top3-row1">
+            <span class="cs-top3-rank">#${i + 1}</span>
+            <span class="cs-top3-name">${item.d.shortName} (${item.d.ticker})</span>
+            <span class="cs-top3-score">${item.score.toFixed(1)}/10</span>
+          </div>
+          <div class="cs-top3-reason">${item.reason}</div>
+          <div class="cs-top3-sip" style="color:#e3b341">AI says promote but score is low — wait for stronger fundamentals signal</div>
+        </div>`;
+      }).join('')}</div>
+  </div>`
+    : '';
+
+  // Panel 4 — Wait for Pullback (amber): parabolic stocks
   const waitCard = groupB.length > 0
     ? `<div class="cs-card cs-card-amber">
     <div class="cs-card-icon">⏳</div>
@@ -6857,7 +6887,8 @@ function _rbRenderCommandStrip(deadWeight, profitAbove, planReport, watch, promo
     : '';
 
   // Set grid columns dynamically based on visible card count
-  const numCards = (dwNeedingReport.length > 0 ? 1 : 0) + 1 + (planReport.length > 0 ? 1 : 0) + 1 + 1 + (faiNoStocks.length > 0 ? 1 : 0) + (groupB.length > 0 ? 1 : 0);
+  const numCards = (dwNeedingReport.length > 0 ? 1 : 0) + 1 + (planReport.length > 0 ? 1 : 0) + 1 + 1
+    + (faiNoStocks.length > 0 ? 1 : 0) + (groupBorderline.length > 0 ? 1 : 0) + (groupB.length > 0 ? 1 : 0);
   const gridEl = document.getElementById('cs-cards-grid');
   gridEl.style.gridTemplateColumns = `repeat(${Math.min(numCards, 3)}, 1fr)`;
 
@@ -6868,6 +6899,7 @@ function _rbRenderCommandStrip(deadWeight, profitAbove, planReport, watch, promo
     (planReport.length > 0 ? mkCard('cs-card-blue', '◎', planReport.length, 'Reports Needed Before Any Move — Check Sect. F & J', card3ItemsFiltered, 'F/J') : '') +
     mkCard('cs-card-purple', '☆',  promoteToCore.length, card4Label,                                             card4Items, 'G') +
     top3Card +
+    borderlineCard +
     waitCard;
 
   // ── Movement block — only visible when there are actual demotion candidates ──
