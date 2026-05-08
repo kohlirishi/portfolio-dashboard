@@ -1768,17 +1768,6 @@ table.div-ht tfoot td{padding:10px 14px;font-size:13px;font-weight:700;backgroun
       <div class="rb-sec-body" id="rb-body-j"></div>
     </div>
 
-    <!-- FINAL ACTION PLAN -->
-    <div class="rb-section" id="rb-sec-plan">
-      <div class="rb-sec-head" onclick="rbToggleSec('plan')">
-        <div class="rb-sec-letter" style="background:var(--purple);color:#fff">✓</div>
-        <div class="rb-sec-title">Final Action Plan</div>
-        <span class="rb-sec-badge rb-badge-purple" id="rb-plan-badge">Summary</span>
-        <span class="rb-sec-toggle" id="rb-tog-plan">▾</span>
-      </div>
-      <div class="rb-sec-body" id="rb-body-plan"></div>
-    </div>
-
     <!-- GENERATE AI PROMPT -->
     <div class="rb-section">
       <div class="rb-sec-head" onclick="rbToggleSec('prompt')">
@@ -6022,15 +6011,16 @@ function _doRebalance() {
         `<div id="rb-f-ai-${d.ticker}" style="margin-top:8px">${_rbFAIPendingHtml(d.ticker)}</div>`
       )).join('');
 
-  // ── SECTION G: Watchlist Promotion ───────────────────────────────────────
-  document.getElementById('rb-g-badge').textContent = `${watch.length} in Watchlist`;
+  // ── SECTION G: Watchlist Promotion (stocks only — ETFs excluded) ─────────
+  const watchStocks = watch.filter(d => (d.type || '').toLowerCase() !== 'etf');
+  document.getElementById('rb-g-badge').textContent = `${watchStocks.length} Stock${watchStocks.length !== 1 ? 's' : ''} in Watchlist`;
   document.getElementById('rb-g-badge').className   = 'rb-sec-badge rb-badge-purple';
 
-  document.getElementById('rb-body-g').innerHTML = watch.length === 0
+  document.getElementById('rb-body-g').innerHTML = watchStocks.length === 0
     ? `<div class="rb-no-data" style="color:var(--text2)">No stocks in your Watchlist.</div>`
     : `<div id="rb-g-summary"></div>
        <div style="margin-bottom:14px;font-size:12px;color:var(--text2)">For each watchlist stock, paste the fundamental report and choose a verdict. Rule: No promotion to Core SIP without a fundamental report — this rule has no exceptions.</div>`
-      + watch.map(d => {
+      + watchStocks.map(d => {
         const uid = 'g_' + d.ticker;
         const verdictHtml = `<div class="rb-verdict-btns">
           <button class="rb-verdict-btn v-promote" id="vbtn-promote-${uid}" onclick="rbSetVerdict('${uid}','promote',this)">▲ Promote to Core SIP</button>
@@ -6182,22 +6172,6 @@ function _doRebalance() {
   const overallVerdict = planAction.length > 0 ? '🔴 Rebalance Required'
     : planMonitor.length > 0 ? '🟡 Monitor — No Immediate Action'
     : '🟢 Stay Disciplined — No Action Required';
-
-  document.getElementById('rb-plan-badge').textContent = overallVerdict;
-  document.getElementById('rb-body-plan').innerHTML = `
-    <div style="background:var(--surface2);border:1px solid var(--border2);border-radius:8px;padding:14px 18px;margin-bottom:16px;font-size:15px;font-weight:700;color:var(--text)">
-      ${overallVerdict}
-    </div>
-    <div class="rb-plan-grid">
-      ${planCard('c-red',    '🔴', 'Action Required',            planAction,  planAction.length)}
-      ${planCard('c-yellow', '🟡', 'Monitor',                    planMonitor, planMonitor.length)}
-      ${planCard('c-green',  '🟢', 'No Action',                  planOk,      planOk.length)}
-      ${planCard('c-blue',   '📋', 'Fundamental Report Needed',  planReport,  planReport.length)}
-      ${planCard('c-purple', '🔄', 'Watchlist Decision',         planWatch,   planWatch.length, 'rb-plan-card-watch')}
-    </div>
-    <div style="font-size:12px;color:var(--text3);margin-top:4px">
-      Remember: During rebalance, revisit your last 3–5 investment decisions. Ask yourself — if I had no idea what happened next, what would I have done at each stage? This builds real judgment, not just rule following.
-    </div>`;
 
   // Render command strip BEFORE storing analysis data
   _rbRenderCommandStrip(deadWeight, profitAbove, planReport, watch, promote, demote, planMonitor, planAction, overallVerdict, dwNeedingReport);
