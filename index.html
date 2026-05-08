@@ -5667,7 +5667,7 @@ function _rbSortWatchlist(col) {
 function _rbBuildWatchlistSummaryTable() {
   const el = document.getElementById('rb-g-summary');
   if (!el || !_rbAnalysisData) return;
-  let watch = (_rbAnalysisData.watch || []).slice(); // shallow copy so sort doesn't mutate original
+  let watch = (_rbAnalysisData.watch || []).filter(d => (d.type || '').toLowerCase() !== 'etf').slice();
   if (watch.length === 0) { el.innerHTML = ''; return; }
 
   // Verdict sort order: Promote(0) > One-Time(1) > Hold/Stay/Not Suitable(2) > Not Ready(3) > Pending(4)
