@@ -6303,90 +6303,183 @@ function _rbFAISaveCache(ticker, verdict) {
 function rbCopySipPrompt(ticker, btn) {
   const stock      = (typeof ALL !== 'undefined' ? ALL.find(d => d.ticker === ticker) : null) || {};
   const tickerFull = stock.ticker_v || ticker; // e.g. TSE:L, NASDAQ:TMUS, NYSE:MCK
-  const inv    = stock.inv    != null ? stock.inv    : 'N/A';
-  const curval = stock.curval != null ? stock.curval : 'N/A';
-  const plP    = stock.plP    != null ? stock.plP    : 'N/A';
   const s30d   = stock.s30d   != null ? stock.s30d   : 'N/A';
   const ytd    = stock.ytd    != null ? stock.ytd    : 'N/A';
   const sip    = stock.sip    != null ? stock.sip    : 'N/A';
-  const plAmt  = (inv !== 'N/A' && curval !== 'N/A')
-    ? (parseFloat(curval) - parseFloat(inv)).toFixed(2) : 'N/A';
 
-  const prompt =
-    'ROLE:\n' +
-    'You are a senior equity research analyst with 20+ years of experience\n' +
-    'and deep expertise in Peter Lynch-style fundamental investing.\n\n' +
-    'QUESTION:\n' +
-    'The investor already owns this stock and is running a bi-weekly SIP.\n' +
-    'Should they CONTINUE or STOP their SIP?\n\n' +
-    'This is NOT about whether to buy today.\n' +
-    'This is ONLY about whether the underlying business is healthy enough\n' +
-    'to keep investing in over the next 10 years.\n\n' +
-    'YOUR ONLY OUTPUT: YES (continue SIP) or NO (stop SIP).\n' +
-    'One word only. No explanation. No punctuation. No emoji.\n\n' +
-    '---\n\n' +
-    'EVALUATE ONLY THESE FUNDAMENTALS (run silently, output nothing):\n\n' +
-    '1. Is revenue growing or stable over the last 4 to 8 quarters?\n' +
-    '2. Is the company profitable with positive net income?\n' +
-    '3. Is Debt-to-Equity below 2.0?\n' +
-    '4. Is the company likely to exist and be profitable in 10 years?\n' +
-    '5. Is the business deterioration temporary (macro/cycle) or structural?\n' +
-    '6. Would Peter Lynch classify this as a company worth holding long-term?\n' +
-    '7. Are there any fraud, governance, or irreversible trust issues?\n' +
-    '8. Is free cash flow positive or on a recovery trajectory?\n\n' +
-    'DO NOT EVALUATE ANY OF THE FOLLOWING — THEY ARE IRRELEVANT HERE:\n' +
-    '- Current stock price vs 200-day moving average\n' +
-    '- Stock price vs 30-week moving average\n' +
-    '- RSI, MACD, or any technical indicator\n' +
-    '- Whether today is a good entry point\n' +
-    '- Short-term price momentum or recent price action\n' +
-    '- Whether the stock is above or below any moving average\n\n' +
-    'Reason: The investor already owns this stock. Technical entry signals\n' +
-    'are irrelevant for someone deciding whether to continue an existing SIP.\n\n' +
-    '---\n\n' +
-    'OUTPUT YES if ALL of the following are true:\n' +
-    '- Business is fundamentally sound\n' +
-    '- Likely to be stronger in 3 to 5 years than it is today\n' +
-    '- Price weakness is macro, sector, or cyclical — not structural\n' +
-    '- None of the hard NO conditions below are triggered\n\n' +
-    'OUTPUT NO only if ANY of these 6 hard conditions are met:\n' +
-    '1. Revenue declining for 3 or more consecutive quarters\n' +
-    '   with no recovery signal visible\n' +
-    '2. Debt-to-Equity above 2.0 AND actively rising quarter over quarter\n' +
-    '3. Company will likely not survive the next 10 years\n' +
-    '4. Management fraud or irreparably destroyed shareholder trust\n' +
-    '5. Free cash flow deeply negative with no recovery path in sight\n' +
-    '6. Peter Lynch would unambiguously classify verdict as AVOID\n' +
-    '   (not just WAIT or HOLD)\n\n' +
-    'IMPORTANT: Cyclical businesses (commodity, housing, telecom,\n' +
-    'healthcare) go through down cycles. A down cycle is NOT a reason\n' +
-    'to stop SIP. A broken business model IS a reason to stop SIP.\n' +
-    'Know the difference before deciding.\n\n' +
-    '---\n\n' +
-    'INVESTOR PROFILE:\n' +
-    '- Age: 35 years old\n' +
-    '- SIP horizon: 10 years\n' +
-    '- Already invested in this stock\n' +
-    '- Stopping SIP now = locking in losses permanently\n' +
-    '- Continuing SIP = dollar cost averaging at lower price\n' +
-    '- Only broken fundamentals justify stopping SIP\n\n' +
-    'EXISTING ETF OVERLAP (do not auto-reject based on overlap alone):\n' +
-    'Investor already holds: SMH, IBIT, DTCR, IHE, URA, VOO, PICK,\n' +
-    'VPU, XLP, VEQT, SIVR, IWR, IAU, ROKT, XLF, CIB520, CIB530,\n' +
-    'ATL8099, CIB524, ATL496\n\n' +
-    '---\n\n' +
-    'FINAL OUTPUT RULE:\n' +
-    'Respond with exactly one word.\n' +
-    'YES = continue SIP, business is fundamentally sound\n' +
-    'NO = stop SIP, fundamentals are broken\n\n' +
-    'Stock to analyse: ' + tickerFull + '\n\n' +
-    'INVESTOR CURRENT POSITION:\n' +
-    '- Total Invested: ' + inv + ' USD\n' +
-    '- Current Value: ' + curval + ' USD\n' +
-    '- Personal P&L: ' + plP + '%\n' +
-    '- Last 30-Day Return: ' + s30d + '%\n' +
-    '- Year-to-Date Return: ' + ytd + '%\n' +
-    '- Monthly SIP Amount: CAD $' + sip;
+  const sipAmount = parseFloat(stock.sip || '0') || 0;
+
+  let prompt;
+  if (sipAmount === 0) {
+    // Section G — watchlist stock, new entry evaluation
+    prompt =
+      'ROLE:\n' +
+      'You are a senior equity research analyst with 20+ years of\n' +
+      'experience and deep expertise in Peter Lynch-style fundamental\n' +
+      'investing.\n\n' +
+      'QUESTION:\n' +
+      'This stock is currently on the investor\'s watchlist.\n' +
+      'Should it be PROMOTED to the Core SIP portfolio?\n\n' +
+      'This is a NEW investment decision — the investor does NOT\n' +
+      'currently hold this stock in their active SIP.\n' +
+      'Evaluate it as a fresh entry at today\'s price and conditions.\n\n' +
+      'YOUR ONLY OUTPUT: YES (promote to Core SIP) or NO (keep on watchlist).\n' +
+      'One word only. No explanation. No punctuation. No emoji.\n\n' +
+      '---\n\n' +
+      'INTERNAL CHECKLIST (run silently, output nothing):\n\n' +
+      'FUNDAMENTALS:\n' +
+      '1. Is revenue growing over the last 4 to 8 quarters?\n' +
+      '2. Is net profit positive and growing?\n' +
+      '3. Is Debt-to-Equity below 1.5?\n' +
+      '4. Is the company profitable for at least 3 consecutive years?\n' +
+      '5. Will this company likely survive and grow for the next 15 years?\n' +
+      '6. Is free cash flow positive?\n\n' +
+      'VALUATION:\n' +
+      '7. Is the P/E ratio reasonable vs sector peers?\n' +
+      '8. Is the forward P/E attractive for entry today?\n' +
+      '9. Is the stock undervalued or fairly valued — not significantly\n' +
+      '   overvalued vs DCF intrinsic value?\n' +
+      '10. Is the PEG ratio below 2.0?\n\n' +
+      'TECHNICALS (apply fully — this is a new entry decision):\n' +
+      '11. Is the stock above its 200-day moving average?\n' +
+      '12. Is RSI below 75 (not overbought)?\n' +
+      '13. Is MACD showing positive or neutral momentum?\n\n' +
+      'PETER LYNCH FRAMEWORK:\n' +
+      '14. Does Lynch classify this as a Stalwart, Fast Grower, or\n' +
+      '    Asset Play worth owning?\n' +
+      '15. Is Lynch\'s verdict BUY or WAIT — not AVOID?\n' +
+      '16. Does it pass at least 7 out of 13 on Lynch\'s perfect\n' +
+      '    stock checklist?\n\n' +
+      'SIP SUITABILITY:\n' +
+      '17. Is this stock suitable for systematic bi-weekly investment\n' +
+      '    over 10 years for a 35-year-old investor?\n' +
+      '18. Does dollar-cost averaging work well for this stock\'s\n' +
+      '    volatility profile?\n' +
+      '19. Is the stock part of a growing industry with tailwinds\n' +
+      '    for the next 10 years?\n\n' +
+      '---\n\n' +
+      'OUTPUT YES (Promote to Core SIP) only if ALL are true:\n' +
+      '- Fundamentals healthy: revenue up, profitable, low debt\n' +
+      '- Valuation is fair or undervalued vs intrinsic value\n' +
+      '- PEG ratio below 2.0\n' +
+      '- Stock is above its 200-day moving average\n' +
+      '- RSI not overbought (below 75)\n' +
+      '- Lynch verdict is BUY or WAIT — not AVOID\n' +
+      '- Business survival for 15 years is highly likely\n' +
+      '- Suitable for long-term bi-weekly SIP investing\n\n' +
+      'OUTPUT NO (Keep on Watchlist) if ANY are true:\n' +
+      '1. Company is unprofitable with no clear path to profit\n' +
+      '2. Debt-to-Equity above 2.0\n' +
+      '3. Stock below 200-day MA with no reclaim signal\n' +
+      '4. Lynch verdict is AVOID\n' +
+      '5. PEG ratio above 3.0\n' +
+      '6. Revenue declining for 2 or more consecutive quarters\n' +
+      '7. Business survival for 15 years is doubtful\n' +
+      '8. RSI above 80 with no fundamental justification\n' +
+      '9. Significantly overvalued vs DCF intrinsic value\n\n' +
+      '---\n\n' +
+      'INVESTOR PROFILE:\n' +
+      '- Age: 35 years old\n' +
+      '- SIP horizon: 10 years\n' +
+      '- This is a NEW position — no prior active SIP in this stock\n' +
+      '- Bi-weekly SIP investment style\n' +
+      '- Risk tolerance: moderate to growth-oriented\n\n' +
+      'EXISTING ETF OVERLAP (reduce YES conviction if heavy overlap,\n' +
+      'but do not override to NO based on overlap alone):\n' +
+      'Investor already holds: SMH, IBIT, DTCR, IHE, URA, VOO, PICK,\n' +
+      'VPU, XLP, VEQT, SIVR, IWR, IAU, ROKT, XLF, CIB520, CIB530,\n' +
+      'ATL8099, CIB524, ATL496\n\n' +
+      '---\n\n' +
+      'FINAL OUTPUT RULE:\n' +
+      'Respond with exactly one word.\n' +
+      'YES = promote this stock to Core SIP portfolio\n' +
+      'NO = keep this stock on the watchlist for now\n\n' +
+      'Stock to analyse: ' + tickerFull + '\n\n' +
+      'MARKET CONTEXT:\n' +
+      '- Last 30-Day Return: ' + s30d + '%\n' +
+      '- Year-to-Date Return: ' + ytd + '%\n' +
+      '- Suggested Monthly SIP if promoted: CAD $75';
+  } else {
+    // Section F — dead weight stock, continue or stop existing SIP
+    const inv    = stock.inv    != null ? stock.inv    : 'N/A';
+    const curval = stock.curval != null ? stock.curval : 'N/A';
+    const plP    = stock.plP    != null ? stock.plP    : 'N/A';
+    prompt =
+      'ROLE:\n' +
+      'You are a senior equity research analyst with 20+ years of experience\n' +
+      'and deep expertise in Peter Lynch-style fundamental investing.\n\n' +
+      'QUESTION:\n' +
+      'The investor already owns this stock and is running a bi-weekly SIP.\n' +
+      'Should they CONTINUE or STOP their SIP?\n\n' +
+      'This is NOT about whether to buy today.\n' +
+      'This is ONLY about whether the underlying business is healthy enough\n' +
+      'to keep investing in over the next 10 years.\n\n' +
+      'YOUR ONLY OUTPUT: YES (continue SIP) or NO (stop SIP).\n' +
+      'One word only. No explanation. No punctuation. No emoji.\n\n' +
+      '---\n\n' +
+      'EVALUATE ONLY THESE FUNDAMENTALS (run silently, output nothing):\n\n' +
+      '1. Is revenue growing or stable over the last 4 to 8 quarters?\n' +
+      '2. Is the company profitable with positive net income?\n' +
+      '3. Is Debt-to-Equity below 2.0?\n' +
+      '4. Is the company likely to exist and be profitable in 10 years?\n' +
+      '5. Is the business deterioration temporary (macro/cycle) or structural?\n' +
+      '6. Would Peter Lynch classify this as a company worth holding long-term?\n' +
+      '7. Are there any fraud, governance, or irreversible trust issues?\n' +
+      '8. Is free cash flow positive or on a recovery trajectory?\n\n' +
+      'DO NOT EVALUATE ANY OF THE FOLLOWING — THEY ARE IRRELEVANT HERE:\n' +
+      '- Current stock price vs 200-day moving average\n' +
+      '- Stock price vs 30-week moving average\n' +
+      '- RSI, MACD, or any technical indicator\n' +
+      '- Whether today is a good entry point\n' +
+      '- Short-term price momentum or recent price action\n' +
+      '- Whether the stock is above or below any moving average\n\n' +
+      'Reason: The investor already owns this stock. Technical entry signals\n' +
+      'are irrelevant for someone deciding whether to continue an existing SIP.\n\n' +
+      '---\n\n' +
+      'OUTPUT YES if ALL of the following are true:\n' +
+      '- Business is fundamentally sound\n' +
+      '- Likely to be stronger in 3 to 5 years than it is today\n' +
+      '- Price weakness is macro, sector, or cyclical — not structural\n' +
+      '- None of the hard NO conditions below are triggered\n\n' +
+      'OUTPUT NO only if ANY of these 6 hard conditions are met:\n' +
+      '1. Revenue declining for 3 or more consecutive quarters\n' +
+      '   with no recovery signal visible\n' +
+      '2. Debt-to-Equity above 2.0 AND actively rising quarter over quarter\n' +
+      '3. Company will likely not survive the next 10 years\n' +
+      '4. Management fraud or irreparably destroyed shareholder trust\n' +
+      '5. Free cash flow deeply negative with no recovery path in sight\n' +
+      '6. Peter Lynch would unambiguously classify verdict as AVOID\n' +
+      '   (not just WAIT or HOLD)\n\n' +
+      'IMPORTANT: Cyclical businesses (commodity, housing, telecom,\n' +
+      'healthcare) go through down cycles. A down cycle is NOT a reason\n' +
+      'to stop SIP. A broken business model IS a reason to stop SIP.\n' +
+      'Know the difference before deciding.\n\n' +
+      '---\n\n' +
+      'INVESTOR PROFILE:\n' +
+      '- Age: 35 years old\n' +
+      '- SIP horizon: 10 years\n' +
+      '- Already invested in this stock\n' +
+      '- Stopping SIP now = locking in losses permanently\n' +
+      '- Continuing SIP = dollar cost averaging at lower price\n' +
+      '- Only broken fundamentals justify stopping SIP\n\n' +
+      'EXISTING ETF OVERLAP (do not auto-reject based on overlap alone):\n' +
+      'Investor already holds: SMH, IBIT, DTCR, IHE, URA, VOO, PICK,\n' +
+      'VPU, XLP, VEQT, SIVR, IWR, IAU, ROKT, XLF, CIB520, CIB530,\n' +
+      'ATL8099, CIB524, ATL496\n\n' +
+      '---\n\n' +
+      'FINAL OUTPUT RULE:\n' +
+      'Respond with exactly one word.\n' +
+      'YES = continue SIP, business is fundamentally sound\n' +
+      'NO = stop SIP, fundamentals are broken\n\n' +
+      'Stock to analyse: ' + tickerFull + '\n\n' +
+      'INVESTOR CURRENT POSITION:\n' +
+      '- Total Invested: ' + inv + ' USD\n' +
+      '- Current Value: ' + curval + ' USD\n' +
+      '- Personal P&L: ' + plP + '%\n' +
+      '- Last 30-Day Return: ' + s30d + '%\n' +
+      '- Year-to-Date Return: ' + ytd + '%\n' +
+      '- Monthly SIP Amount: CAD $' + sip;
+  }
 
   navigator.clipboard.writeText(prompt).then(() => {
     const orig = btn.innerHTML;
