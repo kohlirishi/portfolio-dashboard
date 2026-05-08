@@ -5524,15 +5524,15 @@ async function _rbAutoFetchWatchlist() {
   const watch = (typeof ALL !== 'undefined' ? ALL.filter(d => d.isWatch) : []);
   if (watch.length === 0) return;
 
-  const THIRTY_DAYS = 30 * 24 * 3600 * 1000;
+  const SEVEN_DAYS_F = 7 * 24 * 3600 * 1000;
   const needsFetch = watch.filter(d => {
     const cached = _rbReportCache['g_' + d.ticker] || {};
     if (!cached.reportText) return true;
-    return cached.analyzedOn && (Date.now() - new Date(cached.analyzedOn).getTime() > THIRTY_DAYS);
+    return cached.analyzedOn && (Date.now() - new Date(cached.analyzedOn).getTime() > SEVEN_DAYS_F);
   });
 
   if (needsFetch.length === 0) {
-    console.log('[AutoFetch] All watchlist fundamentals are up to date.');
+    console.log('[AutoFetch] All watchlist fundamentals are up to date (within 7 days).');
     return;
   }
 
@@ -5567,15 +5567,15 @@ async function _rbAutoFetchDeadWeight() {
   const data = _rbAnalysisData;
   if (!data || !data.deadWeight || data.deadWeight.length === 0) return;
 
-  const THIRTY_DAYS = 30 * 24 * 3600 * 1000;
+  const SEVEN_DAYS_DW = 7 * 24 * 3600 * 1000;
   const needsFetch = data.deadWeight.filter(d => {
     const cached = _rbReportCache['f_' + d.ticker] || {};
     if (!cached.reportText) return true;
-    return cached.analyzedOn && (Date.now() - new Date(cached.analyzedOn).getTime() > THIRTY_DAYS);
+    return cached.analyzedOn && (Date.now() - new Date(cached.analyzedOn).getTime() > SEVEN_DAYS_DW);
   });
 
   if (needsFetch.length === 0) {
-    console.log('[AutoFetch] All dead weight fundamentals are up to date.');
+    console.log('[AutoFetch] All dead weight fundamentals are up to date (within 7 days).');
     return;
   }
 
@@ -6610,6 +6610,7 @@ async function _rbAutoRunSectionGAI() {
   const watch = typeof ALL !== 'undefined' ? ALL.filter(d => d.isWatch) : [];
   if (watch.length === 0) return;
 
+  const SEVEN_DAYS_G = 7 * 24 * 3600 * 1000;
   const lastRunEl  = document.getElementById('rb-last-run');
   console.log('[AutoAI-G] Starting Section G AI for ' + watch.length + ' watchlist stock(s)…');
 
@@ -6617,6 +6618,28 @@ async function _rbAutoRunSectionGAI() {
     const d   = watch[i];
     const uid = 'g_' + d.ticker;
     const cached = _rbReportCache[uid] || {};
+
+    // Skip if AI verdict is fresh (within 7 days) — same guard as Section F
+    if (cached.verdict && cached.analyzedOn &&
+        (Date.now() - new Date(cached.analyzedOn).getTime() < SEVEN_DAYS_G)) {
+      console.log('[AutoAI-G] Skipping ' + d.ticker + ' — verdict cached within 7 days');
+      const innerEl = document.getElementById('rb-ai-verdict-inner-' + uid);
+      if (innerEl) {
+        const aiYes  = /promote/i.test(cached.verdict);
+        const color  = aiYes ? 'var(--green)' : 'var(--red)';
+        const icon   = aiYes ? '🟢' : '🔴';
+        const dateStr = new Date(cached.analyzedOn).toLocaleDateString('en-CA');
+        innerEl.innerHTML = `
+          <div style="font-size:18px">${icon}</div>
+          <div>
+            <div style="font-size:13px;font-weight:700;color:${color}">${cached.verdict}</div>
+            <div style="font-size:12px;color:var(--text2);margin-top:2px">${cached.reason || ''}</div>
+            <div style="font-size:11px;color:var(--text3);margin-top:4px">Cached · ${dateStr}</div>
+          </div>`;
+      }
+      _rbAIBannerUpdate(d.ticker, 'G');
+      continue;
+    }
 
     if (lastRunEl) lastRunEl.textContent = `AI Analyzing G (${i + 1}/${watch.length}): ${d.ticker}…`;
 
