@@ -5302,7 +5302,7 @@ async function _updateWatchlistVerdictWithAI(uid, sym, ticker, reportText) {
     const stock = (typeof ALL !== 'undefined' ? ALL.find(d => d.ticker === ticker) : null) || {};
     const enc = encodeURIComponent;
     const tickerFull = stock.ticker_v || sym || ticker;
-    const pp = `&tickerFull=${enc(tickerFull)}&inv=${enc(stock.inv ?? '')}&curval=${enc(stock.curval ?? '')}&plP=${enc(stock.plP ?? '')}&s30d=${enc(stock.s30d ?? '')}&ytd=${enc(stock.ytd ?? '')}&sip=${enc(stock.sip ?? '')}`;
+    const pp = `&section=G&tickerFull=${enc(tickerFull)}&inv=${enc(stock.inv ?? '')}&curval=${enc(stock.curval ?? '')}&plP=${enc(stock.plP ?? '')}&s30d=${enc(stock.s30d ?? '')}&ytd=${enc(stock.ytd ?? '')}&sip=${enc(stock.sip ?? '')}`;
 
     // ── Attempt 1: Mistral primary via Apps Script ───────────────────────────
     _phase = 'Trying Mistral AI…';
@@ -6427,8 +6427,8 @@ async function _rbFAICallGAS(ticker, aiEl, stock) {
   const enc = encodeURIComponent;
   const tickerFull = (stock && stock.ticker_v) ? stock.ticker_v : ticker; // e.g. TSE:L, NASDAQ:TMUS
   const pp = stock
-    ? `&tickerFull=${enc(tickerFull)}&inv=${enc(stock.inv ?? '')}&curval=${enc(stock.curval ?? '')}&plP=${enc(stock.plP ?? '')}&s30d=${enc(stock.s30d ?? '')}&ytd=${enc(stock.ytd ?? '')}&sip=${enc(stock.sip ?? '')}`
-    : `&tickerFull=${enc(tickerFull)}`;
+    ? `&section=F&tickerFull=${enc(tickerFull)}&inv=${enc(stock.inv ?? '')}&curval=${enc(stock.curval ?? '')}&plP=${enc(stock.plP ?? '')}&s30d=${enc(stock.s30d ?? '')}&ytd=${enc(stock.ytd ?? '')}&sip=${enc(stock.sip ?? '')}`
+    : `&section=F&tickerFull=${enc(tickerFull)}`;
 
   try {
     let resp = await _rbFAIFetchWithTimeout(
