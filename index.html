@@ -6791,6 +6791,32 @@ function rbCopyJPrompt(ticker, btn) {
   const ytd    = stock.ytd    != null ? stock.ytd    : 'N/A';
   const sip    = stock.sip    != null ? stock.sip    : 'N/A';
 
+  const tickerLabel = stock.exchange
+    ? stock.exchange + ':' + ticker
+    : ticker + ' (exchange unknown)';
+
+  const isETF = stock.type === 'ETF'
+    || ticker.includes('ETF')
+    || ['IHE','VPU','XLF','SMH','URA','ROKT','IBIT','DTCR','IAU','SIVR','PICK','IWR','VOO','VEQT','XLP'].includes(ticker);
+
+  const healthBlock = isETF
+    ? 'ETF HEALTH:\n' +
+      '1. Is the sector this ETF tracks growing or shrinking?\n' +
+      '2. Is the ETF\'s AUM stable or growing (not in redemption)?\n' +
+      '3. Is the expense ratio competitive vs alternatives?\n' +
+      '4. Are the underlying holdings of this ETF structurally\n' +
+      '   sound for the next 5-10 years?\n' +
+      '5. Has the investment thesis for this sector ETF been\n' +
+      '   disrupted by structural change (not just cycle)?\n' +
+      '6. Is there meaningful duplication with other ETFs\n' +
+      '   the investor already holds?\n\n'
+    : 'BUSINESS HEALTH:\n' +
+      '1. Is revenue growing or has it been declining 2+ quarters?\n' +
+      '2. Is net income positive and stable?\n' +
+      '3. Is Debt-to-Equity below 2.0?\n' +
+      '4. Is free cash flow positive or on a clear recovery path?\n' +
+      '5. Has the business model been structurally disrupted?\n\n';
+
   const prompt =
     'ROLE:\n' +
     'You are a senior equity research analyst with 20+ years of\n' +
@@ -6806,12 +6832,7 @@ function rbCopyJPrompt(ticker, btn) {
     'One word only. No explanation. No punctuation. No emoji.\n\n' +
     '---\n\n' +
     'EVALUATE THESE FACTORS (run silently, output nothing):\n\n' +
-    'BUSINESS HEALTH:\n' +
-    '1. Is revenue growing or has it been declining 2+ quarters?\n' +
-    '2. Is net income positive and stable?\n' +
-    '3. Is Debt-to-Equity below 2.0?\n' +
-    '4. Is free cash flow positive or on a clear recovery path?\n' +
-    '5. Has the business model been structurally disrupted?\n\n' +
+    healthBlock +
     'PORTFOLIO FIT:\n' +
     '6. Is there a significantly better stock ready to take\n' +
     '   this capital with higher growth and stronger sector\n' +
@@ -6871,7 +6892,7 @@ function rbCopyJPrompt(ticker, btn) {
     'Respond with exactly one word.\n' +
     'YES = keep this stock in Core SIP, do not demote\n' +
     'NO = demote this stock to Watchlist, fundamentals justify it\n\n' +
-    'Stock to analyse: ' + ticker + '\n\n' +
+    'Stock to analyse: ' + tickerLabel + '\n\n' +
     'CURRENT POSITION:\n' +
     '- Total Invested: $' + inv + ' USD\n' +
     '- Current Value: $' + curval + ' USD\n' +
