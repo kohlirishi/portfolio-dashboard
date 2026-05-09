@@ -6846,25 +6846,44 @@ function rbCopyJPrompt(ticker, btn) {
     '10. If in loss — would stopping SIP lock in a permanent\n' +
     '    loss that would recover naturally in 1-3 years if held?\n\n' +
     '---\n\n' +
-    'OUTPUT YES (Keep in Core SIP — Do Not Demote) if ALL true:\n' +
-    '- Business is fundamentally sound\n' +
-    '- Price weakness is cyclical or macro not structural\n' +
-    '- Investor is in loss and stopping SIP locks in losses\n' +
-    '  unnecessarily when the business will likely recover\n' +
-    '- No clearly superior replacement is available right now\n' +
+    'OUTPUT YES (Keep in Core SIP — Do Not Demote)\n' +
+    'only if ALL of the following are true:\n' +
+    '- Business or ETF sector is fundamentally sound\n' +
+    '- Price weakness is cyclical or macro — not structural\n' +
+    '- IF investor is in loss: stopping SIP would lock in\n' +
+    '  losses unnecessarily — recovery likely within 1-3 years\n' +
+    '- IF investor is in profit: position still strong enough\n' +
+    '  to justify continued compounding\n' +
+    '- No clearly superior alternative available right now\n' +
     '- Peter Lynch would say HOLD or WAIT — not AVOID\n\n' +
-    'OUTPUT NO (Confirm Demote to Watchlist) if ANY true:\n' +
-    '1. Revenue declining 3+ consecutive quarters with no\n' +
-    '   recovery signal visible\n' +
-    '2. Business model structurally disrupted — will not\n' +
-    '   recover meaningfully in 5 years\n' +
-    '3. Debt-to-Equity above 2.0 AND rising quarter on quarter\n' +
-    '4. A clearly superior stock is available for this capital\n' +
-    '   AND investor is already in profit on this stock\n' +
-    '5. Heavy ETF overlap makes individual SIP fully redundant\n' +
-    '   AND performance has been flat or negative 2+ quarters\n' +
-    '6. Original investment thesis is completely broken\n' +
-    '7. Peter Lynch would unambiguously classify as AVOID\n\n' +
+    (isETF
+      ? 'OUTPUT NO (Confirm Demote to Watchlist) if ANY true:\n' +
+        '1. The sector this ETF tracks is in structural long-term\n' +
+        '   decline with no recovery expected in 5+ years\n' +
+        '2. ETF AUM is in sustained redemption — investors\n' +
+        '   consistently pulling money out over multiple quarters\n' +
+        '3. Investment thesis for this sector has been permanently\n' +
+        '   disrupted — not a temporary cycle\n' +
+        '4. Heavy duplication — investor already holds this exact\n' +
+        '   ETF or an 80%+ overlapping ETF separately, making\n' +
+        '   this SIP completely redundant\n' +
+        '5. A clearly superior ETF or stock covers this sector\n' +
+        '   better AND investor is currently in profit\n' +
+        '6. Expense ratio is uncompetitive AND performance\n' +
+        '   consistently trails its benchmark for 2+ years\n' +
+        '7. Peter Lynch would unambiguously classify as AVOID\n\n'
+      : 'OUTPUT NO (Confirm Demote to Watchlist) if ANY true:\n' +
+        '1. Revenue declining 3+ consecutive quarters with no\n' +
+        '   recovery signal visible\n' +
+        '2. Business model structurally disrupted — will not\n' +
+        '   recover meaningfully in 5 years\n' +
+        '3. Debt-to-Equity above 2.0 AND rising quarter on quarter\n' +
+        '4. A clearly superior stock is available for this capital\n' +
+        '   AND investor is already in profit on this stock\n' +
+        '5. Heavy ETF overlap makes individual SIP fully redundant\n' +
+        '   AND performance has been flat or negative 2+ quarters\n' +
+        '6. Original investment thesis is completely broken\n' +
+        '7. Peter Lynch would unambiguously classify as AVOID\n\n') +
     'IMPORTANT:\n' +
     'Being in a short-term loss alone is NEVER a reason to demote.\n' +
     'A temporary sell signal alone is NEVER a reason to demote.\n' +
