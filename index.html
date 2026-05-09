@@ -6126,9 +6126,10 @@ function _doRebalance() {
       `<div class="rb-no-data" style="color:var(--text2)">No stocks on the watchlist to review.</div>`;
   } else {
     const iSummaryBar = `<div id="rb-i-summary" style="display:flex;align-items:center;gap:14px;margin-bottom:14px;flex-wrap:wrap">
-      <span id="rb-i-cnt-sell" style="font-size:12px;font-weight:700;color:#ef4444">🔴 — Sell</span>
-      <span id="rb-i-cnt-remove" style="font-size:12px;font-weight:700;color:#f5a623">🟡 — Remove</span>
-      <span id="rb-i-cnt-keep" style="font-size:12px;font-weight:700;color:var(--green)">🟢 — Keep</span>
+      <span id="rb-i-cnt-sell" style="font-size:12px;font-weight:700;color:#ef4444;display:none"></span>
+      <span id="rb-i-cnt-remove" style="font-size:12px;font-weight:700;color:#f5a623;display:none"></span>
+      <span id="rb-i-cnt-keep" style="font-size:12px;font-weight:700;color:var(--green);display:none"></span>
+      <span id="rb-i-hint" style="font-size:12px;color:var(--text3);font-style:italic">Click Run All to analyse your watchlist stocks</span>
       <button onclick="_rbRunAllSectionIAI()" style="margin-left:auto;background:rgba(91,143,255,.12);color:#5b8fff;border:1px solid rgba(91,143,255,.3);border-radius:7px;padding:6px 14px;font-size:12px;font-weight:600;cursor:pointer">▶ Run All</button>
     </div>`;
 
@@ -7086,12 +7087,22 @@ function _rbIUpdateSummaryBar() {
   const sell   = data.watchStocksI.filter(d => _rbIAICache[d.ticker] === 'SELL').length;
   const remove = data.watchStocksI.filter(d => _rbIAICache[d.ticker] === 'REMOVE').length;
   const keep   = data.watchStocksI.filter(d => _rbIAICache[d.ticker] === 'KEEP').length;
-  const sEl = document.getElementById('rb-i-cnt-sell');
-  const rEl = document.getElementById('rb-i-cnt-remove');
-  const kEl = document.getElementById('rb-i-cnt-keep');
-  if (sEl) sEl.textContent = `🔴 ${sell} Sell`;
-  if (rEl) rEl.textContent = `🟡 ${remove} Remove`;
-  if (kEl) kEl.textContent = `🟢 ${keep} Keep`;
+  const total  = sell + remove + keep;
+  const sEl    = document.getElementById('rb-i-cnt-sell');
+  const rEl    = document.getElementById('rb-i-cnt-remove');
+  const kEl    = document.getElementById('rb-i-cnt-keep');
+  const hintEl = document.getElementById('rb-i-hint');
+  if (total === 0) {
+    if (sEl)    sEl.style.display    = 'none';
+    if (rEl)    rEl.style.display    = 'none';
+    if (kEl)    kEl.style.display    = 'none';
+    if (hintEl) hintEl.style.display = '';
+  } else {
+    if (sEl)    { sEl.textContent = `🔴 ${sell} Sell`;     sEl.style.display = sell   > 0 ? '' : 'none'; }
+    if (rEl)    { rEl.textContent = `🟡 ${remove} Remove`; rEl.style.display = remove > 0 ? '' : 'none'; }
+    if (kEl)    { kEl.textContent = `🟢 ${keep} Keep`;     kEl.style.display = keep   > 0 ? '' : 'none'; }
+    if (hintEl) hintEl.style.display = 'none';
+  }
 }
 
 function _rbIGetCounts(watchStocksI) {
@@ -7103,6 +7114,18 @@ function _rbIGetCounts(watchStocksI) {
 }
 
 async function _rbIAICallGAS(ticker, stock) {
+  // ── Pre-checks: force KEEP without calling AI for clearly well-performing stocks ──
+  if (stock) {
+    const _inv  = parseFloat(stock.inv);
+    const _plP  = parseFloat(stock.plP);
+    const _ytd  = parseFloat(stock.ytd);
+    const _s30d = parseFloat(stock.s30d);
+    const _hasShares = !isNaN(_inv) && _inv > 0;
+    if (_hasShares && !isNaN(_plP) && _plP > 0)  return 'KEEP'; // in profit → always keep
+    if (!isNaN(_ytd)  && _ytd  > 0)               return 'KEEP'; // positive YTD → keep
+    if (!isNaN(_s30d) && _s30d > 10)              return 'KEEP'; // strong 30-day momentum → keep
+  }
+
   const startTs = Date.now();
   let phase = 'Trying Mistral AI…';
   const _getEl = () => document.getElementById('rb-i-ai-' + ticker);
@@ -7145,17 +7168,15 @@ async function _rbIAICallGAS(ticker, stock) {
     }
 
     clearInterval(timer);
-    // GAS returns YES/NO — map to Section I three-way verdict via raw text fallback
-    if (json && json.rawText) {
-      const raw = json.rawText.trim().toUpperCase();
-      if (raw === 'SELL')   return 'SELL';
-      if (raw === 'REMOVE') return 'REMOVE';
-      if (raw === 'KEEP')   return 'KEEP';
-    }
-    // GAS YES/NO fallback: YES → KEEP, NO → context-dependent
-    if (json && json.ok) {
-      if (json.verdict === 'YES') return 'KEEP';
-      if (json.verdict === 'NO') {
+    if (json && json.ok && json.verdict) {
+      const v = json.verdict.trim().toUpperCase();
+      // Section I returns SELL/REMOVE/KEEP directly
+      if (v === 'SELL')   return 'SELL';
+      if (v === 'REMOVE') return 'REMOVE';
+      if (v === 'KEEP')   return 'KEEP';
+      // Legacy YES/NO fallback (if F/G prompt routed by mistake)
+      if (v === 'YES') return 'KEEP';
+      if (v === 'NO') {
         const _inv = stock ? parseFloat(stock.inv) : NaN;
         const hasNoShares = !stock || isNaN(_inv) || _inv <= 0;
         return hasNoShares ? 'REMOVE' : 'SELL';
@@ -7182,12 +7203,13 @@ async function rbRunSingleIAI(ticker) {
 async function _rbRunAllSectionIAI() {
   const data = _rbAnalysisData;
   if (!data || !data.watchStocksI || data.watchStocksI.length === 0) return;
-  // Clear all caches and reset cells to loading state
+  // Full cache reset + reset all cells to loading state
+  _rbIAICache = {};
   data.watchStocksI.forEach(d => {
-    delete _rbIAICache[d.ticker];
     const cell = document.getElementById('rb-i-cell-' + d.ticker);
     if (cell) cell.innerHTML = `<div id="rb-i-ai-${d.ticker}" style="display:inline-flex;align-items:center;gap:5px"><span style="color:var(--text3);font-size:11px">🤖 Analysing…</span></div>`;
   });
+  _rbIUpdateSummaryBar();
   await _rbAutoRunSectionIAI();
 }
 
@@ -7235,6 +7257,8 @@ function rbCopyIPrompt(ticker, btn) {
     'You are a senior equity research analyst with 20+ years\n' +
     'of experience and deep expertise in Peter Lynch-style\n' +
     'fundamental investing.\n\n' +
+    'NOTE: This analysis is for individual stocks only.\n' +
+    'ETFs are excluded from Section I entirely.\n\n' +
     'QUESTION:\n' +
     'This stock is on the investor\'s Watchlist.\n' +
     'The investor may or may not hold shares in it.\n' +
@@ -7242,50 +7266,91 @@ function rbCopyIPrompt(ticker, btn) {
     'YOUR ONLY OUTPUT: One of these three words exactly.\n' +
     'SELL / REMOVE / KEEP\n' +
     'One word only. No explanation. No punctuation. No emoji.\n\n' +
-    'EVALUATE SILENTLY:\n\n' +
-    '1. Does the investor currently hold shares?\n' +
-    '   - Total Invested: ' + inv + ' USD\n' +
-    '   - Current Value: ' + curval + ' USD\n' +
-    '   - If Total Invested = 0 or null or N/A, investor holds NO shares.\n\n' +
-    '2. Is the business/ETF fundamentally healthy?\n' +
-    '   - Revenue growing? Net income positive?\n' +
-    '   - For ETFs: sector growing, AUM stable?\n\n' +
-    '3. Is the investment thesis still valid?\n' +
-    '   - Would Peter Lynch say this stock is worth watching?\n' +
-    '   - Or has the thesis completely broken down?\n\n' +
-    '4. Is the current loss/gain recoverable?\n' +
-    '   - P&L: ' + plP + '%\n' +
-    '   - YTD: ' + ytd + '%\n\n' +
-    'OUTPUT RULES:\n\n' +
-    'Output SELL if ALL true:\n' +
-    '- Investor holds shares (Total Invested > 0)\n' +
-    '- AND at least ONE of:\n' +
-    '  a. Business fundamentally broken, no recovery in 5 years\n' +
-    '  b. Thesis permanently destroyed\n' +
-    '  c. Peter Lynch would say: exit now, not a cyclical dip\n\n' +
-    'Output REMOVE if ALL true:\n' +
-    '- Investor holds NO shares (Total Invested = 0 or null)\n' +
-    '- AND stock no longer deserves active monitoring:\n' +
-    '  a. Thesis broken or sector in structural decline\n' +
-    '  b. OR significantly better alternatives exist\n' +
-    '  c. OR stock has gone 6+ months with no progress\n' +
-    '     on the original thesis\n\n' +
-    'Output KEEP if ANY true:\n' +
-    '- Investor holds shares AND loss is cyclical/temporary\n' +
-    '  (Peter Lynch would say: hold, recovery likely)\n' +
-    '- OR thesis is still intact and stock worth watching\n' +
-    '- OR investor recently demoted this stock and needs\n' +
-    '  more time to evaluate before deciding\n\n' +
-    'IMPORTANT:\n' +
-    'Short-term price weakness = KEEP, not SELL.\n' +
-    'Only output SELL if the business case is genuinely broken.\n' +
-    'Being on watchlist already means lower conviction —\n' +
-    'the bar for REMOVE is just "not worth monitoring anymore."\n\n' +
+    '---\n\n' +
+    'EVALUATE SILENTLY — DO NOT OUTPUT ANYTHING BELOW:\n\n' +
+    'STEP 1 — Does the investor hold shares?\n' +
+    '- Total Invested: ' + inv + ' USD\n' +
+    '- Current Value: ' + curval + ' USD\n' +
+    '- If Total Invested is 0, null, or N/A → NO SHARES HELD\n\n' +
+    'STEP 2 — Is the business fundamentally broken?\n' +
+    'A business is ONLY fundamentally broken if:\n' +
+    '  - Revenue has declined for 3 or more consecutive quarters\n' +
+    '    with NO signs of stabilisation or recovery\n' +
+    '  - AND net income/profit is also declining or deeply negative\n' +
+    '  - AND the business model itself is structurally disrupted\n' +
+    '    (not a cyclical or macro-driven downturn)\n' +
+    '  - AND recovery is unlikely within 5 years\n\n' +
+    'A business is NOT broken just because:\n' +
+    '  - YTD return is negative\n' +
+    '  - Stock is below its 52-week high\n' +
+    '  - Sector had a bad quarter\n' +
+    '  - Macroeconomic headwinds exist (tariffs, rates, etc.)\n\n' +
+    'STEP 3 — Is the investment thesis still valid?\n' +
+    'Ask: Would Peter Lynch still find this stock interesting to watch or hold?\n' +
+    'Peter Lynch says AVOID only when the business model is permanently\n' +
+    'destroyed — not when there is a temporary setback.\n\n' +
+    'STEP 4 — Is the current loss recoverable?\n' +
+    'A loss is recoverable if:\n' +
+    '  - The business fundamentals are still intact\n' +
+    '  - The sector is not in permanent structural decline\n' +
+    '  - Management quality is still high\n' +
+    '  - Recovery is plausible within 1-3 years\n\n' +
+    '---\n\n' +
+    'OUTPUT RULES — READ CAREFULLY:\n\n' +
+    'DEFAULT OUTPUT IS KEEP.\n' +
+    'SELL and REMOVE are rare exceptions, not the default.\n' +
+    'When in any doubt → output KEEP.\n\n' +
+    '---\n\n' +
+    'OUTPUT SELL only if ALL FOUR conditions are true:\n' +
+    '  1. Investor holds shares (Total Invested > 0)\n' +
+    '  2. Revenue has declined for 3 or more consecutive quarters\n' +
+    '     with no recovery signal visible\n' +
+    '  3. Net income / profit is also declining or negative\n' +
+    '     for the same period — not just one bad quarter\n' +
+    '  4. Peter Lynch would unambiguously say AVOID —\n' +
+    '     the business model is STRUCTURALLY broken and\n' +
+    '     will not meaningfully recover in 5 years\n\n' +
+    'NEVER output SELL if:\n' +
+    '  - Investor P&L is positive (even slightly)\n' +
+    '  - YTD return is positive\n' +
+    '  - The decline is macro or cyclical (not structural)\n' +
+    '  - The stock is a market leader in its sector\n' +
+    '  - One or two bad quarters (need 3+ consecutive)\n' +
+    '  - There is any reasonable path to recovery\n\n' +
+    '---\n\n' +
+    'OUTPUT REMOVE only if ALL THREE conditions are true:\n' +
+    '  1. Investor holds NO shares (Total Invested = 0, null, or N/A)\n' +
+    '  2. The stock has shown NO meaningful price progress over the past\n' +
+    '     6+ months AND YTD return is negative\n' +
+    '  3. The investment thesis is completely broken —\n' +
+    '     not just slow or paused\n\n' +
+    'NEVER output REMOVE if:\n' +
+    '  - YTD return is positive (even slightly)\n' +
+    '  - Stock is up more than 10% in the last 30 days\n' +
+    '  - Sector still has long-term growth tailwinds\n' +
+    '  - Stock was recently added to watchlist\n' +
+    '    (treat any stock as recently added unless there is strong evidence otherwise)\n' +
+    '  - Thesis is intact but just not yet acted on\n\n' +
+    '---\n\n' +
+    'OUTPUT KEEP in all other cases, including:\n' +
+    '  - Investor holds shares with cyclical/macro loss\n' +
+    '  - No shares held but thesis is still intact\n' +
+    '  - Stock is performing well (positive YTD)\n' +
+    '  - Stock recently added to watchlist\n' +
+    '  - Peter Lynch would say: interesting, worth watching\n' +
+    '  - Any uncertainty or insufficient data to decide\n\n' +
+    '---\n\n' +
     'INVESTOR PROFILE:\n' +
     '- Age: 35 years old\n' +
     '- Investment horizon: 10 years\n' +
     '- Moderate to growth-oriented risk tolerance\n' +
-    '- Does NOT make decisions based on short-term price action\n\n' +
+    '- Does NOT make decisions based on short-term price action\n' +
+    '- Watchlist contains stocks being monitored for potential future\n' +
+    '  investment — do not remove them just because no investment has\n' +
+    '  been made yet\n\n' +
+    'EXISTING ETF HOLDINGS (for overlap context only):\n' +
+    'SMH, IBIT, DTCR, IHE, URA, VOO, PICK, VPU, XLP,\n' +
+    'VEQT, SIVR, IWR, IAU, ROKT, XLF\n\n' +
     'Stock to analyse: ' + tickerLabel + '\n\n' +
     'CURRENT POSITION:\n' +
     '- Total Invested: ' + inv + ' USD\n' +
@@ -7294,6 +7359,9 @@ function rbCopyIPrompt(ticker, btn) {
     '- Last 30-Day Return: ' + s30d + '%\n' +
     '- Year-to-Date Return: ' + ytd + '%\n\n' +
     'FINAL OUTPUT RULE:\n' +
+    'When in doubt → KEEP.\n' +
+    'Only SELL if business is structurally broken for 3+ quarters.\n' +
+    'Only REMOVE if no shares, negative YTD, AND thesis broken.\n' +
     'Respond with exactly one word: SELL or REMOVE or KEEP';
 
   navigator.clipboard.writeText(prompt).then(() => {
