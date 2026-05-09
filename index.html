@@ -1301,8 +1301,9 @@ table.div-ht tfoot td{padding:10px 14px;font-size:13px;font-weight:700;backgroun
       <div class="sum-stats">
         <div class="sbox"><div class="sbox-l">Total Invested</div><div class="sbox-v yellow" id="s-inv">—</div></div>
         <div class="sbox"><div class="sbox-l">Total Market Value</div><div class="sbox-v" id="s-mktval">—</div></div>
-        <div class="sbox"><div class="sbox-l">Total Profit $</div><div class="sbox-v" id="s-profitd">—</div></div>
-        <div class="sbox"><div class="sbox-l">Total Profit %</div><div class="sbox-v" id="s-profitp">—</div></div>
+        <div class="sbox"><div class="sbox-l">Running Profit $</div><div class="sbox-v" id="s-profitd">—</div></div>
+        <div class="sbox"><div class="sbox-l">Running Profit %</div><div class="sbox-v" id="s-profitp">—</div></div>
+        <div class="sbox"><div class="sbox-l">Profit Booked $</div><div class="sbox-v" id="s-profitbooked">—</div></div>
         <div class="sbox"><div class="sbox-l">CAGR</div><div class="sbox-v blue" id="s-cagr">—</div></div>
         <div class="sbox"><div class="sbox-l">Day Change ($)</div><div class="sbox-v" id="s-dayd">—</div></div>
         <div class="sbox"><div class="sbox-l">Day Change %</div><div class="sbox-v" id="s-dayp">—</div></div>
@@ -1332,9 +1333,9 @@ table.div-ht tfoot td{padding:10px 14px;font-size:13px;font-weight:700;backgroun
             <tr style="background:var(--bg,#1a1d27);position:sticky;top:0;z-index:1">
               <th style="padding:10px 14px;text-align:left;color:var(--text3);font-weight:600;white-space:nowrap;border-bottom:1px solid var(--border)">Month</th>
               <th style="padding:10px 14px;text-align:right;color:var(--text3);font-weight:600;white-space:nowrap;border-bottom:1px solid var(--border)">Portfolio Value (CAD)</th>
-              <th style="padding:10px 14px;text-align:right;color:var(--text3);font-weight:600;white-space:nowrap;border-bottom:1px solid var(--border)">Total Profit $</th>
+              <th style="padding:10px 14px;text-align:right;color:var(--text3);font-weight:600;white-space:nowrap;border-bottom:1px solid var(--border)">Running Profit $</th>
               <th style="padding:10px 14px;text-align:right;color:var(--text3);font-weight:600;white-space:nowrap;border-bottom:1px solid var(--border)">Monthly Gain $</th>
-              <th style="padding:10px 14px;text-align:right;color:var(--text3);font-weight:600;white-space:nowrap;border-bottom:1px solid var(--border)">Total Profit %</th>
+              <th style="padding:10px 14px;text-align:right;color:var(--text3);font-weight:600;white-space:nowrap;border-bottom:1px solid var(--border)">Running Profit %</th>
               <th style="padding:10px 14px;text-align:right;color:var(--text3);font-weight:600;white-space:nowrap;border-bottom:1px solid var(--border)">CAGR %</th>
               <th style="padding:10px 14px;text-align:right;color:var(--text3);font-weight:600;white-space:nowrap;border-bottom:1px solid var(--border)">vs Prev Month</th>
             </tr>
@@ -2310,11 +2311,12 @@ function parsePnL(g) {
     if (combined !== null && label) {
       // Use gf() to get formatted value (e.g. "$105,321.29" not raw number)
       const val = gf(row, 15);
-      if (!combined.inv    && label.toLowerCase().includes('total invested'))  combined.inv    = val;
-      else if (!combined.mktval  && label.toLowerCase().includes('market value'))    combined.mktval = val;
-      else if (!combined.profitD && label.toLowerCase().includes('profit $'))        combined.profitD = val;
-      else if (!combined.profitP && label.toLowerCase().includes('profit %'))        combined.profitP = val;
-      else if (!combined.cagr    && label.toLowerCase().includes('cagr'))            combined.cagr   = val;
+      if (!combined.inv           && label.toLowerCase().includes('total invested'))   combined.inv           = val;
+      else if (!combined.mktval        && label.toLowerCase().includes('market value'))     combined.mktval        = val;
+      else if (!combined.profitBooked  && label.toLowerCase().includes('profit booked'))    combined.profitBooked  = val;
+      else if (!combined.profitD       && label.toLowerCase().includes('profit $'))         combined.profitD       = val;
+      else if (!combined.profitP       && label.toLowerCase().includes('profit %'))         combined.profitP       = val;
+      else if (!combined.cagr          && label.toLowerCase().includes('cagr'))             combined.cagr          = val;
     }
 
     // Day change row: col 22=Date, col 24=Change($), col 25=Change(%)
@@ -2342,6 +2344,10 @@ function parsePnL(g) {
     const ppEl = document.getElementById('s-profitp');
     ppEl.textContent = combined.profitP || '—';
     ppEl.className = 'sbox-v ' + colorClass(combined.profitP);
+
+    const pbEl = document.getElementById('s-profitbooked');
+    pbEl.textContent = combined.profitBooked || '—';
+    pbEl.className = 'sbox-v ' + colorClass(combined.profitBooked);
   }
   if (lastDayChg) {
     const ddEl = document.getElementById('s-dayd');
