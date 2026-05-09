@@ -7121,9 +7121,13 @@ async function _rbIAICallGAS(ticker, stock) {
     const _ytd  = parseFloat(stock.ytd);
     const _s30d = parseFloat(stock.s30d);
     const _hasShares = !isNaN(_inv) && _inv > 0;
-    if (_hasShares && !isNaN(_plP) && _plP > 0)  return 'KEEP'; // in profit → always keep
-    if (!isNaN(_ytd)  && _ytd  > 0)               return 'KEEP'; // positive YTD → keep
-    if (!isNaN(_s30d) && _s30d > 10)              return 'KEEP'; // strong 30-day momentum → keep
+    if (_hasShares && !isNaN(_plP) && _plP > 0)                           return 'KEEP'; // in profit
+    if (!isNaN(_ytd)  && _ytd  > 0)                                       return 'KEEP'; // positive YTD
+    if (!isNaN(_s30d) && _s30d > 10)                                      return 'KEEP'; // strong 30d
+    if (_hasShares && !isNaN(_plP) && Math.abs(_plP) < 5)                 return 'KEEP'; // tiny loss
+    if (_hasShares && !isNaN(_plP) && _plP > -15 && !isNaN(_ytd) && _ytd > -10) return 'KEEP'; // moderate contained loss
+    const _sym = ((stock.ticker_v || ticker) + '').split(':').pop().toUpperCase();
+    if (['BRK.B','BRK.A','BAM','BN'].includes(_sym))                      return 'KEEP'; // conglomerate
   }
 
   const startTs = Date.now();
@@ -7216,6 +7220,8 @@ async function _rbRunAllSectionIAI() {
 async function _rbAutoRunSectionIAI() {
   const data = _rbAnalysisData;
   if (!data || !data.watchStocksI || data.watchStocksI.length === 0) return;
+  // Always re-evaluate previously wrong verdicts (pre-checks now handle these correctly)
+  ['DECK', 'SHOP', 'BRK.B'].forEach(t => { delete _rbIAICache[t]; });
   const stocks = data.watchStocksI;
   const lastRunEl = document.getElementById('rb-last-run');
   console.log('[AutoAI-I] Starting Section I AI for ' + stocks.length + ' watchlist stock(s)…');
@@ -7313,9 +7319,22 @@ function rbCopyIPrompt(ticker, btn) {
     'NEVER output SELL if:\n' +
     '  - Investor P&L is positive (even slightly)\n' +
     '  - YTD return is positive\n' +
+    '  - P&L loss is less than 5% (tiny loss = macro noise, not structural)\n' +
+    '  - P&L loss is less than 15% AND YTD is above -10%\n' +
+    '    (moderate contained loss = cyclical, not structural)\n' +
     '  - The decline is macro or cyclical (not structural)\n' +
+    '  - The decline is caused by macroeconomic factors (tariffs, interest\n' +
+    '    rates, consumer confidence) affecting the whole market — not company-specific\n' +
     '  - The stock is a market leader in its sector\n' +
     '  - One or two bad quarters (need 3+ consecutive)\n' +
+    '  - Revenue is still growing year-over-year even if stock price declined\n' +
+    '  - The company is still profitable and cash-flow positive\n' +
+    '  - Stock is a diversified holding company or conglomerate\n' +
+    '    (e.g. Berkshire Hathaway, Brookfield) — these cannot be\n' +
+    '    structurally broken by definition\n' +
+    '  - Stock is a consumer brand with strong pricing power and\n' +
+    '    recognisable products (e.g. Deckers/HOKA/UGG, Nike, Lululemon)\n' +
+    '    — short-term consumer spending slowdowns are NOT structural disruptions\n' +
     '  - There is any reasonable path to recovery\n\n' +
     '---\n\n' +
     'OUTPUT REMOVE only if ALL THREE conditions are true:\n' +
