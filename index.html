@@ -4902,6 +4902,7 @@ let _rbReportCache  = {};   // { [uid]: { reportText, verdict, reason, analyzedO
 let _rbFAICache     = {};   // { [ticker]: { verdict, analyzedOn } } — Section F AI verdicts, localStorage-backed
 let _rbJAICache     = {};   // { [ticker]: verdict } — Section J AI verdicts, session-only
 let _rbIAICache     = {};   // { [ticker]: verdict } — Section I AI verdicts, session-only (SELL/REMOVE/KEEP)
+let _rbISortAsc     = true; // Section I verdict sort direction
 let _rbAIBannerDone  = 0;  // completed AI calls (G + F combined) for progress banner
 let _rbAIBannerTotal = 0;  // total AI calls queued for progress banner
 (function _rbFAILoadCache() {
@@ -6129,8 +6130,10 @@ function _doRebalance() {
         : `<div id="rb-i-ai-${d.ticker}" style="display:inline-flex;align-items:center;gap:5px"><span style="color:var(--text3);font-size:11px">—</span></div>`;
       const plColor  = d.plP  != null ? (d.plP  >= 0 ? 'var(--green)' : 'var(--red)') : 'var(--text3)';
       const ytdColor = d.ytd  != null ? (d.ytd  >= 0 ? 'var(--green)' : 'var(--red)') : 'var(--text3)';
-      const holding  = (d.inv || 0) > 0 ? 'Holding' : 'No Position';
-      const holdColor = (d.inv || 0) > 0 ? 'var(--green)' : 'var(--text3)';
+      const _invVal   = parseFloat(d.inv);
+      const hasShares = !isNaN(_invVal) && _invVal > 0;
+      const holding   = hasShares ? 'Holding' : 'No Position';
+      const holdColor = hasShares ? 'var(--green)' : 'var(--text3)';
       return `<tr style="border-top:1px solid rgba(255,255,255,.05)">
         <td style="padding:9px 12px;font-size:12px;font-weight:700;color:#c8d8e8;white-space:nowrap">${d.ticker_v || d.ticker}</td>
         <td style="padding:9px 12px;font-size:12px;color:var(--text2)">${d.shortName || d.ticker}</td>
@@ -6156,7 +6159,7 @@ function _doRebalance() {
               <th style="padding:7px 12px;font-size:10px;font-weight:700;color:var(--text3);text-align:left;text-transform:uppercase;letter-spacing:.5px">Shares</th>
               <th style="padding:7px 12px;font-size:10px;font-weight:700;color:var(--text3);text-align:right;text-transform:uppercase;letter-spacing:.5px">P&amp;L</th>
               <th style="padding:7px 12px;font-size:10px;font-weight:700;color:var(--text3);text-align:right;text-transform:uppercase;letter-spacing:.5px">YTD</th>
-              <th style="padding:7px 12px;font-size:10px;font-weight:700;color:var(--text3);text-align:left;text-transform:uppercase;letter-spacing:.5px">AI Verdict</th>
+              <th id="rb-i-verdict-th" onclick="rbSortSectionI()" style="padding:7px 12px;font-size:10px;font-weight:700;color:#5b8fff;text-align:left;text-transform:uppercase;letter-spacing:.5px;cursor:pointer;user-select:none">AI Verdict ↕</th>
               <th style="padding:7px 12px;font-size:10px;font-weight:700;color:var(--text3);text-align:left;text-transform:uppercase;letter-spacing:.5px">Actions</th>
             </tr>
           </thead>
@@ -7143,7 +7146,11 @@ async function _rbIAICallGAS(ticker, stock) {
     // GAS YES/NO fallback: YES → KEEP, NO → context-dependent
     if (json && json.ok) {
       if (json.verdict === 'YES') return 'KEEP';
-      if (json.verdict === 'NO')  return stock && (stock.inv || 0) > 0 ? 'SELL' : 'REMOVE';
+      if (json.verdict === 'NO') {
+        const _inv = stock ? parseFloat(stock.inv) : NaN;
+        const hasNoShares = !stock || isNaN(_inv) || _inv <= 0;
+        return hasNoShares ? 'REMOVE' : 'SELL';
+      }
     }
     return 'ERROR';
   } catch(err) {
@@ -7230,7 +7237,7 @@ function rbCopyIPrompt(ticker, btn) {
     '1. Does the investor currently hold shares?\n' +
     '   - Total Invested: ' + inv + ' USD\n' +
     '   - Current Value: ' + curval + ' USD\n' +
-    '   - If Total Invested = 0, investor holds NO shares.\n\n' +
+    '   - If Total Invested = 0 or null or N/A, investor holds NO shares.\n\n' +
     '2. Is the business/ETF fundamentally healthy?\n' +
     '   - Revenue growing? Net income positive?\n' +
     '   - For ETFs: sector growing, AUM stable?\n\n' +
@@ -7285,6 +7292,50 @@ function rbCopyIPrompt(ticker, btn) {
     btn.textContent = 'Copied!';
     setTimeout(() => { btn.textContent = orig; }, 2000);
   }).catch(() => { alert('Copy failed — please allow clipboard access'); });
+}
+
+// ── Section I: Sort table by AI Verdict ──────────────────────────────────────
+function rbSortSectionI() {
+  const data = _rbAnalysisData;
+  if (!data || !data.watchStocksI || data.watchStocksI.length === 0) return;
+
+  _rbISortAsc = !_rbISortAsc;
+  const th = document.getElementById('rb-i-verdict-th');
+  if (th) th.textContent = 'AI Verdict ' + (_rbISortAsc ? '↑' : '↓');
+
+  // Priority: SELL=0, REMOVE=1, KEEP=2, ERROR=3, undefined=4
+  const priority = v => ({ SELL: 0, REMOVE: 1, KEEP: 2, ERROR: 3 })[v] ?? 4;
+  const sorted = [...data.watchStocksI].sort((a, b) => {
+    const diff = priority(_rbIAICache[a.ticker]) - priority(_rbIAICache[b.ticker]);
+    return _rbISortAsc ? diff : -diff;
+  });
+
+  const tbody = document.querySelector('#rb-body-i tbody');
+  if (!tbody) return;
+  tbody.innerHTML = sorted.map(d => {
+    const iVerdict = _rbIAICache[d.ticker];
+    const verdictCell = iVerdict
+      ? _rbIAIVerdictBadge(d.ticker, iVerdict)
+      : `<div id="rb-i-ai-${d.ticker}" style="display:inline-flex;align-items:center;gap:5px"><span style="color:var(--text3);font-size:11px">—</span></div>`;
+    const _invVal   = parseFloat(d.inv);
+    const hasShares = !isNaN(_invVal) && _invVal > 0;
+    const holding   = hasShares ? 'Holding' : 'No Position';
+    const holdColor = hasShares ? 'var(--green)' : 'var(--text3)';
+    const plColor   = d.plP != null ? (d.plP  >= 0 ? 'var(--green)' : 'var(--red)') : 'var(--text3)';
+    const ytdColor  = d.ytd != null ? (d.ytd  >= 0 ? 'var(--green)' : 'var(--red)') : 'var(--text3)';
+    return `<tr style="border-top:1px solid rgba(255,255,255,.05)">
+      <td style="padding:9px 12px;font-size:12px;font-weight:700;color:#c8d8e8;white-space:nowrap">${d.ticker_v || d.ticker}</td>
+      <td style="padding:9px 12px;font-size:12px;color:var(--text2)">${d.shortName || d.ticker}</td>
+      <td style="padding:9px 12px;font-size:11px;font-weight:600;color:${holdColor}">${holding}</td>
+      <td style="padding:9px 12px;font-size:12px;font-weight:700;color:${plColor};text-align:right">${fmtPct(d.plP)}</td>
+      <td style="padding:9px 12px;font-size:12px;font-weight:700;color:${ytdColor};text-align:right">${fmtPct(d.ytd)}</td>
+      <td style="padding:9px 12px" id="rb-i-cell-${d.ticker}">${verdictCell}</td>
+      <td style="padding:9px 12px;white-space:nowrap">
+        <button onclick="rbRunSingleIAI('${d.ticker}')" style="background:rgba(91,143,255,.1);color:#5b8fff;border:1px solid rgba(91,143,255,.25);border-radius:5px;padding:4px 10px;font-size:11px;font-weight:600;cursor:pointer" title="Run AI for ${d.ticker}">Run AI</button>
+        <button onclick="rbCopyIPrompt('${d.ticker}',this)" style="background:rgba(91,143,255,.12);color:#5b8fff;border:1px solid rgba(91,143,255,.3);border-radius:5px;padding:4px 10px;font-size:11px;font-weight:600;cursor:pointer;margin-left:5px" title="Copy AI prompt for ${d.ticker}">⎘ Copy Prompt</button>
+      </td>
+    </tr>`;
+  }).join('');
 }
 
 // ── Update command strip chips after all AI runs finish ───────────────────────
