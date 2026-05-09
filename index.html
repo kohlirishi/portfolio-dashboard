@@ -1757,6 +1757,17 @@ table.div-ht tfoot td{padding:10px 14px;font-size:13px;font-weight:700;backgroun
       <div class="rb-sec-body" id="rb-body-h"></div>
     </div>
 
+    <!-- SECTION I -->
+    <div class="rb-section" id="rb-sec-i">
+      <div class="rb-sec-head" onclick="rbToggleSec('i')">
+        <div class="rb-sec-letter">I</div>
+        <div class="rb-sec-title">Watchlist Cleanup Advisor</div>
+        <span class="rb-sec-badge rb-badge-info" id="rb-i-badge">—</span>
+        <span class="rb-sec-toggle" id="rb-tog-i">▾</span>
+      </div>
+      <div class="rb-sec-body" id="rb-body-i"></div>
+    </div>
+
     <!-- SECTION J -->
     <div class="rb-section" id="rb-sec-j">
       <div class="rb-sec-head" onclick="rbToggleSec('j')">
@@ -4890,6 +4901,7 @@ let _rbAnalysisData = null; // last computed analysis
 let _rbReportCache  = {};   // { [uid]: { reportText, verdict, reason, analyzedOn, savedToSheets } }
 let _rbFAICache     = {};   // { [ticker]: { verdict, analyzedOn } } — Section F AI verdicts, localStorage-backed
 let _rbJAICache     = {};   // { [ticker]: verdict } — Section J AI verdicts, session-only
+let _rbIAICache     = {};   // { [ticker]: verdict } — Section I AI verdicts, session-only (SELL/REMOVE/KEEP)
 let _rbAIBannerDone  = 0;  // completed AI calls (G + F combined) for progress banner
 let _rbAIBannerTotal = 0;  // total AI calls queued for progress banner
 (function _rbFAILoadCache() {
@@ -5453,12 +5465,14 @@ function runRebalance() {
     // Auto-fetch fundamentals for demote candidates (stale > 7 days or missing)
     // then filter out stocks where fundamentals say Hold — no demotion needed
     await _rbAutoFetchAndFilterDemote();
-    // Run Section G, F, and J AI queues in parallel (each internally sequential with 2s gap)
+    // Run Section G, F, J, and I AI queues in parallel (each internally sequential with 2s gap)
+    const _watchStocks = (typeof ALL !== 'undefined' ? ALL.filter(d => d.isWatch && (d.type || '').toLowerCase() !== 'etf') : []);
     const _aiTotalCount = (typeof ALL !== 'undefined' ? ALL.filter(d => d.isWatch).length : 0) +
       (_rbAnalysisData ? (_rbAnalysisData.deadWeight || []).length : 0) +
-      (_rbAnalysisData ? (_rbAnalysisData.demote || []).length : 0);
+      (_rbAnalysisData ? (_rbAnalysisData.demote || []).length : 0) +
+      _watchStocks.length;
     _rbAIBannerShow(_aiTotalCount);
-    await Promise.all([_rbAutoRunSectionGAI(), _rbAutoRunSectionFAI(), _rbAutoRunSectionJAI()]);
+    await Promise.all([_rbAutoRunSectionGAI(), _rbAutoRunSectionFAI(), _rbAutoRunSectionJAI(), _rbAutoRunSectionIAI()]);
     _rbAIBannerHide();
     _rbUpdateCommandStripAfterAI();
   }, 80);
@@ -6092,6 +6106,65 @@ function _doRebalance() {
       </div>
     </div>`;
 
+  // ── SECTION I: Watchlist Cleanup Advisor ─────────────────────────────────
+  const watchStocksI = watch.filter(d => (d.type || '').toLowerCase() !== 'etf');
+  document.getElementById('rb-i-badge').textContent = watchStocksI.length > 0 ? `${watchStocksI.length} Stock${watchStocksI.length !== 1 ? 's' : ''}` : '—';
+  document.getElementById('rb-i-badge').className   = 'rb-sec-badge ' + (watchStocksI.length > 0 ? 'rb-badge-info' : 'rb-badge-ok');
+
+  if (watchStocksI.length === 0) {
+    document.getElementById('rb-body-i').innerHTML =
+      `<div class="rb-no-data" style="color:var(--text2)">No stocks on the watchlist to review.</div>`;
+  } else {
+    const iSummaryBar = `<div id="rb-i-summary" style="display:flex;align-items:center;gap:14px;margin-bottom:14px;flex-wrap:wrap">
+      <span id="rb-i-cnt-sell" style="font-size:12px;font-weight:700;color:#ef4444">🔴 — Sell</span>
+      <span id="rb-i-cnt-remove" style="font-size:12px;font-weight:700;color:#f5a623">🟡 — Remove</span>
+      <span id="rb-i-cnt-keep" style="font-size:12px;font-weight:700;color:var(--green)">🟢 — Keep</span>
+      <button onclick="_rbRunAllSectionIAI()" style="margin-left:auto;background:rgba(91,143,255,.12);color:#5b8fff;border:1px solid rgba(91,143,255,.3);border-radius:7px;padding:6px 14px;font-size:12px;font-weight:600;cursor:pointer">▶ Run All</button>
+    </div>`;
+
+    const tableRows = watchStocksI.map(d => {
+      const iVerdict = _rbIAICache[d.ticker];
+      const verdictCell = iVerdict
+        ? _rbIAIVerdictBadge(d.ticker, iVerdict)
+        : `<div id="rb-i-ai-${d.ticker}" style="display:inline-flex;align-items:center;gap:5px"><span style="color:var(--text3);font-size:11px">—</span></div>`;
+      const plColor  = d.plP  != null ? (d.plP  >= 0 ? 'var(--green)' : 'var(--red)') : 'var(--text3)';
+      const ytdColor = d.ytd  != null ? (d.ytd  >= 0 ? 'var(--green)' : 'var(--red)') : 'var(--text3)';
+      const holding  = (d.inv || 0) > 0 ? 'Holding' : 'No Position';
+      const holdColor = (d.inv || 0) > 0 ? 'var(--green)' : 'var(--text3)';
+      return `<tr style="border-top:1px solid rgba(255,255,255,.05)">
+        <td style="padding:9px 12px;font-size:12px;font-weight:700;color:#c8d8e8;white-space:nowrap">${d.ticker_v || d.ticker}</td>
+        <td style="padding:9px 12px;font-size:12px;color:var(--text2)">${d.shortName || d.ticker}</td>
+        <td style="padding:9px 12px;font-size:11px;font-weight:600;color:${holdColor}">${holding}</td>
+        <td style="padding:9px 12px;font-size:12px;font-weight:700;color:${plColor};text-align:right">${fmtPct(d.plP)}</td>
+        <td style="padding:9px 12px;font-size:12px;font-weight:700;color:${ytdColor};text-align:right">${fmtPct(d.ytd)}</td>
+        <td style="padding:9px 12px" id="rb-i-cell-${d.ticker}">${verdictCell}</td>
+        <td style="padding:9px 12px">
+          <button onclick="rbRunSingleIAI('${d.ticker}')" style="background:rgba(91,143,255,.1);color:#5b8fff;border:1px solid rgba(91,143,255,.25);border-radius:5px;padding:4px 10px;font-size:11px;font-weight:600;cursor:pointer" title="Run AI for ${d.ticker}">Run AI</button>
+        </td>
+      </tr>`;
+    }).join('');
+
+    document.getElementById('rb-body-i').innerHTML =
+      iSummaryBar +
+      `<div style="overflow-x:auto">
+        <table style="width:100%;border-collapse:collapse">
+          <thead>
+            <tr style="border-bottom:1px solid rgba(255,255,255,.08)">
+              <th style="padding:7px 12px;font-size:10px;font-weight:700;color:var(--text3);text-align:left;text-transform:uppercase;letter-spacing:.5px">Ticker</th>
+              <th style="padding:7px 12px;font-size:10px;font-weight:700;color:var(--text3);text-align:left;text-transform:uppercase;letter-spacing:.5px">Name</th>
+              <th style="padding:7px 12px;font-size:10px;font-weight:700;color:var(--text3);text-align:left;text-transform:uppercase;letter-spacing:.5px">Shares</th>
+              <th style="padding:7px 12px;font-size:10px;font-weight:700;color:var(--text3);text-align:right;text-transform:uppercase;letter-spacing:.5px">P&amp;L</th>
+              <th style="padding:7px 12px;font-size:10px;font-weight:700;color:var(--text3);text-align:right;text-transform:uppercase;letter-spacing:.5px">YTD</th>
+              <th style="padding:7px 12px;font-size:10px;font-weight:700;color:var(--text3);text-align:left;text-transform:uppercase;letter-spacing:.5px">AI Verdict</th>
+              <th style="padding:7px 12px;font-size:10px;font-weight:700;color:var(--text3);text-align:left;text-transform:uppercase;letter-spacing:.5px">Action</th>
+            </tr>
+          </thead>
+          <tbody>${tableRows}</tbody>
+        </table>
+      </div>`;
+    _rbIUpdateSummaryBar();
+  }
+
   // ── SECTION J: Core ↔ Watchlist movement suggestions ─────────────────────
   const promote = [];   // watchlist → consider moving to core
   const demote  = [];   // core → consider moving to watchlist
@@ -6188,7 +6261,7 @@ function _doRebalance() {
   _rbRenderCommandStrip(deadWeight, profitAbove, planReport, watch, promote, demote, planMonitor, planAction, overallVerdict, dwNeedingReport);
 
   // Store analysis data for prompt generation (watch stored for auto-fetch refresh)
-  _rbAnalysisData = { main, watch, totalInv, totalVal, etfInv, stkInv, usInv, caInv, totalSIP, sipFunds, sectorRows, capViolations, stocksDown, etfsDown, profitAbove, deadWeight, promote, demote, planAction, planMonitor, planOk, planReport, hScore, hGrade, overallVerdict, fxRate };
+  _rbAnalysisData = { main, watch, watchStocksI, totalInv, totalVal, etfInv, stkInv, usInv, caInv, totalSIP, sipFunds, sectorRows, capViolations, stocksDown, etfsDown, profitAbove, deadWeight, promote, demote, planAction, planMonitor, planOk, planReport, hScore, hGrade, overallVerdict, fxRate };
 }
 
 // ── Score a watchlist promote candidate (0–10) ───────────────────────────────
@@ -6967,6 +7040,169 @@ async function _rbAutoRunSectionJAI() {
   console.log('[AutoAI-J] Section J AI complete.');
 }
 
+// ── Section I: Watchlist Cleanup Advisor ─────────────────────────────────────
+
+function _rbIAIVerdictBadge(ticker, verdict) {
+  const runBtn = `<button onclick="rbRunSingleIAI('${ticker}')" title="Re-run AI for ${ticker}"
+    style="background:none;border:1px solid rgba(255,255,255,.15);border-radius:5px;padding:3px 7px;cursor:pointer;font-size:11px;color:var(--text2);margin-left:6px">↺</button>`;
+  if (verdict === 'SELL') {
+    return `<div id="rb-i-ai-${ticker}" style="display:inline-flex;align-items:center">
+      <span style="background:rgba(239,68,68,.1);border:1px solid rgba(239,68,68,.35);border-radius:6px;padding:4px 10px;font-size:12px;font-weight:700;color:#ef4444">🔴 SELL</span>${runBtn}</div>`;
+  }
+  if (verdict === 'REMOVE') {
+    return `<div id="rb-i-ai-${ticker}" style="display:inline-flex;align-items:center">
+      <span style="background:rgba(245,166,35,.1);border:1px solid rgba(245,166,35,.35);border-radius:6px;padding:4px 10px;font-size:12px;font-weight:700;color:#f5a623">🟡 REMOVE</span>${runBtn}</div>`;
+  }
+  if (verdict === 'KEEP') {
+    return `<div id="rb-i-ai-${ticker}" style="display:inline-flex;align-items:center">
+      <span style="background:rgba(16,208,122,.07);border:1px solid rgba(16,208,122,.3);border-radius:6px;padding:4px 10px;font-size:12px;font-weight:700;color:var(--green)">🟢 KEEP</span>${runBtn}</div>`;
+  }
+  return `<div id="rb-i-ai-${ticker}" style="display:inline-flex;align-items:center">
+    <span style="background:rgba(249,115,22,.07);border:1px solid rgba(249,115,22,.3);border-radius:6px;padding:4px 10px;font-size:12px;font-weight:700;color:#f97316">🟠 Failed</span>${runBtn}</div>`;
+}
+
+function _rbIShowVerdict(ticker, verdict) {
+  const cell = document.getElementById('rb-i-cell-' + ticker);
+  if (cell) cell.innerHTML = _rbIAIVerdictBadge(ticker, verdict);
+  _rbIUpdateSummaryBar();
+}
+
+function _rbIUpdateSummaryBar() {
+  const data = _rbAnalysisData;
+  if (!data || !data.watchStocksI) return;
+  const sell   = data.watchStocksI.filter(d => _rbIAICache[d.ticker] === 'SELL').length;
+  const remove = data.watchStocksI.filter(d => _rbIAICache[d.ticker] === 'REMOVE').length;
+  const keep   = data.watchStocksI.filter(d => _rbIAICache[d.ticker] === 'KEEP').length;
+  const sEl = document.getElementById('rb-i-cnt-sell');
+  const rEl = document.getElementById('rb-i-cnt-remove');
+  const kEl = document.getElementById('rb-i-cnt-keep');
+  if (sEl) sEl.textContent = `🔴 ${sell} Sell`;
+  if (rEl) rEl.textContent = `🟡 ${remove} Remove`;
+  if (kEl) kEl.textContent = `🟢 ${keep} Keep`;
+}
+
+function _rbIGetCounts(watchStocksI) {
+  const sell   = watchStocksI.filter(d => _rbIAICache[d.ticker] === 'SELL').length;
+  const remove = watchStocksI.filter(d => _rbIAICache[d.ticker] === 'REMOVE').length;
+  const keep   = watchStocksI.filter(d => _rbIAICache[d.ticker] === 'KEEP').length;
+  const hasRun = (sell + remove + keep) > 0;
+  return { sell, remove, keep, hasRun };
+}
+
+async function _rbIAICallGAS(ticker, stock) {
+  const startTs = Date.now();
+  let phase = 'Trying Mistral AI…';
+  const _getEl = () => document.getElementById('rb-i-ai-' + ticker);
+  const _tick = () => {
+    const secs = Math.floor((Date.now() - startTs) / 1000);
+    const el = _getEl();
+    if (el) el.innerHTML = `<span style="color:var(--blue);font-size:11px">🤖 ${phase} (${secs}s)</span>`;
+  };
+  const timer = setInterval(_tick, 1000);
+  _tick();
+
+  const enc = encodeURIComponent;
+  const tickerFull = (stock && stock.ticker_v) ? stock.ticker_v : ticker;
+  const pp = stock
+    ? `&section=I&tickerFull=${enc(tickerFull)}&inv=${enc(stock.inv ?? '')}&curval=${enc(stock.curval ?? '')}&plP=${enc(stock.plP ?? '')}&s30d=${enc(stock.s30d ?? '')}&ytd=${enc(stock.ytd ?? '')}&sip=${enc(stock.sip ?? '')}`
+    : `&section=I&tickerFull=${enc(tickerFull)}`;
+
+  try {
+    let resp = await _rbFAIFetchWithTimeout(
+      `${_rbScriptUrl}?action=getSipVerdict&ticker=${enc(ticker)}&attempt=1${pp}`, 45000);
+    if (!resp.ok) throw new Error('HTTP ' + resp.status);
+    let json = await resp.json().catch(() => null);
+
+    if (json && json.rateLimited) {
+      let countdown = 60;
+      await new Promise(resolve => {
+        const cd = setInterval(() => {
+          countdown--;
+          phase = `Rate limited — retrying in ${countdown}s…`;
+          _tick();
+          if (countdown <= 0) { clearInterval(cd); resolve(); }
+        }, 1000);
+      });
+      phase = 'Retrying (attempt 2)…';
+      _tick();
+      resp = await _rbFAIFetchWithTimeout(
+        `${_rbScriptUrl}?action=getSipVerdict&ticker=${enc(ticker)}&attempt=2${pp}`, 60000);
+      if (!resp.ok) throw new Error('HTTP ' + resp.status);
+      json = await resp.json().catch(() => null);
+    }
+
+    clearInterval(timer);
+    // GAS returns YES/NO — map to Section I three-way verdict via raw text fallback
+    if (json && json.rawText) {
+      const raw = json.rawText.trim().toUpperCase();
+      if (raw === 'SELL')   return 'SELL';
+      if (raw === 'REMOVE') return 'REMOVE';
+      if (raw === 'KEEP')   return 'KEEP';
+    }
+    // GAS YES/NO fallback: YES → KEEP, NO → context-dependent
+    if (json && json.ok) {
+      if (json.verdict === 'YES') return 'KEEP';
+      if (json.verdict === 'NO')  return stock && (stock.inv || 0) > 0 ? 'SELL' : 'REMOVE';
+    }
+    return 'ERROR';
+  } catch(err) {
+    clearInterval(timer);
+    console.error('[IAI] ' + ticker + ':', err.message);
+    return 'ERROR';
+  }
+}
+
+async function rbRunSingleIAI(ticker) {
+  delete _rbIAICache[ticker];
+  const cell = document.getElementById('rb-i-cell-' + ticker);
+  if (cell) cell.innerHTML = `<div id="rb-i-ai-${ticker}" style="display:inline-flex;align-items:center;gap:5px"><span style="color:var(--text3);font-size:11px">🤖 Analysing…</span></div>`;
+  const stock = (typeof ALL !== 'undefined' ? ALL.find(d => d.ticker === ticker) : null) || null;
+  const verdict = await _rbIAICallGAS(ticker, stock);
+  _rbIAICache[ticker] = verdict;
+  _rbIShowVerdict(ticker, verdict);
+}
+
+async function _rbRunAllSectionIAI() {
+  const data = _rbAnalysisData;
+  if (!data || !data.watchStocksI || data.watchStocksI.length === 0) return;
+  // Clear all caches and reset cells to loading state
+  data.watchStocksI.forEach(d => {
+    delete _rbIAICache[d.ticker];
+    const cell = document.getElementById('rb-i-cell-' + d.ticker);
+    if (cell) cell.innerHTML = `<div id="rb-i-ai-${d.ticker}" style="display:inline-flex;align-items:center;gap:5px"><span style="color:var(--text3);font-size:11px">🤖 Analysing…</span></div>`;
+  });
+  await _rbAutoRunSectionIAI();
+}
+
+async function _rbAutoRunSectionIAI() {
+  const data = _rbAnalysisData;
+  if (!data || !data.watchStocksI || data.watchStocksI.length === 0) return;
+  const stocks = data.watchStocksI;
+  const lastRunEl = document.getElementById('rb-last-run');
+  console.log('[AutoAI-I] Starting Section I AI for ' + stocks.length + ' watchlist stock(s)…');
+
+  const BATCH = 3;
+  for (let i = 0; i < stocks.length; i += BATCH) {
+    const batch = stocks.slice(i, i + BATCH);
+    await Promise.all(batch.map(async (d, bi) => {
+      if (_rbIAICache[d.ticker]) {
+        _rbIShowVerdict(d.ticker, _rbIAICache[d.ticker]);
+        _rbAIBannerUpdate(d.ticker, 'I');
+        return;
+      }
+      if (lastRunEl) lastRunEl.textContent = `AI Analyzing I (${i + bi + 1}/${stocks.length}): ${d.ticker}…`;
+      const verdict = await _rbIAICallGAS(d.ticker, d);
+      _rbIAICache[d.ticker] = verdict;
+      _rbIShowVerdict(d.ticker, verdict);
+      _rbAIBannerUpdate(d.ticker, 'I');
+    }));
+    if (i + BATCH < stocks.length) await new Promise(r => setTimeout(r, 2000));
+  }
+
+  if (lastRunEl) lastRunEl.textContent = 'Last run: ' + new Date().toLocaleTimeString('en-CA', { hour: '2-digit', minute: '2-digit' });
+  console.log('[AutoAI-I] Section I AI complete.');
+}
+
 // ── Update command strip chips after all AI runs finish ───────────────────────
 function _rbUpdateCommandStripAfterAI() {
   const data = _rbAnalysisData;
@@ -7171,9 +7407,26 @@ function _rbRenderCommandStrip(deadWeight, profitAbove, planReport, watch, promo
   </div>`
     : '';
 
+  // Watchlist Actions card (Section I) — shows counts if AI has run, else prompt
+  const iCounts = _rbIGetCounts(data.watchStocksI || []);
+  const watchlistActionsCard = (data.watchStocksI && data.watchStocksI.length > 0)
+    ? `<div class="cs-card cs-card-blue" style="cursor:pointer" onclick="rbToggleSec('i')">
+        <div class="cs-card-icon">🔍</div>
+        <div class="cs-card-label">Watchlist Actions</div>
+        ${iCounts.hasRun
+          ? `<div style="display:flex;flex-direction:column;gap:5px;margin-top:6px">
+               <div style="font-size:12px;font-weight:700;color:#ef4444">🔴 ${iCounts.sell} Sell alert${iCounts.sell !== 1 ? 's' : ''}</div>
+               <div style="font-size:12px;font-weight:700;color:#f5a623">🟡 ${iCounts.remove} Remove alert${iCounts.remove !== 1 ? 's' : ''}</div>
+               <div style="font-size:12px;font-weight:700;color:var(--green)">🟢 ${iCounts.keep} Keep watching</div>
+             </div>`
+          : `<div style="font-size:11px;color:var(--text3);margin-top:6px">Run Section I to see watchlist actions</div>`}
+      </div>`
+    : '';
+
   // Set grid columns dynamically based on visible card count
   const numCards = (dwNeedingReport.length > 0 ? 1 : 0) + 1 + (planReport.length > 0 ? 1 : 0) + 1 + 1
-    + (faiNoStocks.length > 0 ? 1 : 0) + (groupBorderline.length > 0 ? 1 : 0) + (groupB.length > 0 ? 1 : 0);
+    + (faiNoStocks.length > 0 ? 1 : 0) + (groupBorderline.length > 0 ? 1 : 0) + (groupB.length > 0 ? 1 : 0)
+    + (data.watchStocksI && data.watchStocksI.length > 0 ? 1 : 0);
   const gridEl = document.getElementById('cs-cards-grid');
   gridEl.style.gridTemplateColumns = `repeat(${Math.min(numCards, 3)}, 1fr)`;
 
@@ -7185,7 +7438,8 @@ function _rbRenderCommandStrip(deadWeight, profitAbove, planReport, watch, promo
     mkCard('cs-card-purple', '☆',  promoteToCore.length, card4Label,                                             card4Items, 'G') +
     top3Card +
     borderlineCard +
-    waitCard;
+    waitCard +
+    watchlistActionsCard;
 
   // ── Movement block — only visible when there are actual demotion candidates ──
   const moveEl = document.getElementById('cs-movement');
