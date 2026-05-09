@@ -6791,9 +6791,7 @@ function rbCopyJPrompt(ticker, btn) {
   const ytd    = stock.ytd    != null ? stock.ytd    : 'N/A';
   const sip    = stock.sip    != null ? stock.sip    : 'N/A';
 
-  const tickerLabel = stock.exchange
-    ? stock.exchange + ':' + ticker
-    : ticker + ' (exchange unknown)';
+  const tickerLabel = stock.ticker_v || ticker;
 
   const isETF = stock.type === 'ETF'
     || ticker.includes('ETF')
