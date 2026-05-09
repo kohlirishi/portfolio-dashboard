@@ -4912,6 +4912,8 @@ let _rbFAICache     = {};   // { [ticker]: { verdict, analyzedOn } } — Section
 let _rbJAICache     = {};   // { [ticker]: verdict } — Section J AI verdicts, session-only
 let _rbIAICache     = {};   // { [ticker]: verdict } — Section I AI verdicts, session-only (SELL/REMOVE/KEEP)
 let _rbISortAsc     = true; // Section I verdict sort direction
+let _rbEAICache     = {};   // { [ticker]: verdict } — Section E AI verdicts, session-only (HARVEST/NOACTION)
+let _rbESortState   = 0;    // 0=plP desc (default), 1=HARVEST first, 2=NOACTION first
 let _rbAIBannerDone  = 0;  // completed AI calls (G + F combined) for progress banner
 let _rbAIBannerTotal = 0;  // total AI calls queued for progress banner
 (function _rbFAILoadCache() {
@@ -5480,9 +5482,10 @@ function runRebalance() {
     const _aiTotalCount = (typeof ALL !== 'undefined' ? ALL.filter(d => d.isWatch).length : 0) +
       (_rbAnalysisData ? (_rbAnalysisData.deadWeight || []).length : 0) +
       (_rbAnalysisData ? (_rbAnalysisData.demote || []).length : 0) +
-      _watchStocks.length;
+      _watchStocks.length +
+      (_rbAnalysisData ? (_rbAnalysisData.profitAbove || []).length : 0);
     _rbAIBannerShow(_aiTotalCount);
-    await Promise.all([_rbAutoRunSectionGAI(), _rbAutoRunSectionFAI(), _rbAutoRunSectionJAI(), _rbAutoRunSectionIAI()]);
+    await Promise.all([_rbAutoRunSectionGAI(), _rbAutoRunSectionFAI(), _rbAutoRunSectionJAI(), _rbAutoRunSectionIAI(), _rbAutoRunSectionEAI()]);
     _rbAIBannerHide();
     _rbUpdateCommandStripAfterAI();
   }, 80);
@@ -5970,23 +5973,61 @@ function _doRebalance() {
   document.getElementById('rb-e-badge').textContent = profitAbove.length > 0 ? `${profitAbove.length} Positions` : 'None';
   document.getElementById('rb-e-badge').className   = 'rb-sec-badge ' + (profitAbove.length > 0 ? 'rb-badge-info' : 'rb-badge-ok');
 
-  document.getElementById('rb-body-e').innerHTML = profitAbove.length === 0
-    ? `<div class="rb-no-data" style="color:var(--text2)">No positions above +20% personal P/L right now.</div>`
-    : `<div style="margin-bottom:10px;font-size:12px;color:var(--text2)">Rule: Never trim purely due to fear of gains. Trimming is only considered if overweight AND fundamentals remain intact. All positions below are <strong style="color:var(--text)">No Action</strong> unless also flagged in Section B (cap violation).</div>`
-      + profitAbove.map(d => {
-        const capViol = capViolations.find(v => v.sym === d.ticker);
-        const statusHtml = capViol
-          ? `<span class="rb-sec-badge rb-badge-warn">Monitor<br><span style="font-size:10px">+ Cap Violation</span></span>`
-          : `<span class="rb-sec-badge rb-badge-ok">No Action</span>`;
-        return rbFlagRow('🏆', 'var(--green-dim)', d.shortName + ' (' + d.ticker + ')',
-          d.sector + ' · ' + d.type,
-          [{ l: 'P/L %', v: fmtPct(d.plP), c: 'var(--green)' },
-           { l: 'P/L $', v: '+' + fmtUSD(d.plD), c: 'var(--green)' },
-           { l: 'Invested', v: fmtUSD(d.inv) },
-           { l: 'Current Value', v: fmtUSD(d.curval) },
-           { l: '30-Day', v: fmtPct(d.s30d), c: pctColor(d.s30d) }],
-          statusHtml, '');
-      }).join('');
+  if (profitAbove.length === 0) {
+    document.getElementById('rb-body-e').innerHTML =
+      `<div class="rb-no-data" style="color:var(--text2)">No positions above +20% personal P/L right now.</div>`;
+  } else {
+    const _rbETableRows = (stocks) => stocks.map(d => {
+      const eVerdict  = _rbEAICache[d.ticker];
+      const verdictCell = eVerdict
+        ? _rbEAIVerdictBadge(d.ticker, eVerdict)
+        : `<div id="rb-e-ai-${d.ticker}" style="display:inline-flex;align-items:center;gap:5px"><span style="color:var(--text3);font-size:11px">—</span></div>`;
+      const s30dColor = d.s30d != null ? (d.s30d >= 0 ? 'var(--green)' : 'var(--red)') : 'var(--text3)';
+      return `<tr style="border-top:1px solid rgba(255,255,255,.05)">
+        <td style="padding:9px 12px;font-size:12px;font-weight:700;color:#c8d8e8;white-space:nowrap">${d.ticker_v || d.ticker}</td>
+        <td style="padding:9px 12px;font-size:12px;color:var(--text2)">${d.shortName || d.ticker}</td>
+        <td style="padding:9px 12px;font-size:12px;font-weight:700;color:var(--green);text-align:right">${fmtPct(d.plP)}</td>
+        <td style="padding:9px 12px;font-size:12px;font-weight:700;color:var(--green);text-align:right">+${fmtUSD(d.plD)}</td>
+        <td style="padding:9px 12px;font-size:12px;text-align:right;color:var(--text2)">${fmtUSD(d.inv)}</td>
+        <td style="padding:9px 12px;font-size:12px;text-align:right;color:var(--text2)">${fmtUSD(d.curval)}</td>
+        <td style="padding:9px 12px;font-size:12px;font-weight:700;color:${s30dColor};text-align:right">${fmtPct(d.s30d)}</td>
+        <td style="padding:9px 12px" id="rb-e-cell-${d.ticker}">${verdictCell}</td>
+        <td style="padding:9px 12px;white-space:nowrap">
+          <button onclick="rbRunSingleEAI('${d.ticker}')" style="background:rgba(91,143,255,.1);color:#5b8fff;border:1px solid rgba(91,143,255,.25);border-radius:5px;padding:4px 10px;font-size:11px;font-weight:600;cursor:pointer">Run AI</button>
+          <button onclick="rbCopyEPrompt('${d.ticker}',this)" style="background:rgba(91,143,255,.12);color:#5b8fff;border:1px solid rgba(91,143,255,.3);border-radius:5px;padding:4px 10px;font-size:11px;font-weight:600;cursor:pointer;margin-left:5px">⎘ Copy Prompt</button>
+        </td>
+      </tr>`;
+    }).join('');
+
+    document.getElementById('rb-body-e').innerHTML =
+      `<div id="rb-e-summary" style="display:flex;align-items:center;gap:14px;margin-bottom:10px;flex-wrap:wrap">
+        <span id="rb-e-cnt-harvest" style="font-size:12px;font-weight:700;color:#3d9fff;display:none"></span>
+        <span id="rb-e-cnt-noaction" style="font-size:12px;font-weight:700;color:var(--green);display:none"></span>
+        <span id="rb-e-hint" style="font-size:12px;color:var(--text3);font-style:italic">Click Run All to analyse positions</span>
+        <button onclick="_rbRunAllSectionEAI()" style="margin-left:auto;background:rgba(91,143,255,.12);color:#5b8fff;border:1px solid rgba(91,143,255,.3);border-radius:7px;padding:6px 14px;font-size:12px;font-weight:600;cursor:pointer">▶ Run All</button>
+      </div>
+      <div style="margin-bottom:12px;font-size:11px;color:var(--text3);background:rgba(61,159,255,.07);border:1px solid rgba(61,159,255,.15);border-radius:6px;padding:7px 12px">
+        ℹ️ SIPs continue normally — this is partial profit booking only. HARVEST = sell 25% to lock in gains. Remaining 75% stays invested.
+      </div>
+      <div style="overflow-x:auto;border-radius:8px;border:1px solid var(--border)">
+        <table style="width:100%;border-collapse:collapse;font-size:13px">
+          <thead>
+            <tr style="background:var(--bg,#1a1d27)">
+              <th style="padding:9px 12px;text-align:left;color:var(--text3);font-weight:600;font-size:11px;white-space:nowrap;border-bottom:1px solid var(--border)">Ticker</th>
+              <th style="padding:9px 12px;text-align:left;color:var(--text3);font-weight:600;font-size:11px;border-bottom:1px solid var(--border)">Name</th>
+              <th style="padding:9px 12px;text-align:right;color:var(--text3);font-weight:600;font-size:11px;border-bottom:1px solid var(--border)">P/L %</th>
+              <th style="padding:9px 12px;text-align:right;color:var(--text3);font-weight:600;font-size:11px;border-bottom:1px solid var(--border)">P/L $</th>
+              <th style="padding:9px 12px;text-align:right;color:var(--text3);font-weight:600;font-size:11px;border-bottom:1px solid var(--border)">Invested</th>
+              <th style="padding:9px 12px;text-align:right;color:var(--text3);font-weight:600;font-size:11px;border-bottom:1px solid var(--border)">Cur. Value</th>
+              <th style="padding:9px 12px;text-align:right;color:var(--text3);font-weight:600;font-size:11px;border-bottom:1px solid var(--border)">30D</th>
+              <th id="rb-e-verdict-th" onclick="rbSortSectionE()" style="padding:9px 12px;text-align:left;color:var(--text3);font-weight:600;font-size:11px;border-bottom:1px solid var(--border);cursor:pointer;white-space:nowrap;user-select:none">AI Verdict ↕</th>
+              <th style="padding:9px 12px;text-align:left;color:var(--text3);font-weight:600;font-size:11px;border-bottom:1px solid var(--border)">Actions</th>
+            </tr>
+          </thead>
+          <tbody id="rb-e-tbody">${_rbETableRows(profitAbove)}</tbody>
+        </table>
+      </div>`;
+  }
 
   // ── SECTION F: Dead weight ────────────────────────────────────────────────
   const deadWeight = main.filter(d => d.type === 'Stock'
@@ -7429,6 +7470,297 @@ function rbSortSectionI() {
       <td style="padding:9px 12px;white-space:nowrap">
         <button onclick="rbRunSingleIAI('${d.ticker}')" style="background:rgba(91,143,255,.1);color:#5b8fff;border:1px solid rgba(91,143,255,.25);border-radius:5px;padding:4px 10px;font-size:11px;font-weight:600;cursor:pointer" title="Run AI for ${d.ticker}">Run AI</button>
         <button onclick="rbCopyIPrompt('${d.ticker}',this)" style="background:rgba(91,143,255,.12);color:#5b8fff;border:1px solid rgba(91,143,255,.3);border-radius:5px;padding:4px 10px;font-size:11px;font-weight:600;cursor:pointer;margin-left:5px" title="Copy AI prompt for ${d.ticker}">⎘ Copy Prompt</button>
+      </td>
+    </tr>`;
+  }).join('');
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+//  SECTION E — Profit Booking Advisor (HARVEST / NOACTION)
+// ════════════════════════════════════════════════════════════════════════════
+
+function _rbEAIVerdictBadge(ticker, verdict) {
+  const runBtn = `<button onclick="rbRunSingleEAI('${ticker}')" title="Re-run AI for ${ticker}"
+    style="background:none;border:1px solid rgba(255,255,255,.15);border-radius:5px;padding:3px 7px;cursor:pointer;font-size:11px;color:var(--text2);margin-left:6px">↺</button>`;
+  if (verdict === 'HARVEST') {
+    const stock   = (typeof ALL !== 'undefined' ? ALL.find(d => d.ticker === ticker) : null) || {};
+    const harvest = (parseFloat(stock.curval) > 0) ? fmtUSD(parseFloat(stock.curval) * 0.25) : '—';
+    return `<div id="rb-e-ai-${ticker}" style="display:inline-flex;flex-direction:column;gap:3px">
+      <div style="display:inline-flex;align-items:center">
+        <span style="background:rgba(61,159,255,.12);border:1px solid rgba(61,159,255,.4);border-radius:6px;padding:4px 10px;font-size:12px;font-weight:700;color:#3d9fff">🔵 HARVEST</span>${runBtn}
+      </div>
+      <span style="font-size:10px;color:var(--text3);margin-left:2px">Sell 25% → ~${harvest}</span>
+    </div>`;
+  }
+  if (verdict === 'NOACTION') {
+    return `<div id="rb-e-ai-${ticker}" style="display:inline-flex;align-items:center">
+      <span style="background:rgba(16,208,122,.07);border:1px solid rgba(16,208,122,.3);border-radius:6px;padding:4px 10px;font-size:12px;font-weight:700;color:var(--green)">🟢 NO ACTION</span>${runBtn}</div>`;
+  }
+  return `<div id="rb-e-ai-${ticker}" style="display:inline-flex;align-items:center">
+    <span style="background:rgba(249,115,22,.07);border:1px solid rgba(249,115,22,.3);border-radius:6px;padding:4px 10px;font-size:12px;font-weight:700;color:#f97316">🟠 Failed</span>${runBtn}</div>`;
+}
+
+function _rbEShowVerdict(ticker, verdict) {
+  const cell = document.getElementById('rb-e-cell-' + ticker);
+  if (cell) cell.innerHTML = _rbEAIVerdictBadge(ticker, verdict);
+  _rbEUpdateSummaryBar();
+}
+
+function _rbEUpdateSummaryBar() {
+  const data = _rbAnalysisData;
+  if (!data || !data.profitAbove) return;
+  const harvest  = data.profitAbove.filter(d => _rbEAICache[d.ticker] === 'HARVEST').length;
+  const noaction = data.profitAbove.filter(d => _rbEAICache[d.ticker] === 'NOACTION').length;
+  const total    = harvest + noaction;
+  const hEl      = document.getElementById('rb-e-cnt-harvest');
+  const nEl      = document.getElementById('rb-e-cnt-noaction');
+  const hintEl   = document.getElementById('rb-e-hint');
+  if (total === 0) {
+    if (hEl)    hEl.style.display    = 'none';
+    if (nEl)    nEl.style.display    = 'none';
+    if (hintEl) hintEl.style.display = '';
+  } else {
+    if (hEl)    { hEl.textContent = `🔵 ${harvest} Harvest`;         hEl.style.display = harvest  > 0 ? '' : 'none'; }
+    if (nEl)    { nEl.textContent = `🟢 ${noaction} No Action`;       nEl.style.display = noaction > 0 ? '' : 'none'; }
+    if (hintEl) hintEl.style.display = 'none';
+  }
+}
+
+async function _rbEAICallGAS(ticker, stock) {
+  // ── Pre-checks: skip AI for clear NOACTION cases ─────────────────────────
+  if (stock) {
+    const _plP  = parseFloat(stock.plP);
+    const _sym  = ((stock.ticker_v || ticker) + '').split(':').pop().toUpperCase();
+    const _type = (stock.type || '').toUpperCase();
+    // ETFs → always NOACTION
+    if (_type === 'ETF' || _type === 'FUND') return 'NOACTION';
+    // P&L under 100% → always NOACTION
+    if (!isNaN(_plP) && _plP < 100) return 'NOACTION';
+    // Canadian/global banks & income stocks → NOACTION
+    if (['RY','TD','BNS','BMO','CM','MFC','SLF','GWO','IAG','ENB','TRP','CNR'].includes(_sym)) return 'NOACTION';
+    // Diversified conglomerates → NOACTION
+    if (['BRK.B','BRK.A','BAM','BN'].includes(_sym)) return 'NOACTION';
+  }
+
+  const startTs = Date.now();
+  const _getEl  = () => document.getElementById('rb-e-ai-' + ticker);
+  const _tick   = () => {
+    const secs = Math.floor((Date.now() - startTs) / 1000);
+    const el = _getEl();
+    if (el) el.innerHTML = `<span style="color:var(--blue);font-size:11px">🤖 Analysing… (${secs}s)</span>`;
+  };
+  const timer = setInterval(_tick, 1000);
+  _tick();
+
+  const enc        = encodeURIComponent;
+  const tickerFull = (stock && stock.ticker_v) ? stock.ticker_v : ticker;
+  const pp = stock
+    ? `&section=E&tickerFull=${enc(tickerFull)}&inv=${enc(stock.inv ?? '')}&curval=${enc(stock.curval ?? '')}&plP=${enc(stock.plP ?? '')}&s30d=${enc(stock.s30d ?? '')}&ytd=${enc(stock.ytd ?? '')}&sip=${enc(stock.sip ?? '')}`
+    : `&section=E&tickerFull=${enc(tickerFull)}`;
+
+  try {
+    let resp = await _rbFAIFetchWithTimeout(
+      `${_rbScriptUrl}?action=getSipVerdict&ticker=${enc(ticker)}&attempt=1${pp}`, 45000);
+    if (!resp.ok) throw new Error('HTTP ' + resp.status);
+    let json = await resp.json().catch(() => null);
+
+    if (json && json.rateLimited) {
+      let countdown = 60;
+      await new Promise(resolve => {
+        const cd = setInterval(() => {
+          countdown--;
+          const el = _getEl();
+          if (el) el.innerHTML = `<span style="color:var(--blue);font-size:11px">🤖 Rate limited — retrying in ${countdown}s…</span>`;
+          if (countdown <= 0) { clearInterval(cd); resolve(); }
+        }, 1000);
+      });
+      resp = await _rbFAIFetchWithTimeout(
+        `${_rbScriptUrl}?action=getSipVerdict&ticker=${enc(ticker)}&attempt=2${pp}`, 60000);
+      if (!resp.ok) throw new Error('HTTP ' + resp.status);
+      json = await resp.json().catch(() => null);
+    }
+
+    clearInterval(timer);
+    if (json && json.ok && json.verdict) {
+      const v = json.verdict.trim().toUpperCase();
+      if (v === 'HARVEST')  return 'HARVEST';
+      if (v === 'NOACTION') return 'NOACTION';
+    }
+    return 'ERROR';
+  } catch(err) {
+    clearInterval(timer);
+    console.error('[EAI] ' + ticker + ':', err.message);
+    return 'ERROR';
+  }
+}
+
+async function rbRunSingleEAI(ticker) {
+  delete _rbEAICache[ticker];
+  const cell = document.getElementById('rb-e-cell-' + ticker);
+  if (cell) cell.innerHTML = `<div id="rb-e-ai-${ticker}" style="display:inline-flex;align-items:center;gap:5px"><span style="color:var(--text3);font-size:11px">🤖 Analysing…</span></div>`;
+  const stock   = (typeof ALL !== 'undefined' ? ALL.find(d => d.ticker === ticker) : null) || null;
+  const verdict = await _rbEAICallGAS(ticker, stock);
+  _rbEAICache[ticker] = verdict;
+  _rbEShowVerdict(ticker, verdict);
+}
+
+async function _rbRunAllSectionEAI() {
+  const data = _rbAnalysisData;
+  if (!data || !data.profitAbove || data.profitAbove.length === 0) return;
+  _rbEAICache = {};
+  data.profitAbove.forEach(d => {
+    const cell = document.getElementById('rb-e-cell-' + d.ticker);
+    if (cell) cell.innerHTML = `<div id="rb-e-ai-${d.ticker}" style="display:inline-flex;align-items:center;gap:5px"><span style="color:var(--text3);font-size:11px">🤖 Analysing…</span></div>`;
+  });
+  _rbEUpdateSummaryBar();
+  await _rbAutoRunSectionEAI();
+}
+
+async function _rbAutoRunSectionEAI() {
+  const data = _rbAnalysisData;
+  if (!data || !data.profitAbove || data.profitAbove.length === 0) return;
+  const stocks   = data.profitAbove;
+  const lastRunEl = document.getElementById('rb-last-run');
+  console.log('[AutoAI-E] Starting Section E AI for ' + stocks.length + ' position(s)…');
+
+  const BATCH = 3;
+  for (let i = 0; i < stocks.length; i += BATCH) {
+    const batch = stocks.slice(i, i + BATCH);
+    await Promise.all(batch.map(async (d, bi) => {
+      if (_rbEAICache[d.ticker]) {
+        _rbEShowVerdict(d.ticker, _rbEAICache[d.ticker]);
+        _rbAIBannerUpdate(d.ticker, 'E');
+        return;
+      }
+      if (lastRunEl) lastRunEl.textContent = `AI Analyzing E (${i + bi + 1}/${stocks.length}): ${d.ticker}…`;
+      const verdict = await _rbEAICallGAS(d.ticker, d);
+      _rbEAICache[d.ticker] = verdict;
+      _rbEShowVerdict(d.ticker, verdict);
+      _rbAIBannerUpdate(d.ticker, 'E');
+    }));
+    if (i + BATCH < stocks.length) await new Promise(r => setTimeout(r, 2000));
+  }
+
+  if (lastRunEl) lastRunEl.textContent = 'Last run: ' + new Date().toLocaleTimeString('en-CA', { hour: '2-digit', minute: '2-digit' });
+  console.log('[AutoAI-E] Section E AI complete.');
+}
+
+function rbCopyEPrompt(ticker, btn) {
+  const stock   = (typeof ALL !== 'undefined' ? ALL.find(d => d.ticker === ticker) : null) || {};
+  const tickerLabel = stock.ticker_v || ticker;
+  const inv     = stock.inv    != null ? stock.inv    : 'N/A';
+  const curval  = stock.curval != null ? stock.curval : 'N/A';
+  const plP     = stock.plP    != null ? stock.plP    : 'N/A';
+  const s30d    = stock.s30d   != null ? stock.s30d   : 'N/A';
+  const curvalN = parseFloat(curval) || 0;
+  const invN    = parseFloat(inv)    || 0;
+  const plD     = (curvalN > 0 && invN > 0) ? (curvalN - invN).toFixed(2) : 'N/A';
+  const harvest = curvalN > 0 ? (curvalN * 0.25).toFixed(2) : 'N/A';
+
+  const prompt =
+    'ROLE:\n' +
+    'You are a senior equity research analyst with 20+ years\n' +
+    'of experience and deep expertise in Peter Lynch-style\n' +
+    'long-term investing and portfolio management.\n\n' +
+    'QUESTION:\n' +
+    'This position has gained more than 20% and is under\n' +
+    'profit booking review. Should the investor sell\n' +
+    'exactly 25% of this position to lock in gains?\n\n' +
+    'YOUR ONLY OUTPUT: HARVEST or NOACTION\n' +
+    'One word only. No explanation. No punctuation. No emoji.\n\n' +
+    '---\n\n' +
+    'EVALUATE SILENTLY:\n\n' +
+    'STEP 1 — Classify the stock:\n' +
+    '  CYCLICAL: Technology hardware, semiconductors, storage,\n' +
+    '  memory chips, solar, crypto miners, commodity stocks, materials.\n' +
+    '  COMPOUNDER: Banks, insurance, financials, conglomerates,\n' +
+    '  dividend stocks, pipeline/utility, consumer staples, healthcare.\n' +
+    '  ETF/FUND: Any ETF, index fund, sector fund.\n\n' +
+    'STEP 2 — Apply the HARVEST rule:\n' +
+    '  HARVEST only if ALL true:\n' +
+    '    1. Asset type is CYCLICAL\n' +
+    '    2. P&L is above +100% (more than doubled)\n' +
+    '    3. Not a forever-hold type business\n' +
+    '  NOACTION if ANY true:\n' +
+    '    1. Asset type is ETF or FUND — never trim\n' +
+    '    2. Asset type is COMPOUNDER — let it compound\n' +
+    '    3. P&L is below +100%\n' +
+    '    4. Stock pays significant dividend >2% yield\n' +
+    '    5. Peter Lynch: stalwart or slow grower — hold your best positions\n\n' +
+    'STEP 3 — Peter Lynch final check:\n' +
+    '  Never sell just because it went up. Only reduce if:\n' +
+    '    a. Position dangerously concentrated\n' +
+    '    b. Cyclical AND near cycle peak\n' +
+    '    c. Can redeploy capital into something better\n' +
+    '  Market leader in growing sector → NOACTION always.\n\n' +
+    '---\n\n' +
+    'INVESTOR PROFILE:\n' +
+    '- Age: 35 years old\n' +
+    '- Investment horizon: 10 years\n' +
+    '- SIP investor — bi-weekly contributions continue regardless\n' +
+    '- This is a PARTIAL profit booking only (25% of position)\n' +
+    '  SIPs will continue normally after this action\n\n' +
+    'STOCK DETAILS:\n' +
+    '- Stock: ' + tickerLabel + '\n' +
+    '- P&L %: ' + plP + '%\n' +
+    '- P&L $: ' + plD + '\n' +
+    '- Total Invested: ' + inv + ' USD\n' +
+    '- Current Value: ' + curval + ' USD\n' +
+    '- 30-Day Return: ' + s30d + '%\n\n' +
+    'IF HARVEST — the investor will sell this amount:\n' +
+    '  Sell Value = ' + curval + ' × 0.25 = ~$' + harvest + ' USD\n\n' +
+    'FINAL OUTPUT RULE:\n' +
+    'HARVEST if: Cyclical stock AND P&L above 100%.\n' +
+    'NOACTION for everything else. When in doubt → NOACTION.\n' +
+    'One word: HARVEST or NOACTION';
+
+  navigator.clipboard.writeText(prompt).then(() => {
+    const orig = btn.textContent;
+    btn.textContent = 'Copied!';
+    setTimeout(() => { btn.textContent = orig; }, 2000);
+  }).catch(() => { alert('Copy failed — please allow clipboard access'); });
+}
+
+function rbSortSectionE() {
+  const data = _rbAnalysisData;
+  if (!data || !data.profitAbove || data.profitAbove.length === 0) return;
+
+  _rbESortState = (_rbESortState + 1) % 3;
+  const th = document.getElementById('rb-e-verdict-th');
+  const labels = ['AI Verdict ↕', 'AI Verdict ↑ (HARVEST first)', 'AI Verdict ↓ (No Action first)'];
+  if (th) th.textContent = labels[_rbESortState];
+
+  let sorted;
+  if (_rbESortState === 0) {
+    sorted = [...data.profitAbove].sort((a, b) => b.plP - a.plP);
+  } else {
+    const priority = v => ({ HARVEST: 0, NOACTION: 1, ERROR: 2 })[v] ?? 3;
+    sorted = [...data.profitAbove].sort((a, b) => {
+      const diff = priority(_rbEAICache[a.ticker]) - priority(_rbEAICache[b.ticker]);
+      return _rbESortState === 1 ? diff : -diff;
+    });
+  }
+
+  const tbody = document.getElementById('rb-e-tbody');
+  if (!tbody) return;
+  tbody.innerHTML = sorted.map(d => {
+    const eVerdict = _rbEAICache[d.ticker];
+    const verdictCell = eVerdict
+      ? _rbEAIVerdictBadge(d.ticker, eVerdict)
+      : `<div id="rb-e-ai-${d.ticker}" style="display:inline-flex;align-items:center;gap:5px"><span style="color:var(--text3);font-size:11px">—</span></div>`;
+    const s30dColor = d.s30d != null ? (d.s30d >= 0 ? 'var(--green)' : 'var(--red)') : 'var(--text3)';
+    return `<tr style="border-top:1px solid rgba(255,255,255,.05)">
+      <td style="padding:9px 12px;font-size:12px;font-weight:700;color:#c8d8e8;white-space:nowrap">${d.ticker_v || d.ticker}</td>
+      <td style="padding:9px 12px;font-size:12px;color:var(--text2)">${d.shortName || d.ticker}</td>
+      <td style="padding:9px 12px;font-size:12px;font-weight:700;color:var(--green);text-align:right">${fmtPct(d.plP)}</td>
+      <td style="padding:9px 12px;font-size:12px;font-weight:700;color:var(--green);text-align:right">+${fmtUSD(d.plD)}</td>
+      <td style="padding:9px 12px;font-size:12px;text-align:right;color:var(--text2)">${fmtUSD(d.inv)}</td>
+      <td style="padding:9px 12px;font-size:12px;text-align:right;color:var(--text2)">${fmtUSD(d.curval)}</td>
+      <td style="padding:9px 12px;font-size:12px;font-weight:700;color:${s30dColor};text-align:right">${fmtPct(d.s30d)}</td>
+      <td style="padding:9px 12px" id="rb-e-cell-${d.ticker}">${verdictCell}</td>
+      <td style="padding:9px 12px;white-space:nowrap">
+        <button onclick="rbRunSingleEAI('${d.ticker}')" style="background:rgba(91,143,255,.1);color:#5b8fff;border:1px solid rgba(91,143,255,.25);border-radius:5px;padding:4px 10px;font-size:11px;font-weight:600;cursor:pointer">Run AI</button>
+        <button onclick="rbCopyEPrompt('${d.ticker}',this)" style="background:rgba(91,143,255,.12);color:#5b8fff;border:1px solid rgba(91,143,255,.3);border-radius:5px;padding:4px 10px;font-size:11px;font-weight:600;cursor:pointer;margin-left:5px">⎘ Copy Prompt</button>
       </td>
     </tr>`;
   }).join('');
