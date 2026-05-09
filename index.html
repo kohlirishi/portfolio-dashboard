@@ -4889,6 +4889,7 @@ let _rbVerdicts     = {};   // watchlist promotion verdicts
 let _rbAnalysisData = null; // last computed analysis
 let _rbReportCache  = {};   // { [uid]: { reportText, verdict, reason, analyzedOn, savedToSheets } }
 let _rbFAICache     = {};   // { [ticker]: { verdict, analyzedOn } } — Section F AI verdicts, localStorage-backed
+let _rbJAICache     = {};   // { [ticker]: verdict } — Section J AI verdicts, session-only
 let _rbAIBannerDone  = 0;  // completed AI calls (G + F combined) for progress banner
 let _rbAIBannerTotal = 0;  // total AI calls queued for progress banner
 (function _rbFAILoadCache() {
@@ -5449,11 +5450,12 @@ function runRebalance() {
     // Auto-fetch fundamentals for demote candidates (stale > 7 days or missing)
     // then filter out stocks where fundamentals say Hold — no demotion needed
     await _rbAutoFetchAndFilterDemote();
-    // Run Section G and F AI queues in parallel (each internally sequential with 2s gap)
+    // Run Section G, F, and J AI queues in parallel (each internally sequential with 2s gap)
     const _aiTotalCount = (typeof ALL !== 'undefined' ? ALL.filter(d => d.isWatch).length : 0) +
-      (_rbAnalysisData ? (_rbAnalysisData.deadWeight || []).length : 0);
+      (_rbAnalysisData ? (_rbAnalysisData.deadWeight || []).length : 0) +
+      (_rbAnalysisData ? (_rbAnalysisData.demote || []).length : 0);
     _rbAIBannerShow(_aiTotalCount);
-    await Promise.all([_rbAutoRunSectionGAI(), _rbAutoRunSectionFAI()]);
+    await Promise.all([_rbAutoRunSectionGAI(), _rbAutoRunSectionFAI(), _rbAutoRunSectionJAI()]);
     _rbAIBannerHide();
     _rbUpdateCommandStripAfterAI();
   }, 80);
@@ -6125,14 +6127,20 @@ function _doRebalance() {
     }
     if (demote.length > 0) {
       jHtml += `<div style="font-size:11px;font-weight:700;color:var(--yellow);text-transform:uppercase;letter-spacing:.5px;margin:14px 0 10px">↓ Core → Consider Moving to Watchlist (${demote.length})</div>`;
-      jHtml += demote.map(d => rbFlagRow('↓', 'rgba(245,166,35,.12)', d.shortName + ' (' + d.ticker + ')',
-        d.reason,
-        [{ l: 'SIP', v: d.sip > 0 ? 'CAD $' + d.sip + '/mo' : 'No SIP' },
-         { l: 'YTD', v: fmtPct(d.ytd), c: 'var(--red)' },
-         { l: 'Signal', v: d.recommend }],
-        `<span class="rb-sec-badge rb-badge-warn">Review</span>`,
-        reportToggle('j_' + d.ticker, d.ticker, 'core')
-      )).join('');
+      jHtml += demote.map(d => {
+        const jVerdict = _rbJAICache[d.ticker];
+        const verdictBadge = jVerdict
+          ? _rbJAIVerdictHtml(d.ticker, jVerdict)
+          : `<div id="rb-j-ai-${d.ticker}" style="display:inline-flex;align-items:center;gap:6px"><span style="color:var(--text3);font-size:11px">🤖 Analysing…</span></div>`;
+        return rbFlagRow('↓', 'rgba(245,166,35,.12)', d.shortName + ' (' + d.ticker + ')',
+          d.reason,
+          [{ l: 'SIP', v: d.sip > 0 ? 'CAD $' + d.sip + '/mo' : 'No SIP' },
+           { l: 'YTD', v: fmtPct(d.ytd), c: 'var(--red)' },
+           { l: 'Signal', v: d.recommend }],
+          verdictBadge,
+          reportToggle('j_' + d.ticker, d.ticker, 'core')
+        );
+      }).join('');
     }
   }
   document.getElementById('rb-body-j').innerHTML = jHtml;
@@ -6680,6 +6688,242 @@ async function _rbAutoRunSectionFAI() {
 
   if (lastRunEl) lastRunEl.textContent = 'Last run: ' + new Date().toLocaleTimeString('en-CA', { hour: '2-digit', minute: '2-digit' });
   console.log('[AutoAI-F] Section F AI complete.');
+}
+
+// ── Section J AI helpers ──────────────────────────────────────────────────────
+function _rbJAIVerdictHtml(ticker, verdict) {
+  const refreshBtn = `<button onclick="rbRefreshJAI('${ticker}')" title="Re-run AI for ${ticker}"
+    style="background:none;border:1px solid rgba(255,255,255,.15);border-radius:5px;padding:3px 7px;cursor:pointer;font-size:11px;color:var(--text2);margin-left:6px">↺</button>`;
+  const copyBtn = `<button onclick="rbCopyJPrompt('${ticker}',this)" title="Copy AI prompt for ${ticker}"
+    style="background:none;border:1px solid rgba(255,255,255,.15);border-radius:5px;padding:3px 7px;cursor:pointer;font-size:11px;color:var(--text2);margin-left:4px">⎘</button>`;
+  const actions = refreshBtn + copyBtn;
+  if (verdict === 'YES') {
+    return `<div id="rb-j-ai-${ticker}" style="display:flex;align-items:center;gap:0">
+      <div style="background:rgba(239,68,68,.07);border:1px solid rgba(239,68,68,.3);border-radius:8px;padding:7px 12px;display:inline-block">
+        <span style="font-size:12px;font-weight:700;color:#ef4444">🔴 Keep in Core SIP — Do Not Demote</span>
+      </div>${actions}</div>`;
+  }
+  if (verdict === 'NO') {
+    return `<div id="rb-j-ai-${ticker}" style="display:flex;align-items:center;gap:0">
+      <div style="background:rgba(16,208,122,.07);border:1px solid rgba(16,208,122,.3);border-radius:8px;padding:7px 12px;display:inline-block">
+        <span style="font-size:12px;font-weight:700;color:var(--green)">🟢 Confirm Demote to Watchlist</span>
+      </div>${actions}</div>`;
+  }
+  return `<div id="rb-j-ai-${ticker}" style="display:flex;align-items:center;gap:0">
+    <div style="background:rgba(249,115,22,.07);border:1px solid rgba(249,115,22,.3);border-radius:8px;padding:7px 12px;display:inline-block">
+      <span style="font-size:12px;font-weight:700;color:#f97316">🟠 Analysis Failed — Retry</span>
+    </div>${actions}</div>`;
+}
+
+function _rbJAILoadingHtml(ticker) {
+  return `<div id="rb-j-ai-${ticker}" style="display:inline-flex;align-items:center;gap:6px">
+    <span style="color:var(--blue);font-size:11px">🤖 Analysing…</span>
+  </div>`;
+}
+
+function _rbShowJAIVerdict(ticker, verdict) {
+  const el = document.getElementById('rb-j-ai-' + ticker);
+  if (el) el.outerHTML = _rbJAIVerdictHtml(ticker, verdict);
+}
+
+// ── GAS call for Section J (demote decision) ──────────────────────────────────
+async function _rbJAICallGAS(ticker, stock) {
+  const startTs = Date.now();
+  let phase = 'Trying Mistral AI…';
+  const aiEl = document.getElementById('rb-j-ai-' + ticker);
+  const _tick = () => {
+    const secs = Math.floor((Date.now() - startTs) / 1000);
+    if (aiEl) aiEl.innerHTML = `<span style="color:var(--blue);font-size:11px">🤖 ${phase} (${secs}s)</span>`;
+  };
+  const timer = setInterval(_tick, 1000);
+  _tick();
+
+  const enc = encodeURIComponent;
+  const tickerFull = (stock && stock.ticker_v) ? stock.ticker_v : ticker;
+  const pp = stock
+    ? `&section=J&tickerFull=${enc(tickerFull)}&inv=${enc(stock.inv ?? '')}&curval=${enc(stock.curval ?? '')}&plP=${enc(stock.plP ?? '')}&s30d=${enc(stock.s30d ?? '')}&ytd=${enc(stock.ytd ?? '')}&sip=${enc(stock.sip ?? '')}`
+    : `&section=J&tickerFull=${enc(tickerFull)}`;
+
+  try {
+    let resp = await _rbFAIFetchWithTimeout(
+      `${_rbScriptUrl}?action=getSipVerdict&ticker=${enc(ticker)}&attempt=1${pp}`, 45000);
+    if (!resp.ok) throw new Error('HTTP ' + resp.status);
+    let json = await resp.json().catch(() => null);
+
+    if (json && json.rateLimited) {
+      let countdown = 60;
+      await new Promise(resolve => {
+        const cd = setInterval(() => {
+          countdown--;
+          phase = `Rate limited — retrying in ${countdown}s…`;
+          _tick();
+          if (countdown <= 0) { clearInterval(cd); resolve(); }
+        }, 1000);
+      });
+      phase = 'Retrying (attempt 2)…';
+      _tick();
+      resp = await _rbFAIFetchWithTimeout(
+        `${_rbScriptUrl}?action=getSipVerdict&ticker=${enc(ticker)}&attempt=2${pp}`, 60000);
+      if (!resp.ok) throw new Error('HTTP ' + resp.status);
+      json = await resp.json().catch(() => null);
+    }
+
+    clearInterval(timer);
+    if (json && json.ok && (json.verdict === 'YES' || json.verdict === 'NO')) return json.verdict;
+    return 'ERROR';
+  } catch(err) {
+    clearInterval(timer);
+    console.error('[JAI] ' + ticker + ':', err.message);
+    return 'ERROR';
+  }
+}
+
+// ── Copy Section J demote prompt to clipboard ─────────────────────────────────
+function rbCopyJPrompt(ticker, btn) {
+  const stock = (typeof ALL !== 'undefined' ? ALL.find(d => d.ticker === ticker) : null) || {};
+  const inv    = stock.inv    != null ? stock.inv    : 'N/A';
+  const curval = stock.curval != null ? stock.curval : 'N/A';
+  const plP    = stock.plP    != null ? stock.plP    : 'N/A';
+  const s30d   = stock.s30d   != null ? stock.s30d   : 'N/A';
+  const ytd    = stock.ytd    != null ? stock.ytd    : 'N/A';
+  const sip    = stock.sip    != null ? stock.sip    : 'N/A';
+
+  const prompt =
+    'ROLE:\n' +
+    'You are a senior equity research analyst with 20+ years of\n' +
+    'experience and deep expertise in Peter Lynch-style fundamental\n' +
+    'investing.\n\n' +
+    'QUESTION:\n' +
+    'This stock is currently in the investor\'s Core SIP portfolio.\n' +
+    'The rebalance system is suggesting it should be DEMOTED\n' +
+    'to the Watchlist — meaning the investor stops actively SIPing\n' +
+    'into it and moves it to a monitoring-only position.\n\n' +
+    'Should this demotion happen?\n\n' +
+    'YOUR ONLY OUTPUT: YES (keep in core) or NO (demote to watchlist).\n' +
+    'One word only. No explanation. No punctuation. No emoji.\n\n' +
+    '---\n\n' +
+    'EVALUATE THESE FACTORS (run silently, output nothing):\n\n' +
+    'BUSINESS HEALTH:\n' +
+    '1. Is revenue growing or has it been declining 2+ quarters?\n' +
+    '2. Is net income positive and stable?\n' +
+    '3. Is Debt-to-Equity below 2.0?\n' +
+    '4. Is free cash flow positive or on a clear recovery path?\n' +
+    '5. Has the business model been structurally disrupted?\n\n' +
+    'PORTFOLIO FIT:\n' +
+    '6. Is there a significantly better stock ready to take\n' +
+    '   this capital with higher growth and stronger sector\n' +
+    '   tailwinds for the next 5-10 years?\n' +
+    '7. Is the investor already overexposed to this sector\n' +
+    '   through ETFs they hold: SMH, IBIT, DTCR, IHE, URA,\n' +
+    '   VOO, PICK, VPU, XLP, VEQT, SIVR, IWR, IAU, ROKT,\n' +
+    '   XLF, CIB520, CIB530, ATL8099, CIB524, ATL496?\n' +
+    '8. Has the original investment thesis for buying this\n' +
+    '   stock been broken or significantly weakened?\n\n' +
+    'INVESTOR POSITION:\n' +
+    '9. Is the investor currently in profit or loss?\n' +
+    '10. If in loss — would stopping SIP lock in a permanent\n' +
+    '    loss that would recover naturally in 1-3 years if held?\n\n' +
+    '---\n\n' +
+    'OUTPUT YES (Keep in Core SIP — Do Not Demote) if ALL true:\n' +
+    '- Business is fundamentally sound\n' +
+    '- Price weakness is cyclical or macro not structural\n' +
+    '- Investor is in loss and stopping SIP locks in losses\n' +
+    '  unnecessarily when the business will likely recover\n' +
+    '- No clearly superior replacement is available right now\n' +
+    '- Peter Lynch would say HOLD or WAIT — not AVOID\n\n' +
+    'OUTPUT NO (Confirm Demote to Watchlist) if ANY true:\n' +
+    '1. Revenue declining 3+ consecutive quarters with no\n' +
+    '   recovery signal visible\n' +
+    '2. Business model structurally disrupted — will not\n' +
+    '   recover meaningfully in 5 years\n' +
+    '3. Debt-to-Equity above 2.0 AND rising quarter on quarter\n' +
+    '4. A clearly superior stock is available for this capital\n' +
+    '   AND investor is already in profit on this stock\n' +
+    '5. Heavy ETF overlap makes individual SIP fully redundant\n' +
+    '   AND performance has been flat or negative 2+ quarters\n' +
+    '6. Original investment thesis is completely broken\n' +
+    '7. Peter Lynch would unambiguously classify as AVOID\n\n' +
+    'IMPORTANT:\n' +
+    'Being in a short-term loss alone is NEVER a reason to demote.\n' +
+    'A temporary sell signal alone is NEVER a reason to demote.\n' +
+    'Only demote if the business case for continued investment\n' +
+    'is genuinely weaker than an available alternative.\n' +
+    'Cyclical downturns are NOT structural breaks.\n' +
+    'Know the difference before deciding.\n\n' +
+    '---\n\n' +
+    'INVESTOR PROFILE:\n' +
+    '- Age: 35 years old\n' +
+    '- SIP horizon: 10 years\n' +
+    '- Bi-weekly SIP investor\n' +
+    '- Moderate to growth-oriented risk tolerance\n' +
+    '- Already holds diversified ETFs alongside individual stocks\n' +
+    '- Only moves stocks to watchlist when fundamentals justify it\n' +
+    '- Does NOT make decisions based on short-term price action\n\n' +
+    'EXISTING ETF OVERLAP (use to assess redundancy):\n' +
+    'Investor already holds: SMH, IBIT, DTCR, IHE, URA, VOO,\n' +
+    'PICK, VPU, XLP, VEQT, SIVR, IWR, IAU, ROKT, XLF, CIB520,\n' +
+    'CIB530, ATL8099, CIB524, ATL496\n\n' +
+    '---\n\n' +
+    'FINAL OUTPUT RULE:\n' +
+    'Respond with exactly one word.\n' +
+    'YES = keep this stock in Core SIP, do not demote\n' +
+    'NO = demote this stock to Watchlist, fundamentals justify it\n\n' +
+    'Stock to analyse: ' + ticker + '\n\n' +
+    'CURRENT POSITION:\n' +
+    '- Total Invested: $' + inv + ' USD\n' +
+    '- Current Value: $' + curval + ' USD\n' +
+    '- Personal P&L: ' + plP + '%\n' +
+    '- Last 30-Day Return: ' + s30d + '%\n' +
+    '- Year-to-Date Return: ' + ytd + '%\n' +
+    '- Current Monthly SIP: CAD $' + sip;
+
+  navigator.clipboard.writeText(prompt).then(() => {
+    const orig = btn.textContent;
+    btn.textContent = '✓';
+    setTimeout(() => { btn.textContent = orig; }, 1500);
+  }).catch(() => {});
+}
+
+// ── Refresh single Section J AI verdict ───────────────────────────────────────
+async function rbRefreshJAI(ticker) {
+  delete _rbJAICache[ticker];
+  const el = document.getElementById('rb-j-ai-' + ticker);
+  if (el) el.outerHTML = _rbJAILoadingHtml(ticker);
+  const stock = (typeof ALL !== 'undefined' ? ALL.find(d => d.ticker === ticker) : null) || null;
+  const verdict = await _rbJAICallGAS(ticker, stock);
+  _rbJAICache[ticker] = verdict;
+  _rbShowJAIVerdict(ticker, verdict);
+}
+
+// ── Auto-run AI for Section J (demote candidates) ─────────────────────────────
+async function _rbAutoRunSectionJAI() {
+  const demote = _rbAnalysisData ? (_rbAnalysisData.demote || []) : [];
+  if (demote.length === 0) return;
+
+  const lastRunEl = document.getElementById('rb-last-run');
+  console.log('[AutoAI-J] Starting Section J AI for ' + demote.length + ' demote candidate(s)…');
+
+  // Batch max 3 at a time
+  const BATCH = 3;
+  for (let i = 0; i < demote.length; i += BATCH) {
+    const batch = demote.slice(i, i + BATCH);
+    await Promise.all(batch.map(async (d, bi) => {
+      if (_rbJAICache[d.ticker]) {
+        _rbShowJAIVerdict(d.ticker, _rbJAICache[d.ticker]);
+        _rbAIBannerUpdate(d.ticker, 'J');
+        return;
+      }
+      if (lastRunEl) lastRunEl.textContent = `AI Analyzing J (${i + bi + 1}/${demote.length}): ${d.ticker}…`;
+      const verdict = await _rbJAICallGAS(d.ticker, d);
+      _rbJAICache[d.ticker] = verdict;
+      _rbShowJAIVerdict(d.ticker, verdict);
+      _rbAIBannerUpdate(d.ticker, 'J');
+    }));
+    if (i + BATCH < demote.length) await new Promise(r => setTimeout(r, 2000));
+  }
+
+  if (lastRunEl) lastRunEl.textContent = 'Last run: ' + new Date().toLocaleTimeString('en-CA', { hour: '2-digit', minute: '2-digit' });
+  console.log('[AutoAI-J] Section J AI complete.');
 }
 
 // ── Update command strip chips after all AI runs finish ───────────────────────
