@@ -6138,8 +6138,9 @@ function _doRebalance() {
         <td style="padding:9px 12px;font-size:12px;font-weight:700;color:${plColor};text-align:right">${fmtPct(d.plP)}</td>
         <td style="padding:9px 12px;font-size:12px;font-weight:700;color:${ytdColor};text-align:right">${fmtPct(d.ytd)}</td>
         <td style="padding:9px 12px" id="rb-i-cell-${d.ticker}">${verdictCell}</td>
-        <td style="padding:9px 12px">
+        <td style="padding:9px 12px;white-space:nowrap">
           <button onclick="rbRunSingleIAI('${d.ticker}')" style="background:rgba(91,143,255,.1);color:#5b8fff;border:1px solid rgba(91,143,255,.25);border-radius:5px;padding:4px 10px;font-size:11px;font-weight:600;cursor:pointer" title="Run AI for ${d.ticker}">Run AI</button>
+          <button onclick="rbCopyIPrompt('${d.ticker}',this)" style="background:rgba(91,143,255,.12);color:#5b8fff;border:1px solid rgba(91,143,255,.3);border-radius:5px;padding:4px 10px;font-size:11px;font-weight:600;cursor:pointer;margin-left:5px" title="Copy AI prompt for ${d.ticker}">⎘ Copy Prompt</button>
         </td>
       </tr>`;
     }).join('');
@@ -6156,7 +6157,7 @@ function _doRebalance() {
               <th style="padding:7px 12px;font-size:10px;font-weight:700;color:var(--text3);text-align:right;text-transform:uppercase;letter-spacing:.5px">P&amp;L</th>
               <th style="padding:7px 12px;font-size:10px;font-weight:700;color:var(--text3);text-align:right;text-transform:uppercase;letter-spacing:.5px">YTD</th>
               <th style="padding:7px 12px;font-size:10px;font-weight:700;color:var(--text3);text-align:left;text-transform:uppercase;letter-spacing:.5px">AI Verdict</th>
-              <th style="padding:7px 12px;font-size:10px;font-weight:700;color:var(--text3);text-align:left;text-transform:uppercase;letter-spacing:.5px">Action</th>
+              <th style="padding:7px 12px;font-size:10px;font-weight:700;color:var(--text3);text-align:left;text-transform:uppercase;letter-spacing:.5px">Actions</th>
             </tr>
           </thead>
           <tbody>${tableRows}</tbody>
@@ -7203,6 +7204,89 @@ async function _rbAutoRunSectionIAI() {
   console.log('[AutoAI-I] Section I AI complete.');
 }
 
+// ── Copy Section I watchlist cleanup prompt to clipboard ──────────────────────
+function rbCopyIPrompt(ticker, btn) {
+  const stock = (typeof ALL !== 'undefined' ? ALL.find(d => d.ticker === ticker) : null) || {};
+  const tickerLabel = stock.ticker_v || ticker;
+  const inv    = stock.inv    != null ? stock.inv    : 'N/A';
+  const curval = stock.curval != null ? stock.curval : 'N/A';
+  const plP    = stock.plP    != null ? stock.plP    : 'N/A';
+  const s30d   = stock.s30d   != null ? stock.s30d   : 'N/A';
+  const ytd    = stock.ytd    != null ? stock.ytd    : 'N/A';
+
+  const prompt =
+    'ROLE:\n' +
+    'You are a senior equity research analyst with 20+ years\n' +
+    'of experience and deep expertise in Peter Lynch-style\n' +
+    'fundamental investing.\n\n' +
+    'QUESTION:\n' +
+    'This stock is on the investor\'s Watchlist.\n' +
+    'The investor may or may not hold shares in it.\n' +
+    'Tell the investor what action to take.\n\n' +
+    'YOUR ONLY OUTPUT: One of these three words exactly.\n' +
+    'SELL / REMOVE / KEEP\n' +
+    'One word only. No explanation. No punctuation. No emoji.\n\n' +
+    'EVALUATE SILENTLY:\n\n' +
+    '1. Does the investor currently hold shares?\n' +
+    '   - Total Invested: ' + inv + ' USD\n' +
+    '   - Current Value: ' + curval + ' USD\n' +
+    '   - If Total Invested = 0, investor holds NO shares.\n\n' +
+    '2. Is the business/ETF fundamentally healthy?\n' +
+    '   - Revenue growing? Net income positive?\n' +
+    '   - For ETFs: sector growing, AUM stable?\n\n' +
+    '3. Is the investment thesis still valid?\n' +
+    '   - Would Peter Lynch say this stock is worth watching?\n' +
+    '   - Or has the thesis completely broken down?\n\n' +
+    '4. Is the current loss/gain recoverable?\n' +
+    '   - P&L: ' + plP + '%\n' +
+    '   - YTD: ' + ytd + '%\n\n' +
+    'OUTPUT RULES:\n\n' +
+    'Output SELL if ALL true:\n' +
+    '- Investor holds shares (Total Invested > 0)\n' +
+    '- AND at least ONE of:\n' +
+    '  a. Business fundamentally broken, no recovery in 5 years\n' +
+    '  b. Thesis permanently destroyed\n' +
+    '  c. Peter Lynch would say: exit now, not a cyclical dip\n\n' +
+    'Output REMOVE if ALL true:\n' +
+    '- Investor holds NO shares (Total Invested = 0 or null)\n' +
+    '- AND stock no longer deserves active monitoring:\n' +
+    '  a. Thesis broken or sector in structural decline\n' +
+    '  b. OR significantly better alternatives exist\n' +
+    '  c. OR stock has gone 6+ months with no progress\n' +
+    '     on the original thesis\n\n' +
+    'Output KEEP if ANY true:\n' +
+    '- Investor holds shares AND loss is cyclical/temporary\n' +
+    '  (Peter Lynch would say: hold, recovery likely)\n' +
+    '- OR thesis is still intact and stock worth watching\n' +
+    '- OR investor recently demoted this stock and needs\n' +
+    '  more time to evaluate before deciding\n\n' +
+    'IMPORTANT:\n' +
+    'Short-term price weakness = KEEP, not SELL.\n' +
+    'Only output SELL if the business case is genuinely broken.\n' +
+    'Being on watchlist already means lower conviction —\n' +
+    'the bar for REMOVE is just "not worth monitoring anymore."\n\n' +
+    'INVESTOR PROFILE:\n' +
+    '- Age: 35 years old\n' +
+    '- Investment horizon: 10 years\n' +
+    '- Moderate to growth-oriented risk tolerance\n' +
+    '- Does NOT make decisions based on short-term price action\n\n' +
+    'Stock to analyse: ' + tickerLabel + '\n\n' +
+    'CURRENT POSITION:\n' +
+    '- Total Invested: ' + inv + ' USD\n' +
+    '- Current Value: ' + curval + ' USD\n' +
+    '- Personal P&L: ' + plP + '%\n' +
+    '- Last 30-Day Return: ' + s30d + '%\n' +
+    '- Year-to-Date Return: ' + ytd + '%\n\n' +
+    'FINAL OUTPUT RULE:\n' +
+    'Respond with exactly one word: SELL or REMOVE or KEEP';
+
+  navigator.clipboard.writeText(prompt).then(() => {
+    const orig = btn.textContent;
+    btn.textContent = 'Copied!';
+    setTimeout(() => { btn.textContent = orig; }, 2000);
+  }).catch(() => { alert('Copy failed — please allow clipboard access'); });
+}
+
 // ── Update command strip chips after all AI runs finish ───────────────────────
 function _rbUpdateCommandStripAfterAI() {
   const data = _rbAnalysisData;
@@ -7408,8 +7492,9 @@ function _rbRenderCommandStrip(deadWeight, profitAbove, planReport, watch, promo
     : '';
 
   // Watchlist Actions card (Section I) — shows counts if AI has run, else prompt
-  const iCounts = _rbIGetCounts(data.watchStocksI || []);
-  const watchlistActionsCard = (data.watchStocksI && data.watchStocksI.length > 0)
+  const _iStocks = (typeof ALL !== 'undefined' ? ALL.filter(d => d.isWatch && (d.type || '').toLowerCase() !== 'etf') : []);
+  const iCounts = _rbIGetCounts(_iStocks);
+  const watchlistActionsCard = _iStocks.length > 0
     ? `<div class="cs-card cs-card-blue" style="cursor:pointer" onclick="rbToggleSec('i')">
         <div class="cs-card-icon">🔍</div>
         <div class="cs-card-label">Watchlist Actions</div>
@@ -7426,7 +7511,7 @@ function _rbRenderCommandStrip(deadWeight, profitAbove, planReport, watch, promo
   // Set grid columns dynamically based on visible card count
   const numCards = (dwNeedingReport.length > 0 ? 1 : 0) + 1 + (planReport.length > 0 ? 1 : 0) + 1 + 1
     + (faiNoStocks.length > 0 ? 1 : 0) + (groupBorderline.length > 0 ? 1 : 0) + (groupB.length > 0 ? 1 : 0)
-    + (data.watchStocksI && data.watchStocksI.length > 0 ? 1 : 0);
+    + (_iStocks.length > 0 ? 1 : 0);
   const gridEl = document.getElementById('cs-cards-grid');
   gridEl.style.gridTemplateColumns = `repeat(${Math.min(numCards, 3)}, 1fr)`;
 
