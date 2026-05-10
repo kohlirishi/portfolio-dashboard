@@ -7190,9 +7190,19 @@ async function rbRemoveFromWatchlist(ticker, fundName, btnEl) {
     cancelBtn.disabled     = true;
 
     try {
-      const url  = `${_rbScriptUrl}?action=removeFromWatchlist&fundName=${encodeURIComponent(fundName)}&t=${Date.now()}`;
-      const resp = await fetch(url, { method: 'GET' });
-      const json = await resp.json();
+      const resp = await fetch(_rbScriptUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain' }, // avoids CORS preflight; GAS parses body regardless
+        body: JSON.stringify({ action: 'removeFromWatchlist', fundName }),
+        signal: AbortSignal.timeout(30000),
+      });
+      if (!resp.ok) {
+        let errText = '';
+        try { errText = await resp.text(); } catch(_) {}
+        throw new Error(`HTTP ${resp.status}: ${errText.slice(0, 100)}`);
+      }
+      let json;
+      try { json = await resp.json(); } catch(_) { throw new Error('Invalid response from server'); }
 
       closeDialog();
 
@@ -7210,7 +7220,9 @@ async function rbRemoveFromWatchlist(ticker, fundName, btnEl) {
       }
     } catch (err) {
       closeDialog();
-      showNotification(`❌ Could not remove ${displayTicker}. Network error — try refreshing first.`, 'error');
+      const errMsg = err.message || 'Network error';
+      showNotification(`❌ Could not remove ${displayTicker}. ${errMsg}`, 'error');
+      console.error('[RemoveFromWatchlist] Error for', displayTicker, ':', err);
     }
   };
 }
