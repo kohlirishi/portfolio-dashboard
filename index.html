@@ -1776,6 +1776,7 @@ table.div-ht tfoot td{padding:10px 14px;font-size:13px;font-weight:700;backgroun
         <div class="rb-sec-letter">G</div>
         <div class="rb-sec-title">Watchlist Promotion Review</div>
         <span class="rb-sec-badge rb-badge-purple" id="rb-g-badge">—</span>
+        <span id="rb-g-promoted-counter" style="display:none;font-size:11px;font-weight:700;color:var(--green);background:rgba(16,208,122,.12);border:1px solid rgba(16,208,122,.25);padding:2px 9px;border-radius:4px;margin-left:4px">⬆ 0 Promoted this session</span>
         <span class="rb-sec-toggle" id="rb-tog-g">▾</span>
       </div>
       <div class="rb-sec-body" id="rb-body-g"></div>
@@ -5079,6 +5080,7 @@ let _rbJAICache     = {};   // { [ticker]: verdict } — Section J AI verdicts, 
 let _rbIAICache     = {};   // { [ticker]: verdict } — Section I AI verdicts, session-only (SELL/REMOVE/KEEP)
 let _rbISortAsc     = true; // Section I verdict sort direction
 let _rbIRemovedCount = 0;  // tickers removed this session via Remove button
+let _rbGPromotedCount = 0; // tickers promoted to Core SIP this session
 let _rbEAICache     = {};   // { [ticker]: verdict } — Section E AI verdicts, session-only (HARVEST/NOACTION)
 let _rbESortState   = 0;    // 0=plP desc (default), 1=HARVEST first, 2=NOACTION first
 let _rbAIBannerDone  = 0;  // completed AI calls (G + F combined) for progress banner
@@ -6264,6 +6266,12 @@ function _doRebalance() {
           <button class="rb-verdict-btn v-onetime" id="vbtn-onetime-${uid}" onclick="rbSetVerdict('${uid}','onetime',this)">◎ One-Time Investment</button>
           <button class="rb-verdict-btn v-stay" id="vbtn-stay-${uid}" onclick="rbSetVerdict('${uid}','stay',this)">○ Stay in Watchlist</button>
         </div>`;
+        const promoteBtnHtml = `<div style="margin-top:10px;display:flex;justify-content:flex-end">
+          <button id="rb-g-promote-btn-${d.ticker}" onclick="rbPromoteToCoreSIP('${d.ticker}','${(d.name||d.shortName||d.ticker).replace(/'/g,"\\'")}',this)"
+            style="background:rgba(16,208,122,.12);color:#10d07a;border:1px solid rgba(16,208,122,.3);border-radius:7px;padding:6px 14px;font-size:12px;font-weight:600;cursor:pointer">
+            ⬆ Add to Core
+          </button>
+        </div>`;
         return rbFlagRow('👁', 'rgba(155,109,255,.12)', d.shortName + ' (' + d.ticker + ')',
           d.sector + ' · ' + d.type,
           [{ l: 'P/L %', v: fmtPct(d.plP), c: pctColor(d.plP) },
@@ -6271,7 +6279,7 @@ function _doRebalance() {
            { l: 'YTD', v: fmtPct(d.ytd), c: pctColor(d.ytd) },
            { l: 'Signal', v: d.recommend || '—' }],
           `<span class="rb-sec-badge rb-badge-purple">Watchlist</span>`,
-          reportToggle(uid, d.ticker, 'watchlist') + verdictHtml
+          reportToggle(uid, d.ticker, 'watchlist') + verdictHtml + promoteBtnHtml
         );
       }).join('');
 
@@ -7402,6 +7410,108 @@ async function rbRemoveFromWatchlist(ticker, fundName, btnEl) {
       console.error('[RemoveFromWatchlist]', displayTicker, err);
     }
   };
+}
+
+async function rbPromoteToCoreSIP(ticker, fundName, btnEl) {
+  const overlay = document.createElement('div');
+  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.65);z-index:10000;display:flex;align-items:center;justify-content:center';
+  overlay.innerHTML = `
+    <div style="background:#1a2233;border:1px solid rgba(16,208,122,.35);border-radius:12px;padding:28px 32px;max-width:440px;width:90%;box-shadow:0 8px 32px rgba(0,0,0,.5)">
+      <div style="font-size:15px;font-weight:700;color:#f1f5f9;margin-bottom:6px">Promote to Core SIP</div>
+      <div style="font-size:13px;color:var(--text2);margin-bottom:16px">
+        Stock: <strong style="color:#f1f5f9">${ticker} — ${fundName}</strong>
+      </div>
+      <div style="font-size:13px;color:var(--text2);margin-bottom:10px">How much do you want to invest per month?</div>
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
+        <span style="font-size:13px;color:var(--text2);white-space:nowrap">CAD $</span>
+        <input id="rb-sip-amount" type="number" min="1" step="5" placeholder="e.g. 100"
+          style="background:#0d1520;border:1px solid rgba(16,208,122,.4);border-radius:6px;padding:8px 12px;color:#f1f5f9;font-size:14px;width:140px;outline:none">
+      </div>
+      <div id="rb-sip-err" style="display:none;font-size:11px;color:#ef4444;margin-bottom:8px">Please enter a monthly SIP amount in CAD</div>
+      <div style="font-size:12px;color:var(--text2);line-height:1.8;margin-bottom:18px;background:rgba(16,208,122,.06);border:1px solid rgba(16,208,122,.15);border-radius:6px;padding:10px 12px">
+        This will:<br>
+        ✅ Change status from Watchlist → Core SIP<br>
+        ✅ Set your monthly SIP to CAD $<span id="rb-sip-preview">—</span><br>
+        ✅ Stock will appear in your Core SIP portfolio<br><br>
+        <span style="color:#f5a623;font-size:11px">⚠️ Please refresh the page after confirming to see updated results.</span>
+      </div>
+      <div style="display:flex;gap:10px;justify-content:flex-end">
+        <button id="rb-sip-cancel" style="background:rgba(255,255,255,.07);color:var(--text2);border:1px solid rgba(255,255,255,.12);border-radius:7px;padding:8px 18px;font-size:13px;font-weight:600;cursor:pointer">Cancel</button>
+        <button id="rb-sip-confirm" style="background:rgba(16,208,122,.18);color:#10d07a;border:1px solid rgba(16,208,122,.4);border-radius:7px;padding:8px 18px;font-size:13px;font-weight:600;cursor:pointer">Confirm &amp; Promote</button>
+      </div>
+    </div>`;
+  document.body.appendChild(overlay);
+
+  const amountInput = overlay.querySelector('#rb-sip-amount');
+  const errEl       = overlay.querySelector('#rb-sip-err');
+  const preview     = overlay.querySelector('#rb-sip-preview');
+  const cancelBtn   = overlay.querySelector('#rb-sip-cancel');
+  const confirmBtn  = overlay.querySelector('#rb-sip-confirm');
+
+  amountInput.addEventListener('input', () => {
+    const v = parseFloat(amountInput.value);
+    preview.textContent = (v > 0) ? v.toFixed(2) : '—';
+    if (v > 0) errEl.style.display = 'none';
+  });
+  amountInput.focus();
+
+  const closeDialog = () => overlay.remove();
+  cancelBtn.onclick = closeDialog;
+  overlay.onclick   = (e) => { if (e.target === overlay) closeDialog(); };
+
+  confirmBtn.onclick = async () => {
+    const amt = parseFloat(amountInput.value);
+    if (!amt || amt <= 0) { errEl.style.display = 'block'; amountInput.focus(); return; }
+
+    confirmBtn.textContent = '⏳ Saving...';
+    confirmBtn.disabled    = true;
+    cancelBtn.disabled     = true;
+
+    const ptcUrl = `${_rbScriptUrl}?action=promoteToCoreSIP&fundName=${encodeURIComponent(fundName)}&monthlyCAD=${encodeURIComponent(amt)}&t=${Date.now()}`;
+    let json = null;
+    try {
+      try {
+        const resp = await fetch(ptcUrl, { method: 'GET' });
+        const text = await resp.text();
+        try { json = JSON.parse(text); } catch(_) {}
+      } catch(corsErr) {
+        console.warn('[PromoteToCoreSIP] Fetch failed, retrying no-cors…');
+        try { await fetch(ptcUrl, { method: 'GET', mode: 'no-cors' }); } catch(_) {}
+        json = null;
+      }
+
+      closeDialog();
+
+      if (json && json.ok) {
+        const row = document.getElementById('rb-g-promote-btn-' + ticker)?.closest('.rb-flag-row');
+        if (row) row.style.opacity = '0.4';
+        if (btnEl) { btnEl.textContent = 'Promoted ✓'; btnEl.disabled = true; btnEl.style.color = '#9ca3af'; btnEl.style.borderColor = 'rgba(156,163,175,.3)'; btnEl.style.background = 'rgba(156,163,175,.08)'; }
+        _rbGPromotedCount++;
+        _rbGUpdatePromotedCounter();
+        showNotification(`✅ ${ticker} promoted to Core SIP! Monthly SIP set to CAD $${amt.toFixed(2)}. Refresh the page to update all sections.`, 'success');
+      } else if (json && !json.ok) {
+        showNotification(`❌ Could not promote ${ticker}. ${json.error || 'Row not found or already in Core SIP. Try refreshing the page first.'}`, 'error');
+        confirmBtn.textContent = 'Confirm & Promote'; confirmBtn.disabled = false; cancelBtn.disabled = false;
+      } else {
+        const row = document.getElementById('rb-g-promote-btn-' + ticker)?.closest('.rb-flag-row');
+        if (row) row.style.opacity = '0.4';
+        if (btnEl) { btnEl.textContent = 'Sent ✓'; btnEl.disabled = true; btnEl.style.color = '#9ca3af'; btnEl.style.borderColor = 'rgba(156,163,175,.3)'; btnEl.style.background = 'rgba(156,163,175,.08)'; }
+        _rbGPromotedCount++;
+        _rbGUpdatePromotedCounter();
+        showNotification(`⏳ ${ticker} promotion sent to Google Sheets. Please refresh the page to confirm.`, 'info');
+      }
+    } catch(err) {
+      closeDialog();
+      showNotification(`❌ Could not promote ${ticker}. ${err.message || 'Network error'}`, 'error');
+    }
+  };
+}
+
+function _rbGUpdatePromotedCounter() {
+  const el = document.getElementById('rb-g-promoted-counter');
+  if (!el) return;
+  el.textContent = `⬆ ${_rbGPromotedCount} Promoted this session`;
+  el.style.display = _rbGPromotedCount > 0 ? '' : 'none';
 }
 
 function _rbIGetCounts(watchStocksI) {
