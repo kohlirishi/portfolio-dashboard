@@ -7190,35 +7190,50 @@ async function rbRemoveFromWatchlist(ticker, fundName, btnEl) {
     cancelBtn.disabled     = true;
 
     try {
-      // GET to doGet — GAS always sends Access-Control-Allow-Origin on GET responses
       const rmUrl = `${_rbScriptUrl}?action=removeFromWatchlist&fundName=${encodeURIComponent(fundName)}&t=${Date.now()}`;
-      const resp  = await fetch(rmUrl, { method: 'GET', signal: AbortSignal.timeout(30000) });
-      // Read as text first so a non-JSON response (e.g. undeployed GAS returning HTML)
-      // gives a meaningful error instead of a silent catch
-      const text  = await resp.text();
-      let json;
-      try { json = JSON.parse(text); }
-      catch(_) { throw new Error('GAS returned non-JSON — paste latest GAS code and deploy a new version'); }
+      let json = null;
+
+      // Attempt 1: regular GET — readable response if GAS CORS headers are present
+      try {
+        const resp = await fetch(rmUrl, { method: 'GET' });
+        const text = await resp.text();
+        try { json = JSON.parse(text); } catch(_) { /* non-JSON response — fall through */ }
+      } catch(corsErr) {
+        // "Failed to fetch" = CORS block or network error
+        // Attempt 2: no-cors GET — GAS still executes the write, we just can't read response
+        console.warn('[RemoveFromWatchlist] Regular fetch failed (' + corsErr.message + '), retrying with no-cors…');
+        try { await fetch(rmUrl, { method: 'GET', mode: 'no-cors' }); } catch(_) {}
+        // no-cors response is opaque — treat as optimistic success
+        json = null; // signal optimistic path below
+      }
 
       closeDialog();
 
       if (json && json.ok) {
-        // Success — grey out row, update button, increment counter
+        // Confirmed success via readable response
         const row = document.getElementById('rb-i-rm-btn-' + ticker)?.closest('tr');
         if (row) row.style.opacity = '0.4';
         if (btnEl) { btnEl.textContent = 'Removed ✓'; btnEl.disabled = true; btnEl.style.color = '#9ca3af'; btnEl.style.borderColor = 'rgba(156,163,175,.3)'; }
         _rbIRemovedCount++;
         _rbIUpdateSummaryBar();
-        showNotification(`✅ ${displayTicker} removed from Watchlist. Refresh the page to update Section I.`, 'success');
-      } else {
-        const errMsg = (json && json.error) ? json.error : 'Unknown error';
+        showNotification(`✅ ${displayTicker} removed from Watchlist. Refresh to update Section I.`, 'success');
+      } else if (json && !json.ok) {
+        // GAS confirmed failure (row not found, etc.)
+        const errMsg = json.error || 'Unknown error';
         showNotification(`❌ Could not remove ${displayTicker}. ${errMsg}`, 'error');
+      } else {
+        // Optimistic path (no-cors, couldn't read response)
+        const row = document.getElementById('rb-i-rm-btn-' + ticker)?.closest('tr');
+        if (row) row.style.opacity = '0.4';
+        if (btnEl) { btnEl.textContent = 'Sent ✓'; btnEl.disabled = true; btnEl.style.color = '#9ca3af'; btnEl.style.borderColor = 'rgba(156,163,175,.3)'; }
+        _rbIRemovedCount++;
+        _rbIUpdateSummaryBar();
+        showNotification(`⏳ ${displayTicker} removal sent to Google Sheets. Please refresh the page to confirm.`, 'info');
       }
     } catch (err) {
       closeDialog();
-      const errMsg = err.message || 'Network error';
-      showNotification(`❌ Could not remove ${displayTicker}. ${errMsg}`, 'error');
-      console.error('[RemoveFromWatchlist] Error for', displayTicker, ':', err);
+      showNotification(`❌ Could not remove ${displayTicker}. ${err.message || 'Network error'}`, 'error');
+      console.error('[RemoveFromWatchlist]', displayTicker, err);
     }
   };
 }
