@@ -5080,7 +5080,8 @@ let _rbJAICache     = {};   // { [ticker]: verdict } — Section J AI verdicts, 
 let _rbIAICache     = {};   // { [ticker]: verdict } — Section I AI verdicts, session-only (SELL/REMOVE/KEEP)
 let _rbISortAsc     = true; // Section I verdict sort direction
 let _rbIRemovedCount = 0;  // tickers removed this session via Remove button
-let _rbGPromotedCount = 0; // tickers promoted to Core SIP this session
+let _rbGPromotedCount = 0;       // tickers promoted to Core SIP this session
+let _rbGPromotedSet   = new Set(); // tickers already promoted — persists across table rebuilds
 let _rbEAICache     = {};   // { [ticker]: verdict } — Section E AI verdicts, session-only (HARVEST/NOACTION)
 let _rbESortState   = 0;    // 0=plP desc (default), 1=HARVEST first, 2=NOACTION first
 let _rbAIBannerDone  = 0;  // completed AI calls (G + F combined) for progress banner
@@ -5921,6 +5922,19 @@ function _rbBuildWatchlistSummaryTable() {
   const onetime = watch.filter(d => /one.time/i.test((_rbReportCache['g_' + d.ticker] || {}).verdict || '')).length;
   const stay    = watch.filter(d => /hold|stay|not ready|not suitable/i.test((_rbReportCache['g_' + d.ticker] || {}).verdict || '') && !/promote|one.time/i.test((_rbReportCache['g_' + d.ticker] || {}).verdict || '')).length;
 
+  const actionCell = d => {
+    if (_rbGPromotedSet.has(d.ticker)) {
+      return `<td style="padding:8px 10px;white-space:nowrap"><span style="font-size:11px;font-weight:600;color:#9ca3af">Promoted ✓</span></td>`;
+    }
+    const safeName = (d.name || d.shortName || d.ticker).replace(/'/g, "\\'");
+    return `<td style="padding:8px 10px;white-space:nowrap">
+      <button id="rb-gs-promote-btn-${d.ticker}" onclick="rbPromoteToCoreSIP('${d.ticker}','${safeName}',document.getElementById('rb-g-promote-btn-${d.ticker}'))"
+        style="background:rgba(16,208,122,.12);color:#10d07a;border:1px solid rgba(16,208,122,.3);border-radius:6px;padding:4px 10px;font-size:11px;font-weight:600;cursor:pointer;white-space:nowrap">
+        ⬆ Add to Core
+      </button>
+    </td>`;
+  };
+
   const rows = watch.map((d, i) => {
     const bg = i % 2 === 0 ? 'background:var(--surface)' : 'background:var(--surface2)';
     return `<tr style="${bg}">
@@ -5932,6 +5946,7 @@ function _rbBuildWatchlistSummaryTable() {
       <td style="padding:8px 12px;font-size:12px;color:${pctColor(d.ytd)};text-align:right">${d.ytd  !== null ? fmtPct(d.ytd)  : '—'}</td>
       <td style="padding:8px 12px;font-size:11px;color:var(--text3)">${d.sector || '—'}</td>
       <td style="padding:8px 14px">${verdictCell(d.ticker)}</td>
+      ${actionCell(d)}
     </tr>`;
   }).join('');
 
@@ -5958,6 +5973,7 @@ function _rbBuildWatchlistSummaryTable() {
               <th ${thStyle('ytd', 'right')}>YTD</th>
               <th ${thStyle('sec', 'left')}>Sector</th>
               <th ${thStyle('ver', 'left')}>Verdict</th>
+              <th style="padding:8px 10px;text-align:left;font-size:10px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.5px;white-space:nowrap">Actions</th>
             </tr>
           </thead>
           <tbody>${rows}</tbody>
@@ -7486,8 +7502,10 @@ async function rbPromoteToCoreSIP(ticker, fundName, btnEl) {
         const row = document.getElementById('rb-g-promote-btn-' + ticker)?.closest('.rb-flag-row');
         if (row) row.style.opacity = '0.4';
         if (btnEl) { btnEl.textContent = 'Promoted ✓'; btnEl.disabled = true; btnEl.style.color = '#9ca3af'; btnEl.style.borderColor = 'rgba(156,163,175,.3)'; btnEl.style.background = 'rgba(156,163,175,.08)'; }
+        _rbGPromotedSet.add(ticker);
         _rbGPromotedCount++;
         _rbGUpdatePromotedCounter();
+        _rbBuildWatchlistSummaryTable();
         showNotification(`✅ ${ticker} promoted to Core SIP! Monthly SIP set to CAD $${amt.toFixed(2)}. Refresh the page to update all sections.`, 'success');
       } else if (json && !json.ok) {
         showNotification(`❌ Could not promote ${ticker}. ${json.error || 'Row not found or already in Core SIP. Try refreshing the page first.'}`, 'error');
@@ -7496,8 +7514,10 @@ async function rbPromoteToCoreSIP(ticker, fundName, btnEl) {
         const row = document.getElementById('rb-g-promote-btn-' + ticker)?.closest('.rb-flag-row');
         if (row) row.style.opacity = '0.4';
         if (btnEl) { btnEl.textContent = 'Sent ✓'; btnEl.disabled = true; btnEl.style.color = '#9ca3af'; btnEl.style.borderColor = 'rgba(156,163,175,.3)'; btnEl.style.background = 'rgba(156,163,175,.08)'; }
+        _rbGPromotedSet.add(ticker);
         _rbGPromotedCount++;
         _rbGUpdatePromotedCounter();
+        _rbBuildWatchlistSummaryTable();
         showNotification(`⏳ ${ticker} promotion sent to Google Sheets. Please refresh the page to confirm.`, 'info');
       }
     } catch(err) {
