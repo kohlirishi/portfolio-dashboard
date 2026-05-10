@@ -5463,7 +5463,7 @@ function runRebalance() {
     document.getElementById('rb-last-run').textContent = 'Last run: ' + new Date().toLocaleTimeString('en-CA', { hour:'2-digit', minute:'2-digit' });
     document.getElementById('rb-results').style.display = 'block';
     // Collapse all sections by default — user clicks to expand what they need
-    ['a','b','c','d','e','f','g','h','j','plan','prompt'].forEach(id => {
+    ['a','b','c','d','e','f','g','h','i','j','plan','prompt'].forEach(id => {
       const body = document.getElementById('rb-body-' + id);
       const tog  = document.getElementById('rb-tog-' + id);
       if (body) body.style.display = 'none';
