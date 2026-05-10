@@ -7190,19 +7190,15 @@ async function rbRemoveFromWatchlist(ticker, fundName, btnEl) {
     cancelBtn.disabled     = true;
 
     try {
-      const resp = await fetch(_rbScriptUrl, {
-        method: 'POST',
-        headers: { 'Content-Type': 'text/plain' }, // avoids CORS preflight; GAS parses body regardless
-        body: JSON.stringify({ action: 'removeFromWatchlist', fundName }),
-        signal: AbortSignal.timeout(30000),
-      });
-      if (!resp.ok) {
-        let errText = '';
-        try { errText = await resp.text(); } catch(_) {}
-        throw new Error(`HTTP ${resp.status}: ${errText.slice(0, 100)}`);
-      }
+      // GET to doGet — GAS always sends Access-Control-Allow-Origin on GET responses
+      const rmUrl = `${_rbScriptUrl}?action=removeFromWatchlist&fundName=${encodeURIComponent(fundName)}&t=${Date.now()}`;
+      const resp  = await fetch(rmUrl, { method: 'GET', signal: AbortSignal.timeout(30000) });
+      // Read as text first so a non-JSON response (e.g. undeployed GAS returning HTML)
+      // gives a meaningful error instead of a silent catch
+      const text  = await resp.text();
       let json;
-      try { json = await resp.json(); } catch(_) { throw new Error('Invalid response from server'); }
+      try { json = JSON.parse(text); }
+      catch(_) { throw new Error('GAS returned non-JSON — paste latest GAS code and deploy a new version'); }
 
       closeDialog();
 
