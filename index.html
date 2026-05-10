@@ -4912,6 +4912,7 @@ let _rbFAICache     = {};   // { [ticker]: { verdict, analyzedOn } } — Section
 let _rbJAICache     = {};   // { [ticker]: verdict } — Section J AI verdicts, session-only
 let _rbIAICache     = {};   // { [ticker]: verdict } — Section I AI verdicts, session-only (SELL/REMOVE/KEEP)
 let _rbISortAsc     = true; // Section I verdict sort direction
+let _rbIRemovedCount = 0;  // tickers removed this session via Remove button
 let _rbEAICache     = {};   // { [ticker]: verdict } — Section E AI verdicts, session-only (HARVEST/NOACTION)
 let _rbESortState   = 0;    // 0=plP desc (default), 1=HARVEST first, 2=NOACTION first
 let _rbAIBannerDone  = 0;  // completed AI calls (G + F combined) for progress banner
@@ -6170,6 +6171,7 @@ function _doRebalance() {
       <span id="rb-i-cnt-sell" style="font-size:12px;font-weight:700;color:#ef4444;display:none"></span>
       <span id="rb-i-cnt-remove" style="font-size:12px;font-weight:700;color:#f5a623;display:none"></span>
       <span id="rb-i-cnt-keep" style="font-size:12px;font-weight:700;color:var(--green);display:none"></span>
+      <span id="rb-i-cnt-removed" style="font-size:12px;font-weight:700;color:#9ca3af;display:none"></span>
       <span id="rb-i-hint" style="font-size:12px;color:var(--text3);font-style:italic">Click Run All to analyse your watchlist stocks</span>
       <button onclick="_rbRunAllSectionIAI()" style="margin-left:auto;background:rgba(91,143,255,.12);color:#5b8fff;border:1px solid rgba(91,143,255,.3);border-radius:7px;padding:6px 14px;font-size:12px;font-weight:600;cursor:pointer">▶ Run All</button>
     </div>`;
@@ -6195,6 +6197,7 @@ function _doRebalance() {
         <td style="padding:9px 12px;white-space:nowrap">
           <button onclick="rbRunSingleIAI('${d.ticker}')" style="background:rgba(91,143,255,.1);color:#5b8fff;border:1px solid rgba(91,143,255,.25);border-radius:5px;padding:4px 10px;font-size:11px;font-weight:600;cursor:pointer" title="Run AI for ${d.ticker}">Run AI</button>
           <button onclick="rbCopyIPrompt('${d.ticker}',this)" style="background:rgba(91,143,255,.12);color:#5b8fff;border:1px solid rgba(91,143,255,.3);border-radius:5px;padding:4px 10px;font-size:11px;font-weight:600;cursor:pointer;margin-left:5px" title="Copy AI prompt for ${d.ticker}">⎘ Copy Prompt</button>
+          <button id="rb-i-rm-btn-${d.ticker}" onclick="rbRemoveFromWatchlist('${d.ticker}','${d.name.replace(/'/g,"\\'")}',this)" style="background:rgba(239,68,68,.1);color:#ef4444;border:1px solid rgba(239,68,68,.3);border-radius:5px;padding:4px 10px;font-size:11px;font-weight:600;cursor:pointer;margin-left:5px" title="Remove ${d.ticker} from Watchlist">🗑 Remove</button>
         </td>
       </tr>`;
     }).join('');
@@ -7125,14 +7128,15 @@ function _rbIShowVerdict(ticker, verdict) {
 function _rbIUpdateSummaryBar() {
   const data = _rbAnalysisData;
   if (!data || !data.watchStocksI) return;
-  const sell   = data.watchStocksI.filter(d => _rbIAICache[d.ticker] === 'SELL').length;
-  const remove = data.watchStocksI.filter(d => _rbIAICache[d.ticker] === 'REMOVE').length;
-  const keep   = data.watchStocksI.filter(d => _rbIAICache[d.ticker] === 'KEEP').length;
-  const total  = sell + remove + keep;
-  const sEl    = document.getElementById('rb-i-cnt-sell');
-  const rEl    = document.getElementById('rb-i-cnt-remove');
-  const kEl    = document.getElementById('rb-i-cnt-keep');
-  const hintEl = document.getElementById('rb-i-hint');
+  const sell    = data.watchStocksI.filter(d => _rbIAICache[d.ticker] === 'SELL').length;
+  const remove  = data.watchStocksI.filter(d => _rbIAICache[d.ticker] === 'REMOVE').length;
+  const keep    = data.watchStocksI.filter(d => _rbIAICache[d.ticker] === 'KEEP').length;
+  const total   = sell + remove + keep;
+  const sEl     = document.getElementById('rb-i-cnt-sell');
+  const rEl     = document.getElementById('rb-i-cnt-remove');
+  const kEl     = document.getElementById('rb-i-cnt-keep');
+  const rmEl    = document.getElementById('rb-i-cnt-removed');
+  const hintEl  = document.getElementById('rb-i-hint');
   if (total === 0) {
     if (sEl)    sEl.style.display    = 'none';
     if (rEl)    rEl.style.display    = 'none';
@@ -7144,6 +7148,71 @@ function _rbIUpdateSummaryBar() {
     if (kEl)    { kEl.textContent = `🟢 ${keep} Keep`;     kEl.style.display = keep   > 0 ? '' : 'none'; }
     if (hintEl) hintEl.style.display = 'none';
   }
+  if (rmEl) { rmEl.textContent = `🗑 ${_rbIRemovedCount} Removed`; rmEl.style.display = _rbIRemovedCount > 0 ? '' : 'none'; }
+}
+
+// ── Remove from Watchlist — writes "Deleted" to Column M via GAS ─────────────
+async function rbRemoveFromWatchlist(ticker, fundName, btnEl) {
+  const displayTicker = ticker;
+  const displayName   = fundName;
+
+  // ── Confirmation dialog ───────────────────────────────────────────────────
+  const overlay = document.createElement('div');
+  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.65);z-index:10000;display:flex;align-items:center;justify-content:center';
+  overlay.innerHTML = `
+    <div style="background:#1a2233;border:1px solid rgba(239,68,68,.35);border-radius:12px;padding:28px 32px;max-width:420px;width:90%;box-shadow:0 8px 32px rgba(0,0,0,.5)">
+      <div style="font-size:15px;font-weight:700;color:#f1f5f9;margin-bottom:10px">Remove from Watchlist?</div>
+      <div style="font-size:13px;color:var(--text2);line-height:1.6;margin-bottom:18px">
+        This will change <strong style="color:#f1f5f9">${displayTicker} — ${displayName}</strong>
+        status from <em>Watchlist</em> to <em>Deleted</em> in your Google Sheet (Column M).
+        <br><br>
+        <span style="color:#f5a623;font-size:12px">⚠️ Please refresh the page after confirming to see updated results.</span>
+      </div>
+      <div style="display:flex;gap:10px;justify-content:flex-end">
+        <button id="rb-rm-cancel" style="background:rgba(255,255,255,.07);color:var(--text2);border:1px solid rgba(255,255,255,.12);border-radius:7px;padding:8px 18px;font-size:13px;font-weight:600;cursor:pointer">Cancel</button>
+        <button id="rb-rm-confirm" style="background:rgba(239,68,68,.18);color:#ef4444;border:1px solid rgba(239,68,68,.4);border-radius:7px;padding:8px 18px;font-size:13px;font-weight:600;cursor:pointer">Confirm Remove</button>
+      </div>
+    </div>`;
+  document.body.appendChild(overlay);
+
+  const cancelBtn  = overlay.querySelector('#rb-rm-cancel');
+  const confirmBtn = overlay.querySelector('#rb-rm-confirm');
+
+  const closeDialog = () => overlay.remove();
+
+  cancelBtn.onclick  = closeDialog;
+  overlay.onclick    = (e) => { if (e.target === overlay) closeDialog(); };
+
+  confirmBtn.onclick = async () => {
+    // Loading state
+    confirmBtn.textContent = '⏳ Removing…';
+    confirmBtn.disabled    = true;
+    cancelBtn.disabled     = true;
+
+    try {
+      const url  = `${_rbScriptUrl}?action=removeFromWatchlist&fundName=${encodeURIComponent(fundName)}&t=${Date.now()}`;
+      const resp = await fetch(url, { method: 'GET' });
+      const json = await resp.json();
+
+      closeDialog();
+
+      if (json && json.ok) {
+        // Success — grey out row, update button, increment counter
+        const row = document.getElementById('rb-i-rm-btn-' + ticker)?.closest('tr');
+        if (row) row.style.opacity = '0.4';
+        if (btnEl) { btnEl.textContent = 'Removed ✓'; btnEl.disabled = true; btnEl.style.color = '#9ca3af'; btnEl.style.borderColor = 'rgba(156,163,175,.3)'; }
+        _rbIRemovedCount++;
+        _rbIUpdateSummaryBar();
+        showNotification(`✅ ${displayTicker} removed from Watchlist. Refresh the page to update Section I.`, 'success');
+      } else {
+        const errMsg = (json && json.error) ? json.error : 'Unknown error';
+        showNotification(`❌ Could not remove ${displayTicker}. ${errMsg}`, 'error');
+      }
+    } catch (err) {
+      closeDialog();
+      showNotification(`❌ Could not remove ${displayTicker}. Network error — try refreshing first.`, 'error');
+    }
+  };
 }
 
 function _rbIGetCounts(watchStocksI) {
