@@ -1064,7 +1064,7 @@ table.div-ht tfoot td{padding:10px 14px;font-size:13px;font-weight:700;backgroun
 #pg-longterm .badge { background: #111d2c; border: 1px solid #1e3250; border-radius: 12px; padding: 2px 10px; font-size: 12px; font-weight: 600; color: #58a6ff; }
 #pg-longterm /* WATCHLIST TABLE */
   .table-wrap { background: #152032; border: 1px solid #1e3250; border-radius: 10px; overflow: hidden; overflow-x: auto; margin-bottom: 24px; }
-#pg-longterm table { width: 100%; border-collapse: collapse; min-width: 900px; }
+#pg-longterm table { width: 100%; border-collapse: collapse; min-width: 1300px; }
 #pg-longterm #ltTableWrap, #pg-longterm .table-wrap { overflow-x: auto; }
 #pg-longterm thead th { background: #111d2c; padding: 9px 12px; text-align: left; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: #8aaccc; border-bottom: 1px solid #1e3250; white-space: nowrap; }
 #pg-longterm thead th:last-child { text-align: center; }
@@ -4869,10 +4869,12 @@ async function loadAllRatings(){
             <th id="ltStrengthHeader" onclick="toggleLtSort()" style="padding:11px 16px;text-align:left;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:#58a6ff;border-bottom:1px solid #1e3250;white-space:nowrap;cursor:pointer;user-select:none" title="Click to toggle sort direction">Strength <span id="ltSortIcon">↓</span></th>
             <th style="padding:11px 16px;text-align:left;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:#8aaccc;border-bottom:1px solid #1e3250;white-space:nowrap">Technical Checks</th>
             <th style="padding:11px 16px;text-align:left;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:#8aaccc;border-bottom:1px solid #1e3250;white-space:nowrap">Fundamentals</th>
+            <th style="padding:11px 16px;text-align:left;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:#8aaccc;border-bottom:1px solid #1e3250;white-space:nowrap">AI Verdict</th>
+            <th style="padding:11px 16px;text-align:left;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:#8aaccc;border-bottom:1px solid #1e3250;white-space:nowrap">Date Updated</th>
           </tr>
         </thead>
         <tbody id="ltBody">
-          <tr><td colspan="5" style="padding:40px;text-align:center;color:#4a6a8a;font-size:14px">Click ↻ Refresh Data to load from Google Sheet</td></tr>
+          <tr><td colspan="7" style="padding:40px;text-align:center;color:#4a6a8a;font-size:14px">Click ↻ Refresh Data to load from Google Sheet</td></tr>
         </tbody>
       </table>
     </div>
@@ -13095,7 +13097,7 @@ async function loadLtFromSheet() {
 
   if (btn) { btn.disabled = true; btn.textContent = '⏳ Loading…'; }
   if (status) status.textContent = 'Fetching from Google Sheet…';
-  if (tbody) tbody.innerHTML = `<tr><td colspan="5" style="padding:40px;text-align:center;color:#8aaccc">Loading data…</td></tr>`;
+  if (tbody) tbody.innerHTML = `<tr><td colspan="7" style="padding:40px;text-align:center;color:#8aaccc">Loading data…</td></tr>`;
 
   try {
     const res = await fetch(LT_HTML_URL, { cache: 'no-store' });
@@ -13151,7 +13153,7 @@ async function loadLtFromSheet() {
         sma50w:      toNum(get(11)) || 0,
         sma200w:     toNum(get(12)) || 0,
         perf5y:      toNum(get(13)) || 0,
-        dateAdded:   get(14),
+        dateUpdated: get(14),               // Col O: Date Updated
         notes:       get(15),
         exchange:    get(16),
         w52high:     toNum(get(17)) || 0,
@@ -13167,6 +13169,7 @@ async function loadLtFromSheet() {
         sma50daily:  toNum(get(30)) || 0,   // Col AE: SMA50 Daily (EMA50D proxy, US PASS stocks only)
         sector:      get(31),                // Col AF: Sector (GOOGLEFINANCE)
         industry:    get(32),                // Col AG: Industry (GOOGLEFINANCE)
+        aiVerdict:   get(33),               // Col AH: AI Verdict
       };
 
       allParsed.push(row);
@@ -13177,7 +13180,7 @@ async function loadLtFromSheet() {
 
     if (passParsed.length === 0) {
       if (status) status.textContent = '⚠ No rows with Status = "PASS" found.';
-      if (tbody) tbody.innerHTML = `<tr><td colspan="5" style="padding:40px;text-align:center;color:#d4a017">No PASS rows. Make sure column E (Status) contains "PASS" (uppercase).</td></tr>`;
+      if (tbody) tbody.innerHTML = `<tr><td colspan="7" style="padding:40px;text-align:center;color:#d4a017">No PASS rows. Make sure column E (Status) contains "PASS" (uppercase).</td></tr>`;
       return;
     }
 
@@ -13189,7 +13192,7 @@ async function loadLtFromSheet() {
   } catch (err) {
     console.error('LT error:', err);
     if (status) status.textContent = '⚠ Failed to load data. Make sure the sheet is shared (Anyone with link can view).';
-    if (tbody) tbody.innerHTML = `<tr><td colspan="5" style="padding:40px;text-align:center;color:#f85149">
+    if (tbody) tbody.innerHTML = `<tr><td colspan="7" style="padding:40px;text-align:center;color:#f85149">
       Failed to load data. Make sure:<br>
       1. The sheet is shared (File → Share → Anyone with the link can view).<br>
       2. The sheet contains columns at positions: Symbol, Company Name, Price, Strength %, Status, ...<br>
@@ -13235,7 +13238,7 @@ function renderLtTable() {
   if (badge) badge.textContent = filtered.length;
 
   if (!filtered.length) {
-    tbody.innerHTML = `<tr><td colspan="5" style="padding:40px;text-align:center;color:#4a6a8a">No stocks with Strength ≥ 60% found</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="7" style="padding:40px;text-align:center;color:#4a6a8a">No stocks with Strength ≥ 60% found</td></tr>`;
     return;
   }
 
@@ -13366,6 +13369,14 @@ function renderLtTable() {
           ${hasFundamentals ? `<br><span style="color:#e2ecf7">RevGr:</span> <span style="color:${goodRevGrowth?'#3fb950':'#f85149'}">${s.revGrowth !== null ? fmtN(s.revGrowth,1)+'%' : 'N/A'}</span> &nbsp; <span style="color:#e2ecf7">ROE:</span> <span style="color:${goodROE?'#3fb950':'#f85149'}">${s.roe !== null ? fmtN(s.roe,1)+'%' : 'N/A'}</span>` : ''}
           ${hasFundamentals ? `<br><span style="color:#e2ecf7">EPSGr:</span> <span style="color:${goodEPSGrowth?'#3fb950':'#f85149'}">${s.epsGrowth !== null ? fmtN(s.epsGrowth,1)+'%' : 'N/A'}</span> &nbsp; <span style="color:#e2ecf7">GrossM:</span> <span style="color:${goodGrossMargin?'#3fb950':'#f85149'}">${s.grossMargin !== null ? fmtN(s.grossMargin,1)+'%' : 'N/A'}</span>` : ''}
         </div>
+      </td>
+      <td style="padding:14px 16px;vertical-align:top;min-width:160px">
+        ${s.aiVerdict
+          ? `<div style="font-size:12px;color:#e2ecf7;line-height:1.6">${s.aiVerdict}</div>`
+          : `<div style="font-size:12px;color:#4a6a8a">—</div>`}
+      </td>
+      <td style="padding:14px 16px;vertical-align:top;white-space:nowrap">
+        <div style="font-size:12px;color:#8aaccc">${s.dateUpdated || '—'}</div>
       </td>
     </tr>`;
   }).join('');
