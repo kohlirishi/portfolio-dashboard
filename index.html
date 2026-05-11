@@ -4869,12 +4869,10 @@ async function loadAllRatings(){
             <th id="ltStrengthHeader" onclick="toggleLtSort()" style="padding:11px 16px;text-align:left;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:#58a6ff;border-bottom:1px solid #1e3250;white-space:nowrap;cursor:pointer;user-select:none" title="Click to toggle sort direction">Strength <span id="ltSortIcon">↓</span></th>
             <th style="padding:11px 16px;text-align:left;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:#8aaccc;border-bottom:1px solid #1e3250;white-space:nowrap">Technical Checks</th>
             <th style="padding:11px 16px;text-align:left;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:#8aaccc;border-bottom:1px solid #1e3250;white-space:nowrap">Fundamentals</th>
-            <th id="ltDateHeader" onclick="toggleLtDateSort()" style="padding:11px 16px;text-align:left;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:#58a6ff;border-bottom:1px solid #1e3250;white-space:nowrap;cursor:pointer;user-select:none" title="Click to toggle sort direction">Date Added <span id="ltDateSortIcon"></span></th>
-            <th style="padding:11px 16px;text-align:left;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:#8aaccc;border-bottom:1px solid #1e3250;white-space:nowrap">Notes</th>
           </tr>
         </thead>
         <tbody id="ltBody">
-          <tr><td colspan="7" style="padding:40px;text-align:center;color:#4a6a8a;font-size:14px">Click ↻ Refresh Data to load from Google Sheet</td></tr>
+          <tr><td colspan="5" style="padding:40px;text-align:center;color:#4a6a8a;font-size:14px">Click ↻ Refresh Data to load from Google Sheet</td></tr>
         </tbody>
       </table>
     </div>
@@ -13097,7 +13095,7 @@ async function loadLtFromSheet() {
 
   if (btn) { btn.disabled = true; btn.textContent = '⏳ Loading…'; }
   if (status) status.textContent = 'Fetching from Google Sheet…';
-  if (tbody) tbody.innerHTML = `<tr><td colspan="7" style="padding:40px;text-align:center;color:#8aaccc">Loading data…</td></tr>`;
+  if (tbody) tbody.innerHTML = `<tr><td colspan="5" style="padding:40px;text-align:center;color:#8aaccc">Loading data…</td></tr>`;
 
   try {
     const res = await fetch(LT_HTML_URL, { cache: 'no-store' });
@@ -13179,7 +13177,7 @@ async function loadLtFromSheet() {
 
     if (passParsed.length === 0) {
       if (status) status.textContent = '⚠ No rows with Status = "PASS" found.';
-      if (tbody) tbody.innerHTML = `<tr><td colspan="7" style="padding:40px;text-align:center;color:#d4a017">No PASS rows. Make sure column E (Status) contains "PASS" (uppercase).</td></tr>`;
+      if (tbody) tbody.innerHTML = `<tr><td colspan="5" style="padding:40px;text-align:center;color:#d4a017">No PASS rows. Make sure column E (Status) contains "PASS" (uppercase).</td></tr>`;
       return;
     }
 
@@ -13191,7 +13189,7 @@ async function loadLtFromSheet() {
   } catch (err) {
     console.error('LT error:', err);
     if (status) status.textContent = '⚠ Failed to load data. Make sure the sheet is shared (Anyone with link can view).';
-    if (tbody) tbody.innerHTML = `<tr><td colspan="7" style="padding:40px;text-align:center;color:#f85149">
+    if (tbody) tbody.innerHTML = `<tr><td colspan="5" style="padding:40px;text-align:center;color:#f85149">
       Failed to load data. Make sure:<br>
       1. The sheet is shared (File → Share → Anyone with the link can view).<br>
       2. The sheet contains columns at positions: Symbol, Company Name, Price, Strength %, Status, ...<br>
@@ -13203,9 +13201,7 @@ async function loadLtFromSheet() {
 }
 
 // ─── RENDER TABLE (same as before – unchanged) ───────────────────────────────
-let ltSortDir       = 'desc'; // 'desc' = high to low, 'asc' = low to high
-let ltActiveSortCol = 'strength'; // 'strength' | 'date'
-let ltDateSortDir   = 'desc';     // 'desc' = newest first, 'asc' = oldest first
+let ltSortDir = 'desc'; // 'desc' = high to low, 'asc' = low to high
 
 // Helper: parse date strings like "06-April-2025" or "07-April-2026"
 function parseLtDate(dateStr) {
@@ -13217,55 +13213,14 @@ function parseLtDate(dateStr) {
 function updateLtSortSubtitle() {
   const el = document.getElementById('ltSortSubtitle');
   if (!el) return;
-  if (ltActiveSortCol === 'date') {
-    el.textContent = 'PASS only · sorted by Date Added (' + (ltDateSortDir === 'desc' ? 'newest first' : 'oldest first') + ') · from Google Sheet tab: testScreener';
-  } else {
-    el.textContent = 'PASS only · Strength ≥ 60% · sorted by Strength % (' + (ltSortDir === 'desc' ? 'high to low' : 'low to high') + ') · from Google Sheet tab: testScreener';
-  }
+  el.textContent = 'PASS only · Strength ≥ 60% · sorted by Strength % (' + (ltSortDir === 'desc' ? 'high to low' : 'low to high') + ') · from Google Sheet tab: testScreener';
 }
 
 function toggleLtSort() {
-  ltActiveSortCol = 'strength';
   ltSortDir = ltSortDir === 'desc' ? 'asc' : 'desc';
-
-  // Update Strength header: active (blue + arrow)
   const strIcon = document.getElementById('ltSortIcon');
   if (strIcon) strIcon.textContent = ltSortDir === 'desc' ? '↓' : '↑';
-  const strHeader = document.getElementById('ltStrengthHeader');
-  if (strHeader) strHeader.style.color = '#58a6ff';
-
-  // Clear Date Added header: inactive (grey, no arrow)
-  const dateIcon = document.getElementById('ltDateSortIcon');
-  if (dateIcon) dateIcon.textContent = '';
-  const dateHeader = document.getElementById('ltDateHeader');
-  if (dateHeader) dateHeader.style.color = '#8aaccc';
-
   ltSheetData.sort((a, b) => ltSortDir === 'desc' ? b.strength - a.strength : a.strength - b.strength);
-  updateLtSortSubtitle();
-  renderLtTable();
-}
-
-function toggleLtDateSort() {
-  ltActiveSortCol = 'date';
-  ltDateSortDir = ltDateSortDir === 'desc' ? 'asc' : 'desc';
-
-  // Update Date Added header: active (blue + arrow)
-  const dateIcon = document.getElementById('ltDateSortIcon');
-  if (dateIcon) dateIcon.textContent = ltDateSortDir === 'desc' ? '↓' : '↑';
-  const dateHeader = document.getElementById('ltDateHeader');
-  if (dateHeader) dateHeader.style.color = '#58a6ff';
-
-  // Clear Strength header: inactive (grey, no arrow)
-  const strIcon = document.getElementById('ltSortIcon');
-  if (strIcon) strIcon.textContent = '';
-  const strHeader = document.getElementById('ltStrengthHeader');
-  if (strHeader) strHeader.style.color = '#8aaccc';
-
-  ltSheetData.sort((a, b) => {
-    const da = parseLtDate(a.dateAdded);
-    const db = parseLtDate(b.dateAdded);
-    return ltDateSortDir === 'desc' ? db - da : da - db;
-  });
   updateLtSortSubtitle();
   renderLtTable();
 }
@@ -13280,7 +13235,7 @@ function renderLtTable() {
   if (badge) badge.textContent = filtered.length;
 
   if (!filtered.length) {
-    tbody.innerHTML = `<tr><td colspan="7" style="padding:40px;text-align:center;color:#4a6a8a">No stocks with Strength ≥ 60% found</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="5" style="padding:40px;text-align:center;color:#4a6a8a">No stocks with Strength ≥ 60% found</td></tr>`;
     return;
   }
 
@@ -13411,12 +13366,6 @@ function renderLtTable() {
           ${hasFundamentals ? `<br><span style="color:#e2ecf7">RevGr:</span> <span style="color:${goodRevGrowth?'#3fb950':'#f85149'}">${s.revGrowth !== null ? fmtN(s.revGrowth,1)+'%' : 'N/A'}</span> &nbsp; <span style="color:#e2ecf7">ROE:</span> <span style="color:${goodROE?'#3fb950':'#f85149'}">${s.roe !== null ? fmtN(s.roe,1)+'%' : 'N/A'}</span>` : ''}
           ${hasFundamentals ? `<br><span style="color:#e2ecf7">EPSGr:</span> <span style="color:${goodEPSGrowth?'#3fb950':'#f85149'}">${s.epsGrowth !== null ? fmtN(s.epsGrowth,1)+'%' : 'N/A'}</span> &nbsp; <span style="color:#e2ecf7">GrossM:</span> <span style="color:${goodGrossMargin?'#3fb950':'#f85149'}">${s.grossMargin !== null ? fmtN(s.grossMargin,1)+'%' : 'N/A'}</span>` : ''}
         </div>
-      </td>
-      <td style="padding:14px 16px;vertical-align:top;white-space:nowrap">
-        <div style="font-size:12px;color:#8aaccc">${s.dateAdded || '—'}</div>
-      </td>
-      <td style="padding:14px 16px;vertical-align:top;max-width:200px">
-        <div style="font-size:12px;color:#8aaccc;line-height:1.6">${s.notes || '—'}</div>
       </td>
     </tr>`;
   }).join('');
