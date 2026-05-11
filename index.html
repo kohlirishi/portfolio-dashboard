@@ -1344,7 +1344,7 @@ table.div-ht tfoot td{padding:10px 14px;font-size:13px;font-weight:700;backgroun
             </tr>
           </thead>
           <tbody id="mh-tbody">
-            <tr><td colspan="7" style="text-align:center;padding:20px;color:var(--text3)">Loading…</td></tr>
+            <tr><td colspan="8" style="text-align:center;padding:20px;color:var(--text3)">Loading…</td></tr>
           </tbody>
         </table>
       </div>
@@ -3140,7 +3140,7 @@ async function fetchMonthlyPerformance() {
 
     if (!json.ok || !Array.isArray(json.rows) || !json.rows.length) {
       document.getElementById('mh-tbody').innerHTML =
-        '<tr><td colspan="7" style="text-align:center;padding:20px;color:var(--text3)">No performance data yet</td></tr>';
+        '<tr><td colspan="8" style="text-align:center;padding:20px;color:var(--text3)">No performance data yet</td></tr>';
       return;
     }
 
@@ -3220,7 +3220,7 @@ async function fetchMonthlyPerformance() {
     }).join('');
   } catch(err) {
     document.getElementById('mh-tbody').innerHTML =
-      `<tr><td colspan="7" style="text-align:center;padding:20px;color:#f44336">Could not load: ${err.message}</td></tr>`;
+      `<tr><td colspan="8" style="text-align:center;padding:20px;color:#f44336">Could not load: ${err.message}</td></tr>`;
   }
 }
 
@@ -4871,10 +4871,11 @@ async function loadAllRatings(){
             <th style="padding:11px 16px;text-align:left;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:#8aaccc;border-bottom:1px solid #1e3250;white-space:nowrap">Fundamentals</th>
             <th style="padding:11px 16px;text-align:left;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:#8aaccc;border-bottom:1px solid #1e3250;white-space:nowrap">AI Verdict</th>
             <th style="padding:11px 16px;text-align:left;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:#8aaccc;border-bottom:1px solid #1e3250;white-space:nowrap">Date Updated</th>
+            <th style="padding:11px 16px;text-align:center;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:#8aaccc;border-bottom:1px solid #1e3250;white-space:nowrap">Prompt</th>
           </tr>
         </thead>
         <tbody id="ltBody">
-          <tr><td colspan="7" style="padding:40px;text-align:center;color:#4a6a8a;font-size:14px">Click ↻ Refresh Data to load from Google Sheet</td></tr>
+          <tr><td colspan="8" style="padding:40px;text-align:center;color:#4a6a8a;font-size:14px">Click ↻ Refresh Data to load from Google Sheet</td></tr>
         </tbody>
       </table>
     </div>
@@ -13097,7 +13098,7 @@ async function loadLtFromSheet() {
 
   if (btn) { btn.disabled = true; btn.textContent = '⏳ Loading…'; }
   if (status) status.textContent = 'Fetching from Google Sheet…';
-  if (tbody) tbody.innerHTML = `<tr><td colspan="7" style="padding:40px;text-align:center;color:#8aaccc">Loading data…</td></tr>`;
+  if (tbody) tbody.innerHTML = `<tr><td colspan="8" style="padding:40px;text-align:center;color:#8aaccc">Loading data…</td></tr>`;
 
   try {
     const res = await fetch(LT_HTML_URL, { cache: 'no-store' });
@@ -13180,7 +13181,7 @@ async function loadLtFromSheet() {
 
     if (passParsed.length === 0) {
       if (status) status.textContent = '⚠ No rows with Status = "PASS" found.';
-      if (tbody) tbody.innerHTML = `<tr><td colspan="7" style="padding:40px;text-align:center;color:#d4a017">No PASS rows. Make sure column E (Status) contains "PASS" (uppercase).</td></tr>`;
+      if (tbody) tbody.innerHTML = `<tr><td colspan="8" style="padding:40px;text-align:center;color:#d4a017">No PASS rows. Make sure column E (Status) contains "PASS" (uppercase).</td></tr>`;
       return;
     }
 
@@ -13192,7 +13193,7 @@ async function loadLtFromSheet() {
   } catch (err) {
     console.error('LT error:', err);
     if (status) status.textContent = '⚠ Failed to load data. Make sure the sheet is shared (Anyone with link can view).';
-    if (tbody) tbody.innerHTML = `<tr><td colspan="7" style="padding:40px;text-align:center;color:#f85149">
+    if (tbody) tbody.innerHTML = `<tr><td colspan="8" style="padding:40px;text-align:center;color:#f85149">
       Failed to load data. Make sure:<br>
       1. The sheet is shared (File → Share → Anyone with the link can view).<br>
       2. The sheet contains columns at positions: Symbol, Company Name, Price, Strength %, Status, ...<br>
@@ -13238,7 +13239,7 @@ function renderLtTable() {
   if (badge) badge.textContent = filtered.length;
 
   if (!filtered.length) {
-    tbody.innerHTML = `<tr><td colspan="7" style="padding:40px;text-align:center;color:#4a6a8a">No stocks with Strength ≥ 60% found</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="8" style="padding:40px;text-align:center;color:#4a6a8a">No stocks with Strength ≥ 60% found</td></tr>`;
     return;
   }
 
@@ -13378,8 +13379,71 @@ function renderLtTable() {
       <td style="padding:14px 16px;vertical-align:top;white-space:nowrap">
         <div style="font-size:12px;color:#8aaccc">${s.dateUpdated || '—'}</div>
       </td>
+      <td style="padding:14px 16px;vertical-align:middle;text-align:center">
+        <button onclick="copyLtPrompt(this,'${s.symbol.replace(/'/g,"\\'")}',${s.price},${s.strength},${s.pe},${s.sma50w},${s.sma200w},${s.perf5y},${s.distFromHigh},${s.beta},${s.divYield},${s.revGrowth},${s.roe},${s.epsGrowth},${s.grossMargin},${s.sma50daily},'${(s.sector||'').replace(/'/g,"\\'")}','${(s.industry||'').replace(/'/g,"\\'")}','${(s.exchange||'').replace(/'/g,"\\'")}'"
+          style="padding:5px 12px;background:#1f3a5f;border:1px solid #1e3250;color:#58a6ff;border-radius:5px;font-size:11px;font-weight:600;cursor:pointer;white-space:nowrap;transition:all .15s"
+          onmouseover="this.style.background='#1e3250';this.style.borderColor='#58a6ff'"
+          onmouseout="this.style.background='#1f3a5f';this.style.borderColor='#1e3250'">Copy Prompt</button>
+      </td>
     </tr>`;
   }).join('');
+}
+
+function copyLtPrompt(btn, symbol, price, strength, pe, sma50w, sma200w, perf5y, distHigh, beta, divYield, revGrowth, roe, epsGrowth, grossMargin, ema50d, sector, industry, exchange) {
+  const fmtAbove = (val, ref) => ref > 0 ? ((price - ref) / ref * 100).toFixed(1) : 'N/A';
+  const aboveEma    = ema50d  > 0 ? ((price - ema50d)  / ema50d  * 100).toFixed(1) : 'N/A';
+  const aboveSma50w = sma50w  > 0 ? ((price - sma50w)  / sma50w  * 100).toFixed(1) : 'N/A';
+  const aboveSma200w= sma200w > 0 ? ((price - sma200w) / sma200w * 100).toFixed(1) : 'N/A';
+
+  const prompt = `You are a long-term SIP investment analyst. A stock has passed all technical and fundamental screener filters. Analyze it and give a verdict.
+
+STOCK DATA:
+- Symbol: ${symbol} | Sector: ${sector} | Industry: ${industry}
+- Exchange: ${exchange} | Price: $${price}
+- Screener Strength Score: ${strength}% (out of 100)
+
+TECHNICAL:
+- 5-Year Performance: ${perf5y}%
+- Price vs EMA50D: ${aboveEma}% above
+- Price vs SMA50W: ${aboveSma50w}% above
+- Price vs SMA200W: ${aboveSma200w}% above
+- Distance from 52W High: -${Math.abs(distHigh).toFixed(1)}%
+- Beta: ${beta}
+- Dividend Yield: ${divYield}%
+- P/E Ratio: ${pe}
+
+FUNDAMENTAL:
+- Revenue Growth: ${revGrowth}%
+- Return on Equity: ${roe}%
+- EPS Growth YoY: ${epsGrowth}%
+- Gross Margin: ${grossMargin}%
+
+VERDICT RULES (follow exactly):
+- CORE: Strength >= 70% AND all 4 fundamentals strong (RevGrowth>=15%, ROE>=15%, EPSGrowth>=15%, GrossMargin>=30%). Recommend monthly SIP in CAD: $60 if Strength>=85%, $50 if Strength 75-84%, $40 if Strength 70-74%.
+- WATCHLIST: Passes screener filters but Strength < 70% OR one/more fundamentals are moderate. Worth monitoring.
+- SKIP: Passes filters technically but fundamentals are weak or sector has high risk.
+
+Respond in EXACTLY this format (4 lines, plain text, no markdown):
+VERDICT: [CORE $XX/month CAD | WATCHLIST | SKIP]
+REASON: [One sentence — why this verdict based on the data]
+STRENGTH: [What is genuinely strong about this stock]
+WATCH FOR: [What condition would change this verdict up or down]`;
+
+  navigator.clipboard.writeText(prompt).then(() => {
+    const orig = btn.textContent;
+    btn.textContent = '✓ Copied!';
+    btn.style.background = '#0d4a20';
+    btn.style.color = '#3fb950';
+    btn.style.borderColor = '#238636';
+    setTimeout(() => {
+      btn.textContent = orig;
+      btn.style.background = '#1f3a5f';
+      btn.style.color = '#58a6ff';
+      btn.style.borderColor = '#1e3250';
+    }, 2000);
+  }).catch(() => {
+    prompt && window.prompt('Copy this prompt:', prompt);
+  });
 }
 
 async function initLongTerm() {
