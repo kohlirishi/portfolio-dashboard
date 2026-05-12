@@ -13380,7 +13380,7 @@ function renderLtTable() {
         <div style="font-size:12px;color:#8aaccc">${s.dateUpdated || '—'}</div>
       </td>
       <td style="padding:14px 16px;vertical-align:middle;text-align:center">
-        <button onclick="copyLtPrompt(this,'${s.symbol.replace(/'/g,"\\'")}',${s.price},${s.strength},${s.pe},${s.sma50w},${s.sma200w},${s.perf5y},${s.distFromHigh},${s.beta},${s.divYield},${s.revGrowth},${s.roe},${s.epsGrowth},${s.grossMargin},${s.sma50daily},'${(s.sector||'').replace(/'/g,"\\'")}','${(s.industry||'').replace(/'/g,"\\'")}','${(s.exchange||'').replace(/'/g,"\\'")}'"
+        <button data-ltsym="${s.symbol}" onclick="copyLtPrompt(this)"
           style="padding:5px 12px;background:#1f3a5f;border:1px solid #1e3250;color:#58a6ff;border-radius:5px;font-size:11px;font-weight:600;cursor:pointer;white-space:nowrap;transition:all .15s"
           onmouseover="this.style.background='#1e3250';this.style.borderColor='#58a6ff'"
           onmouseout="this.style.background='#1f3a5f';this.style.borderColor='#1e3250'">Copy Prompt</button>
@@ -13389,8 +13389,30 @@ function renderLtTable() {
   }).join('');
 }
 
-function copyLtPrompt(btn, symbol, price, strength, pe, sma50w, sma200w, perf5y, distHigh, beta, divYield, revGrowth, roe, epsGrowth, grossMargin, ema50d, sector, industry, exchange) {
-  const fmtAbove = (val, ref) => ref > 0 ? ((price - ref) / ref * 100).toFixed(1) : 'N/A';
+function copyLtPrompt(btn) {
+  const sym = btn.getAttribute('data-ltsym');
+  const s   = ltSheetData.find(d => d.symbol === sym);
+  if (!s) { alert('Stock data not found for ' + sym); return; }
+
+  const symbol     = s.symbol;
+  const price      = s.price;
+  const strength   = s.strength;
+  const pe         = s.pe;
+  const sma50w     = s.sma50w;
+  const sma200w    = s.sma200w;
+  const perf5y     = s.perf5y;
+  const distHigh   = s.distFromHigh;
+  const beta       = s.beta;
+  const divYield   = s.divYield;
+  const revGrowth  = s.revGrowth;
+  const roe        = s.roe;
+  const epsGrowth  = s.epsGrowth;
+  const grossMargin= s.grossMargin;
+  const ema50d     = s.sma50daily;
+  const sector     = s.sector     || 'N/A';
+  const industry   = s.industry   || 'N/A';
+  const exchange   = s.exchange   || '';
+
   const aboveEma    = ema50d  > 0 ? ((price - ema50d)  / ema50d  * 100).toFixed(1) : 'N/A';
   const aboveSma50w = sma50w  > 0 ? ((price - sma50w)  / sma50w  * 100).toFixed(1) : 'N/A';
   const aboveSma200w= sma200w > 0 ? ((price - sma200w) / sma200w * 100).toFixed(1) : 'N/A';
