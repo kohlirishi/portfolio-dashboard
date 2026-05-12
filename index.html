@@ -13642,11 +13642,16 @@ async function ltAddToCore(btnEl) {
         try { await fetch(url, { method: 'GET', mode: 'no-cors' }); } catch(_) {}
       }
       overlay.remove();
-      ltAddedToSheetSet.add(sym);
-      if (btnEl) { btnEl.textContent = 'Added ✓'; btnEl.disabled = true; btnEl.style.color = '#9ca3af'; btnEl.style.borderColor = 'rgba(156,163,175,.3)'; btnEl.style.background = 'rgba(156,163,175,.08)'; }
       if (json && json.ok === false) {
-        showNotification(`❌ Could not add ${sym}. ${json.error || 'Unknown error.'}`, 'error');
+        const msg = json.error || 'Unknown error.';
+        if (msg.includes('Available sheets:')) {
+          alert(`❌ Could not add ${sym} to Core SIP.\n\n${msg}\n\nCheck the exact sheet tab name and update GAS code.`);
+        } else {
+          showNotification(`❌ Could not add ${sym}. ${msg}`, 'error');
+        }
       } else {
+        ltAddedToSheetSet.add(sym);
+        if (btnEl) { btnEl.textContent = 'Added ✓'; btnEl.disabled = true; btnEl.style.color = '#9ca3af'; btnEl.style.borderColor = 'rgba(156,163,175,.3)'; btnEl.style.background = 'rgba(156,163,175,.08)'; }
         showNotification(`✅ ${sym} added to Core SIP! Monthly SIP: CAD $${amt.toFixed(2)}. Refresh page to confirm.`, 'success');
       }
     } catch(err) {
@@ -13705,11 +13710,16 @@ async function ltAddToWatchlist(btnEl) {
         try { await fetch(url, { method: 'GET', mode: 'no-cors' }); } catch(_) {}
       }
       overlay.remove();
-      ltAddedToSheetSet.add(sym);
-      if (btnEl) { btnEl.textContent = 'Added ✓'; btnEl.disabled = true; btnEl.style.color = '#9ca3af'; btnEl.style.borderColor = 'rgba(156,163,175,.3)'; btnEl.style.background = 'rgba(156,163,175,.08)'; }
       if (json && json.ok === false) {
-        showNotification(`❌ Could not add ${sym}. ${json.error || 'Unknown error.'}`, 'error');
+        const msg = json.error || 'Unknown error.';
+        if (msg.includes('Available sheets:')) {
+          alert(`❌ Could not add ${sym} to Watchlist.\n\n${msg}\n\nCheck the exact sheet tab name and update GAS code.`);
+        } else {
+          showNotification(`❌ Could not add ${sym}. ${msg}`, 'error');
+        }
       } else {
+        ltAddedToSheetSet.add(sym);
+        if (btnEl) { btnEl.textContent = 'Added ✓'; btnEl.disabled = true; btnEl.style.color = '#9ca3af'; btnEl.style.borderColor = 'rgba(156,163,175,.3)'; btnEl.style.background = 'rgba(156,163,175,.08)'; }
         showNotification(`✅ ${sym} added to Watchlist! Refresh page to confirm.`, 'success');
       }
     } catch(err) {
