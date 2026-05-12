@@ -13631,7 +13631,7 @@ async function ltAddToCore(btnEl) {
     if (!amt || amt <= 0) { errEl.style.display = 'block'; input.focus(); return; }
     confB.textContent = '⏳ Saving...'; confB.disabled = true; cancelB.disabled = true;
 
-    const url = `${GS_SCRIPT_URL}?action=addToCoreSIP&ticker=${encodeURIComponent(sym)}&fundName=${encodeURIComponent(fundName)}&sipAmount=${encodeURIComponent(amt)}&industry=${encodeURIComponent(s.industry||'')}&sector=${encodeURIComponent(s.sector||'')}&t=${Date.now()}`;
+    const url = `${GS_SCRIPT_URL}?action=addToCoreSIP&ticker=${encodeURIComponent(sym)}&fundName=${encodeURIComponent(fundName)}&sipAmount=${encodeURIComponent(amt)}&industry=${encodeURIComponent(s.industry||'')}&sector=${encodeURIComponent(s.sector||'')}&exchange=${encodeURIComponent(s.exchange||'')}&t=${Date.now()}`;
     let json = null;
     try {
       try {
@@ -13699,7 +13699,7 @@ async function ltAddToWatchlist(btnEl) {
   confB.onclick = async () => {
     confB.textContent = '⏳ Saving...'; confB.disabled = true; cancelB.disabled = true;
 
-    const url = `${GS_SCRIPT_URL}?action=addToWatchlist&ticker=${encodeURIComponent(sym)}&fundName=${encodeURIComponent(fundName)}&industry=${encodeURIComponent(s.industry||'')}&sector=${encodeURIComponent(s.sector||'')}&t=${Date.now()}`;
+    const url = `${GS_SCRIPT_URL}?action=addToWatchlist&ticker=${encodeURIComponent(sym)}&fundName=${encodeURIComponent(fundName)}&industry=${encodeURIComponent(s.industry||'')}&sector=${encodeURIComponent(s.sector||'')}&exchange=${encodeURIComponent(s.exchange||'')}&t=${Date.now()}`;
     let json = null;
     try {
       try {
