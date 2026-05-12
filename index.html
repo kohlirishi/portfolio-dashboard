@@ -4811,7 +4811,7 @@ async function loadAllRatings(){
   </button>
 </div>
 
-<div style="max-width:1400px;margin:0 auto;padding:20px 24px 48px">
+<div style="max-width:1700px;margin:0 auto;padding:20px 24px 48px">
 
   <!-- HOW IT WORKS -->
   <div style="background:#152032;border:1px solid #1e3250;border-radius:8px;padding:16px 20px;margin-bottom:20px">
@@ -4875,7 +4875,7 @@ async function loadAllRatings(){
             <th id="ltStrengthHeader" onclick="toggleLtSort()" style="padding:11px 16px;text-align:left;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:#58a6ff;border-bottom:1px solid #1e3250;white-space:nowrap;cursor:pointer;user-select:none" title="Click to toggle sort direction">Strength <span id="ltSortIcon">↓</span></th>
             <th style="padding:11px 16px;text-align:left;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:#8aaccc;border-bottom:1px solid #1e3250;white-space:nowrap">Technical Checks</th>
             <th style="padding:11px 16px;text-align:left;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:#8aaccc;border-bottom:1px solid #1e3250;white-space:nowrap">Fundamentals</th>
-            <th style="padding:11px 16px;text-align:left;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:#8aaccc;border-bottom:1px solid #1e3250;white-space:nowrap">Verdict</th>
+            <th id="ltVerdictSortHeader" onclick="toggleLtVerdictSort()" style="padding:11px 16px;text-align:left;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:#8aaccc;border-bottom:1px solid #1e3250;white-space:nowrap;cursor:pointer;user-select:none" title="Click to sort by verdict">Verdict <span id="ltVerdictSortIcon" style="font-size:10px;opacity:.6">⇅</span></th>
             <th style="padding:11px 16px;text-align:left;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:#8aaccc;border-bottom:1px solid #1e3250;white-space:nowrap;min-width:220px">Verdict Description</th>
             <th style="padding:11px 16px;text-align:left;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:#8aaccc;border-bottom:1px solid #1e3250;white-space:nowrap">Date Updated</th>
             <th style="padding:11px 16px;text-align:center;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:#8aaccc;border-bottom:1px solid #1e3250;white-space:nowrap">Actions</th>
@@ -13214,7 +13214,35 @@ async function loadLtFromSheet() {
 // ─── RENDER TABLE (same as before – unchanged) ───────────────────────────────
 let ltSortDir = 'desc'; // 'desc' = high to low, 'asc' = low to high
 let ltVerdictFilter = 'ALL';
+let ltVerdictSortDir = null; // null=off, 'core-first', 'skip-first'
 let ltAddedToSheetSet = new Set(); // tracks symbols added this session
+
+function toggleLtVerdictSort() {
+  const VERDICT_ORDER = { 'CORE': 0, 'WATCHLIST': 1, 'SKIP': 2, '': 3 };
+  const icon = document.getElementById('ltVerdictSortIcon');
+  if (ltVerdictSortDir === null || ltVerdictSortDir === 'skip-first') {
+    ltVerdictSortDir = 'core-first';
+    if (icon) icon.textContent = '↓';
+    ltSheetData.sort((a, b) => {
+      const va = parseLtVerdict(a.aiVerdict).status;
+      const vb = parseLtVerdict(b.aiVerdict).status;
+      const oa = VERDICT_ORDER[va] !== undefined ? VERDICT_ORDER[va] : 3;
+      const ob = VERDICT_ORDER[vb] !== undefined ? VERDICT_ORDER[vb] : 3;
+      return oa !== ob ? oa - ob : b.strength - a.strength;
+    });
+  } else {
+    ltVerdictSortDir = 'skip-first';
+    if (icon) icon.textContent = '↑';
+    ltSheetData.sort((a, b) => {
+      const va = parseLtVerdict(a.aiVerdict).status;
+      const vb = parseLtVerdict(b.aiVerdict).status;
+      const oa = VERDICT_ORDER[va] !== undefined ? VERDICT_ORDER[va] : 3;
+      const ob = VERDICT_ORDER[vb] !== undefined ? VERDICT_ORDER[vb] : 3;
+      return oa !== ob ? ob - oa : b.strength - a.strength;
+    });
+  }
+  renderLtTable();
+}
 
 function setLtVerdictFilter(v) {
   ltVerdictFilter = v;
