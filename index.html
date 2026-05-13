@@ -11406,11 +11406,13 @@ async function loadMajorListTickers() {
       const name      = v(1); // Column B: name
       const exchange  = v(2); // Column C: exchange
       const assetType = v(3); // Column D: assetType
+      const status    = v(6); // Column G: Status
       const mktCap    = n(7); // Column H: MktCap
 
       if (!symbol) continue;
       if (assetType.toLowerCase() !== 'stock') continue;
-      if (isNaN(mktCap) || mktCap <= 0.999228846) continue;
+      if (status !== 'Active') continue;
+      if (isNaN(mktCap) || mktCap < 0.5) continue;
 
       const exch = exchange.toUpperCase() === 'TSX' ? 'TSX' : 'US';
       newTickers.push(symbol);
