@@ -11091,7 +11091,7 @@ function _startProgressBar() {
 
   wrap.style.display = 'block';
   let elapsed = 0;
-  const TOTAL_MS = 150000; // estimate 2.5 min for progress animation
+  const TOTAL_MS = 1200000; // estimate 20 min for progress animation
 
   const phases = [
     { at: 0,   label: 'Fetching CAD-USD rate…' },
@@ -11199,7 +11199,7 @@ let _pollInterval = null;
 function _pollForNewRun(startCount) {
   if (_pollInterval) clearInterval(_pollInterval);
   let attempts = 0;
-  const maxAttempts = 10; // 10 × 30s = 5 minutes max
+  const maxAttempts = 40; // 40 × 30s = 20 minutes max
 
   _pollInterval = setInterval(async () => {
     attempts++;
