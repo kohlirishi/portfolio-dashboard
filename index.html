@@ -1432,6 +1432,7 @@ table.div-ht tfoot td{padding:10px 14px;font-size:13px;font-weight:700;backgroun
         <button class="fbtn" data-f="tech_view" onclick="setFilter('tech_view',this)">Technical Indicators</button>
         <button class="fbtn" data-f="bullish" onclick="setFilter('bullish',this)">Bullish Momentum</button>
         <span class="filter-sep"></span>
+        <button class="cfbtn active" id="country-ALL" onclick="setCountryFilter('ALL')">All</button>
         <button class="cfbtn" id="country-USA" onclick="setCountryFilter('USA')">🇺🇸 US</button>
         <button class="cfbtn" id="country-Canada" onclick="setCountryFilter('Canada')">🇨🇦 Canada</button>
       </div>
@@ -2810,12 +2811,10 @@ function setFilter(f, btnEl) {
 }
 
 function setCountryFilter(country) {
-  activeCountryFilter = activeCountryFilter === country ? '' : country;
+  activeCountryFilter = country === 'ALL' || activeCountryFilter === country ? '' : country;
   document.querySelectorAll('.cfbtn').forEach(b=>b.classList.remove('active'));
-  if (activeCountryFilter) {
-    const btn = document.getElementById('country-' + activeCountryFilter);
-    if (btn) btn.classList.add('active');
-  }
+  const btn = document.getElementById('country-' + (activeCountryFilter || 'ALL'));
+  if (btn) btn.classList.add('active');
   renderTable();
 }
 
@@ -12892,6 +12891,7 @@ function ltSearchOnInput(q) {
       onmouseover="this.style.background='#1a2840'" onmouseout="this.style.background=''">
       <span style="font-weight:700;color:#e2ecf7;min-width:80px;font-size:13px">${d.symbol}</span>
       <span style="color:#8aaccc;font-size:12px;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${d.name}</span>
+      <span style="flex-shrink:0;font-size:11px;padding:1px 8px;border-radius:10px;font-weight:700;background:rgba(88,166,255,.08);color:#8aaccc;border:1px solid rgba(88,166,255,.22)">${ltCountryBadge(d)}</span>
       <span style="flex-shrink:0;font-size:11px;padding:1px 8px;border-radius:10px;font-weight:700;${d.status==='PASS'?'background:#0d4a20;color:#3fb950;border:1px solid #238636':'background:#2a1a1a;color:#f85149;border:1px solid #6e1a1a'}">${d.status}</span>
     </div>`).join('');
   dropdown.style.display = 'block';
@@ -13269,6 +13269,13 @@ function ltCountryOf(s) {
 
 function ltCurrencyPrefix(stock) {
   return ((stock.exchange || '').trim().toUpperCase() === 'NSE') ? '₹' : '$';
+}
+
+function ltCountryBadge(stock) {
+  const country = ltCountryOf(stock);
+  if (country === 'Canada') return '🇨🇦 Canada';
+  if (country === 'India') return '🇮🇳 India';
+  return '🇺🇸 USA';
 }
 
 function toggleLtVerdictSort() {
