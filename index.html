@@ -4867,6 +4867,7 @@ async function loadAllRatings(){
         <span style="width:1px;background:#1e3250;margin:2px 5px;align-self:stretch"></span>
         <button id="ltCf-US"        onclick="setLtCountryFilter('US')"         style="padding:3px 10px;border-radius:12px;font-size:11px;font-weight:600;cursor:pointer;border:1px solid rgba(88,166,255,.22);background:rgba(88,166,255,.08);color:#8aaccc">🇺🇸 US</button>
         <button id="ltCf-Canada"    onclick="setLtCountryFilter('Canada')"     style="padding:3px 10px;border-radius:12px;font-size:11px;font-weight:600;cursor:pointer;border:1px solid rgba(88,166,255,.22);background:rgba(88,166,255,.08);color:#8aaccc">🇨🇦 Canada</button>
+        <button id="ltCf-India"     onclick="setLtCountryFilter('India')"      style="padding:3px 10px;border-radius:12px;font-size:11px;font-weight:600;cursor:pointer;border:1px solid rgba(88,166,255,.22);background:rgba(88,166,255,.08);color:#8aaccc">🇮🇳 India</button>
       </div>
       <span id="ltLoadStatus" style="font-size:12px;color:#8aaccc;margin-left:auto"></span>
       <button id="ltResultsMinBtn" onclick="toggleLtResults()" style="background:#111d2c;border:1px solid #1e3250;color:#8aaccc;border-radius:6px;width:26px;height:26px;font-size:16px;line-height:1;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0;font-weight:700;transition:background .15s,color .15s" title="Minimize" onmouseover="this.style.background='#1e3250';this.style.color='#e2ecf7'" onmouseout="this.style.background='#111d2c';this.style.color='#8aaccc'">−</button>
@@ -12958,25 +12959,27 @@ function ltStrengthBreakdown(d) {
 function ltSelectFund(symbol) {
   const d = ltAllData.find(x => x.symbol === symbol);
   if (!d) return;
+  const currPrefix = ltCurrencyPrefix(d);
+  const perf5yMin = ltCountryOf(d) === 'India' ? 60 : 85;
 
   document.getElementById('ltSearchInput').value = d.symbol + (d.name ? ' — ' + d.name : '');
 
   // Determine fail reasons using same thresholds as App Script
   const failReasons = [];
-  if (d.perf5y < 85)
-    failReasons.push(`5Y Performance ${d.perf5y.toFixed(1)}% is below the 85% minimum`);
+  if (d.perf5y < perf5yMin)
+    failReasons.push(`5Y Performance ${d.perf5y.toFixed(1)}% is below the ${perf5yMin}% minimum`);
   if (d.price > 0 && d.sma200w > 0 && d.price < d.sma200w)
-    failReasons.push(`Price $${ltFmtNum(d.price)} is below SMA 200W $${ltFmtNum(d.sma200w)}`);
+    failReasons.push(`Price ${currPrefix}${ltFmtNum(d.price)} is below SMA 200W ${currPrefix}${ltFmtNum(d.sma200w)}`);
   if (d.pe > 65)
     failReasons.push(`P/E ratio ${d.pe.toFixed(1)} exceeds the 65 limit`);
   if (d.price > 0 && d.sma50w > 0 && d.price < d.sma50w)
-    failReasons.push(`Price $${ltFmtNum(d.price)} is below SMA 50W $${ltFmtNum(d.sma50w)}`);
+    failReasons.push(`Price ${currPrefix}${ltFmtNum(d.price)} is below SMA 50W ${currPrefix}${ltFmtNum(d.sma50w)}`);
   if (d.sma50w > 0 && d.sma200w > 0 && d.sma50w < d.sma200w)
-    failReasons.push(`No Golden Cross — SMA 50W ($${ltFmtNum(d.sma50w)}) is below SMA 200W ($${ltFmtNum(d.sma200w)})`);
+    failReasons.push(`No Golden Cross — SMA 50W (${currPrefix}${ltFmtNum(d.sma50w)}) is below SMA 200W (${currPrefix}${ltFmtNum(d.sma200w)})`);
   if (d.w52low > 0 && d.sma200w > 0 && d.w52low < d.sma200w * 1.05)
-    failReasons.push(`52W Low ($${ltFmtNum(d.w52low)}) is less than 5% above SMA 200W ($${ltFmtNum(d.sma200w)}) — margin: ${(((d.w52low/d.sma200w)-1)*100).toFixed(1)}%`);
+    failReasons.push(`52W Low (${currPrefix}${ltFmtNum(d.w52low)}) is less than 5% above SMA 200W (${currPrefix}${ltFmtNum(d.sma200w)}) — margin: ${(((d.w52low/d.sma200w)-1)*100).toFixed(1)}%`);
   if (d.sma50daily > 0 && d.price > 0 && d.price < d.sma50daily)
-    failReasons.push(`Price $${ltFmtNum(d.price)} is below EMA 50 Daily $${ltFmtNum(d.sma50daily)}`);
+    failReasons.push(`Price ${currPrefix}${ltFmtNum(d.price)} is below EMA 50 Daily ${currPrefix}${ltFmtNum(d.sma50daily)}`);
   if (d.revGrowth !== null && d.revGrowth < 10)
     failReasons.push(`Revenue Growth ${d.revGrowth.toFixed(1)}% is below the 10% minimum`);
   if (d.roe !== null && d.roe < 10)
@@ -13049,23 +13052,23 @@ function ltSelectFund(symbol) {
       </div>
       <!-- Metrics Grid -->
       <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr))">
-        ${ltMetricCell('Price', d.price > 0 ? '$'+ltFmtNum(d.price) : '—')}
+        ${ltMetricCell('Price', d.price > 0 ? currPrefix+ltFmtNum(d.price) : '—')}
         ${ltMetricCell('Change %', d.change !== 0 ? (d.change>=0?'+':'')+d.change.toFixed(2)+'%' : '—', d.change >= 0 ? '#3fb950' : '#f85149')}
         ${ltMetricCell('Volume', ltFmtVol(d.volume))}
         ${ltMetricCell('Rel Volume', d.relVolume > 0 ? d.relVolume.toFixed(2)+'x' : '—', d.relVolume >= 1.5 ? '#3fb950' : d.relVolume >= 1 ? '#d4a017' : '')}
         ${ltMetricCell('Market Cap', ltFmtMcap(d.marketCap))}
         ${ltMetricCell('P/E Ratio', d.pe > 0 ? d.pe.toFixed(1) : '—', d.pe > 65 ? '#f85149' : '')}
-        ${ltMetricCell('EPS (TTM)', d.eps > 0 ? '$'+d.eps.toFixed(2) : '—')}
-        ${ltMetricCell('5Y Performance', d.perf5y.toFixed(1)+'%', d.perf5y >= 85 ? '#3fb950' : '#f85149')}
+        ${ltMetricCell('EPS (TTM)', d.eps > 0 ? currPrefix+d.eps.toFixed(2) : '—')}
+        ${ltMetricCell('5Y Performance', d.perf5y.toFixed(1)+'%', d.perf5y >= perf5yMin ? '#3fb950' : '#f85149')}
         ${ltMetricCell('Div Yield %', d.divYield > 0 ? d.divYield.toFixed(2)+'%' : '—', '#58a6ff')}
-        ${ltMetricCell('SMA 50W', d.sma50w > 0 ? '$'+ltFmtNum(d.sma50w) : '—')}
-        ${ltMetricCell('SMA 200W', d.sma200w > 0 ? '$'+ltFmtNum(d.sma200w) : '—')}
-        ${ltMetricCell('52W Low', d.w52low > 0 ? '$'+ltFmtNum(d.w52low) : '—')}
+        ${ltMetricCell('SMA 50W', d.sma50w > 0 ? currPrefix+ltFmtNum(d.sma50w) : '—')}
+        ${ltMetricCell('SMA 200W', d.sma200w > 0 ? currPrefix+ltFmtNum(d.sma200w) : '—')}
+        ${ltMetricCell('52W Low', d.w52low > 0 ? currPrefix+ltFmtNum(d.w52low) : '—')}
         ${ltMetricCell('Revenue Growth', d.revGrowth !== null ? d.revGrowth.toFixed(1)+'%' : 'Not scraped yet', d.revGrowth !== null ? (d.revGrowth >= 10 ? '#3fb950' : '#f85149') : '#4a6a8a')}
         ${ltMetricCell('ROE', d.roe !== null ? d.roe.toFixed(1)+'%' : 'Not scraped yet', d.roe !== null ? (d.roe >= 10 ? '#3fb950' : '#f85149') : '#4a6a8a')}
         ${ltMetricCell('EPS Growth YoY', d.epsGrowth !== null ? d.epsGrowth.toFixed(1)+'%' : 'Not scraped yet', d.epsGrowth !== null ? (d.epsGrowth >= 10 ? '#3fb950' : '#f85149') : '#4a6a8a')}
         ${ltMetricCell('Gross Margin', d.grossMargin !== null ? d.grossMargin.toFixed(1)+'%' : 'Not scraped yet', d.grossMargin !== null ? (d.grossMargin >= 10 ? '#3fb950' : '#f85149') : '#4a6a8a')}
-        ${d.sma50daily > 0 ? ltMetricCell('EMA50D (SMA~)', '$'+ltFmtNum(d.sma50daily), d.price > d.sma50daily ? '#3fb950' : '#f85149') : ''}
+        ${d.sma50daily > 0 ? ltMetricCell('EMA50D (SMA~)', currPrefix+ltFmtNum(d.sma50daily), d.price > d.sma50daily ? '#3fb950' : '#f85149') : ''}
       </div>
       ${d.status === 'FAIL' && failReasons.length ? `
       <!-- Fail Reasons -->
@@ -13222,7 +13225,7 @@ async function loadLtFromSheet() {
 // ─── RENDER TABLE (same as before – unchanged) ───────────────────────────────
 let ltSortDir = 'desc'; // 'desc' = high to low, 'asc' = low to high
 let ltVerdictFilter = 'ALL';
-let ltCountryFilter = ''; // '' = all countries, 'US' or 'Canada'
+let ltCountryFilter = ''; // '' = all countries, 'US', 'Canada', or 'India'
 let ltVerdictSortDir = null; // null=off, 'core-first', 'skip-first'
 let ltAddedToSheetSet = new Set(); // tracks symbols added this session
 
@@ -13238,7 +13241,13 @@ function toggleLtHowPanel() {
 
 function ltCountryOf(s) {
   const exchange = (s.exchange || '').trim().toUpperCase();
-  return exchange === 'TSX' || exchange === 'TSE' ? 'Canada' : 'US';
+  if (exchange.includes('TSX') || exchange === 'TSE') return 'Canada';
+  if (exchange === 'NSE') return 'India';
+  return 'US';
+}
+
+function ltCurrencyPrefix(stock) {
+  return ((stock.exchange || '').trim().toUpperCase() === 'NSE') ? '₹' : '$';
 }
 
 function toggleLtVerdictSort() {
@@ -13287,7 +13296,7 @@ function setLtVerdictFilter(v) {
 }
 
 function updateLtCountryButtons() {
-  ['US','Canada'].forEach(k => {
+  ['US','Canada','India'].forEach(k => {
     const btn = document.getElementById('ltCf-' + k);
     if (!btn) return;
     if (k === ltCountryFilter) {
@@ -13337,7 +13346,7 @@ function updateLtSortSubtitle(resultCount) {
     ? resultCount
     : parseInt((document.getElementById('ltResultBadge') || {}).textContent || '0', 10);
   const countryText = ltCountryFilter
-    ? `${count} result${count === 1 ? '' : 's'} · ${ltCountryFilter === 'Canada' ? '🇨🇦 Canada' : '🇺🇸 US'} only · `
+    ? `${count} result${count === 1 ? '' : 's'} · ${ltCountryFilter === 'Canada' ? '🇨🇦 Canada' : ltCountryFilter === 'India' ? '🇮🇳 India' : '🇺🇸 US'} only · `
     : '';
   el.textContent = countryText + 'PASS only · Strength ≥ 60% · sorted by Strength % (' + (ltSortDir === 'desc' ? 'high to low' : 'low to high') + ') · from Google Sheet tab: testScreener';
 }
@@ -13391,6 +13400,8 @@ function renderLtTable() {
   const fmtN = (v, d=2) => (v && v !== 0) ? v.toFixed(d) : 'N/A';
 
   tbody.innerHTML = filtered.map(s => {
+    const currPrefix = ltCurrencyPrefix(s);
+    const perf5yMin = ltCountryOf(s) === 'India' ? 60 : 85;
     const grade = s.strength >= 80 ? { label:'A', color:'#3fb950', bg:'rgba(63,185,80,.12)', border:'#238636' }
                 : s.strength >= 60 ? { label:'B', color:'#d4a017', bg:'rgba(212,160,23,.12)', border:'#9e6a03' }
                 : s.strength >= 40 ? { label:'C', color:'#f0883e', bg:'rgba(240,136,62,.12)', border:'#bd561d' }
@@ -13403,7 +13414,7 @@ function renderLtTable() {
     const w52LowAboveSMA200 = s.w52low > 0 && s.sma200w > 0 && s.w52low >= s.sma200w * 1.05; // 5% margin required
     const aboveEMA50D       = s.sma50daily > 0 && s.price > 0 && s.price > s.sma50daily;
     const goodPE       = s.pe > 0 && s.pe <= 65;
-    const goodPerf     = s.perf5y >= 85;
+    const goodPerf     = s.perf5y >= perf5yMin;
     const goodEPS      = s.eps > 0;
     const goodMCap     = s.marketCap >= 1e11;
     // Fundamental data from Finviz (null = not yet scraped for this stock)
@@ -13444,7 +13455,7 @@ function renderLtTable() {
           border:1px solid ${s.exchange==='NYSE'?'rgba(61,159,255,.3)':s.exchange==='NASDAQ'?'rgba(155,109,255,.3)':'rgba(0,201,201,.3)'}">${s.exchange}</span>` : ''}
       </td>
       <td style="padding:14px 16px;vertical-align:top;white-space:nowrap">
-        <div style="font-size:15px;font-weight:700;color:#e2ecf7">$${fmtN(s.price,2)}</div>
+        <div style="font-size:15px;font-weight:700;color:#e2ecf7">${currPrefix}${fmtN(s.price,2)}</div>
         <div style="font-size:12px;color:${chgC};margin-top:3px;font-weight:600">${chgSign}${fmtN(s.change,2)}%</div>
         <div style="font-size:11px;color:#4a6a8a;margin-top:2px">Vol: ${fmtVol(s.volume)}</div>
         ${s.relVolume > 0 ? `<div style="font-size:11px;color:#8aaccc;margin-top:2px">Rel Vol: <span style="color:${s.relVolume>=1.5?'#3fb950':s.relVolume>=1?'#d4a017':'#8aaccc'}">${fmtN(s.relVolume,2)}x</span></div>` : ''}
@@ -13473,11 +13484,11 @@ function renderLtTable() {
           ${s.sma50daily > 0 ? chk(aboveEMA50D, 'Price>EMA50D') : ''}
         </div>
         <div style="font-size:11px;color:#8aaccc;margin-top:6px;line-height:1.9">
-          <span style="color:#e2ecf7">SMA50W:</span> $${fmtN(s.sma50w,2)} &nbsp;
-          <span style="color:#e2ecf7">SMA200W:</span> $${fmtN(s.sma200w,2)}<br>
-          <span style="color:#e2ecf7">52W Low:</span> $${fmtN(s.w52low,2)} &nbsp;
-          <span style="color:#e2ecf7">52W High:</span> $${fmtN(s.w52high,2)}<br>
-          ${s.sma50daily > 0 ? `<span style="color:#e2ecf7">EMA50D~:</span> $${fmtN(s.sma50daily,2)}<br>` : ''}
+          <span style="color:#e2ecf7">SMA50W:</span> ${currPrefix}${fmtN(s.sma50w,2)} &nbsp;
+          <span style="color:#e2ecf7">SMA200W:</span> ${currPrefix}${fmtN(s.sma200w,2)}<br>
+          <span style="color:#e2ecf7">52W Low:</span> ${currPrefix}${fmtN(s.w52low,2)} &nbsp;
+          <span style="color:#e2ecf7">52W High:</span> ${currPrefix}${fmtN(s.w52high,2)}<br>
+          ${s.sma50daily > 0 ? `<span style="color:#e2ecf7">EMA50D~:</span> ${currPrefix}${fmtN(s.sma50daily,2)}<br>` : ''}
           <span style="color:#e2ecf7">Dist from High:</span> <span style="color:${distHColor}">${distH ? distHSign + fmtN(distH,1) + '%' : 'N/A'}</span>
         </div>
       </td>
@@ -13485,7 +13496,7 @@ function renderLtTable() {
         <div style="display:flex;flex-wrap:wrap;gap:0;max-width:260px">
           ${chk(goodMCap,  'MCap>$100B')}
           ${chk(goodPE,    'P/E 0-65')}
-          ${chk(goodPerf,  '5Y Perf>85%')}
+          ${chk(goodPerf,  '5Y Perf>'+perf5yMin+'%')}
           ${chk(goodEPS,   'EPS>0')}
           ${hasFundamentals ? chk(goodRevGrowth,   'RevGr>10%')   : ''}
           ${hasFundamentals ? chk(goodROE,          'ROE>10%')     : ''}
@@ -13579,6 +13590,7 @@ function copyLtPrompt(btn) {
   const sector     = s.sector     || 'N/A';
   const industry   = s.industry   || 'N/A';
   const exchange   = s.exchange   || '';
+  const currencySymbol = ltCurrencyPrefix(s);
 
   const aboveEma    = ema50d  > 0 ? ((price - ema50d)  / ema50d  * 100).toFixed(1) : 'N/A';
   const aboveSma50w = sma50w  > 0 ? ((price - sma50w)  / sma50w  * 100).toFixed(1) : 'N/A';
@@ -13588,7 +13600,7 @@ function copyLtPrompt(btn) {
 
 STOCK DATA:
 - Symbol: ${symbol} | Sector: ${sector} | Industry: ${industry}
-- Exchange: ${exchange} | Price: $${price}
+- Exchange: ${exchange} | Price: ${currencySymbol}${price}
 - Screener Strength Score: ${strength}% (out of 100)
 
 TECHNICAL:
@@ -13608,7 +13620,7 @@ FUNDAMENTAL:
 - Gross Margin: ${grossMargin}%
 
 VERDICT RULES (follow exactly):
-- CORE: Strength >= 70% AND all 4 fundamentals strong (RevGrowth>=15%, ROE>=15%, EPSGrowth>=15%, GrossMargin>=30%). Recommend monthly SIP in CAD: $60 if Strength>=85%, $50 if Strength 75-84%, $40 if Strength 70-74%.
+- CORE: Strength >= 70% AND all 4 fundamentals strong (RevGrowth>=15%, ROE>=15%, EPSGrowth>=15%, GrossMargin>=30%). Recommend monthly SIP: For US/CA stocks → CAD $60/50/40 based on Strength (>=85 / 75-84 / 70-74). For India/NSE stocks → INR ₹4000/₹3000/₹2000 based on Strength (>=85 / 75-84 / 70-74).
 - WATCHLIST: Passes screener filters but Strength < 70% OR one/more fundamentals are moderate. Worth monitoring.
 - SKIP: Passes filters technically but fundamentals are weak or sector has high risk.
 
