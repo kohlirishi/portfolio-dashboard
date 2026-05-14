@@ -4885,6 +4885,7 @@ async function loadAllRatings(){
         <button id="ltVf-WATCHLIST" onclick="setLtVerdictFilter('WATCHLIST')" style="padding:3px 10px;border-radius:12px;font-size:11px;font-weight:600;cursor:pointer;border:1px solid #1e3250;background:transparent;color:#8aaccc">WATCHLIST</button>
         <button id="ltVf-SKIP"      onclick="setLtVerdictFilter('SKIP')"      style="padding:3px 10px;border-radius:12px;font-size:11px;font-weight:600;cursor:pointer;border:1px solid #1e3250;background:transparent;color:#8aaccc">SKIP</button>
         <span style="width:1px;background:#1e3250;margin:2px 5px;align-self:stretch"></span>
+        <button id="ltCf-ALL"       onclick="setLtCountryFilter('ALL')"        style="padding:3px 10px;border-radius:12px;font-size:11px;font-weight:600;cursor:pointer;border:1px solid #58a6ff;background:rgba(31,111,235,.24);color:#79c0ff">All</button>
         <button id="ltCf-US"        onclick="setLtCountryFilter('US')"         style="padding:3px 10px;border-radius:12px;font-size:11px;font-weight:600;cursor:pointer;border:1px solid rgba(88,166,255,.22);background:rgba(88,166,255,.08);color:#8aaccc">🇺🇸 US</button>
         <button id="ltCf-Canada"    onclick="setLtCountryFilter('Canada')"     style="padding:3px 10px;border-radius:12px;font-size:11px;font-weight:600;cursor:pointer;border:1px solid rgba(88,166,255,.22);background:rgba(88,166,255,.08);color:#8aaccc">🇨🇦 Canada</button>
         <button id="ltCf-India"     onclick="setLtCountryFilter('India')"      style="padding:3px 10px;border-radius:12px;font-size:11px;font-weight:600;cursor:pointer;border:1px solid rgba(88,166,255,.22);background:rgba(88,166,255,.08);color:#8aaccc">🇮🇳 India</button>
@@ -13316,10 +13317,11 @@ function setLtVerdictFilter(v) {
 }
 
 function updateLtCountryButtons() {
-  ['US','Canada','India'].forEach(k => {
+  ['ALL','US','Canada','India'].forEach(k => {
     const btn = document.getElementById('ltCf-' + k);
     if (!btn) return;
-    if (k === ltCountryFilter) {
+    const isActive = k === 'ALL' ? !ltCountryFilter : k === ltCountryFilter;
+    if (isActive) {
       btn.style.border = '1px solid #58a6ff';
       btn.style.background = 'rgba(31,111,235,.24)';
       btn.style.color = '#79c0ff';
@@ -13332,7 +13334,7 @@ function updateLtCountryButtons() {
 }
 
 function setLtCountryFilter(country) {
-  ltCountryFilter = ltCountryFilter === country ? '' : country;
+  ltCountryFilter = country === 'ALL' || ltCountryFilter === country ? '' : country;
   updateLtCountryButtons();
   renderLtTable();
 }
