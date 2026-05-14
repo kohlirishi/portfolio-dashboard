@@ -4815,8 +4815,11 @@ async function loadAllRatings(){
 
   <!-- HOW IT WORKS -->
   <div style="background:#152032;border:1px solid #1e3250;border-radius:8px;padding:16px 20px;margin-bottom:20px">
-    <div style="font-size:14px;font-weight:700;color:#58a6ff;margin-bottom:10px">ℹ How Long-Term Scoring Works</div>
-    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:14px;font-size:12px;color:#8aaccc;line-height:1.8">
+    <div style="display:flex;align-items:center;justify-content:space-between;gap:12px">
+      <div style="font-size:14px;font-weight:700;color:#58a6ff">ℹ How Long-Term Scoring Works</div>
+      <button id="ltHowToggleBtn" onclick="toggleLtHowPanel()" style="background:transparent;border:0;color:#8aaccc;font-size:12px;font-weight:600;font-family:inherit;cursor:pointer;padding:4px 6px;border-radius:5px;transition:background .15s,color .15s;white-space:nowrap" onmouseover="this.style.background='#1e3250';this.style.color='#e2ecf7'" onmouseout="this.style.background='transparent';this.style.color='#8aaccc'">▼ Expand</button>
+    </div>
+    <div id="ltHowBody" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:14px;font-size:12px;color:#8aaccc;line-height:1.8;max-height:0;opacity:0;overflow:hidden;transition:max-height 300ms ease-in-out,opacity 300ms ease-in-out">
       <div>
         <strong style="color:#e2ecf7">Pass/Fail Filters (hard rules):</strong><br>
         ✓ Price &gt; SMA(200) Weekly<br>
@@ -4861,6 +4864,9 @@ async function loadAllRatings(){
         <button id="ltVf-CORE"      onclick="setLtVerdictFilter('CORE')"      style="padding:3px 10px;border-radius:12px;font-size:11px;font-weight:600;cursor:pointer;border:1px solid #1e3250;background:transparent;color:#8aaccc">CORE</button>
         <button id="ltVf-WATCHLIST" onclick="setLtVerdictFilter('WATCHLIST')" style="padding:3px 10px;border-radius:12px;font-size:11px;font-weight:600;cursor:pointer;border:1px solid #1e3250;background:transparent;color:#8aaccc">WATCHLIST</button>
         <button id="ltVf-SKIP"      onclick="setLtVerdictFilter('SKIP')"      style="padding:3px 10px;border-radius:12px;font-size:11px;font-weight:600;cursor:pointer;border:1px solid #1e3250;background:transparent;color:#8aaccc">SKIP</button>
+        <span style="width:1px;background:#1e3250;margin:2px 5px;align-self:stretch"></span>
+        <button id="ltCf-US"        onclick="setLtCountryFilter('US')"         style="padding:3px 10px;border-radius:12px;font-size:11px;font-weight:600;cursor:pointer;border:1px solid rgba(88,166,255,.22);background:rgba(88,166,255,.08);color:#8aaccc">🇺🇸 US</button>
+        <button id="ltCf-Canada"    onclick="setLtCountryFilter('Canada')"     style="padding:3px 10px;border-radius:12px;font-size:11px;font-weight:600;cursor:pointer;border:1px solid rgba(88,166,255,.22);background:rgba(88,166,255,.08);color:#8aaccc">🇨🇦 Canada</button>
       </div>
       <span id="ltLoadStatus" style="font-size:12px;color:#8aaccc;margin-left:auto"></span>
       <button id="ltResultsMinBtn" onclick="toggleLtResults()" style="background:#111d2c;border:1px solid #1e3250;color:#8aaccc;border-radius:6px;width:26px;height:26px;font-size:16px;line-height:1;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0;font-weight:700;transition:background .15s,color .15s" title="Minimize" onmouseover="this.style.background='#1e3250';this.style.color='#e2ecf7'" onmouseout="this.style.background='#111d2c';this.style.color='#8aaccc'">−</button>
@@ -13216,8 +13222,24 @@ async function loadLtFromSheet() {
 // ─── RENDER TABLE (same as before – unchanged) ───────────────────────────────
 let ltSortDir = 'desc'; // 'desc' = high to low, 'asc' = low to high
 let ltVerdictFilter = 'ALL';
+let ltCountryFilter = ''; // '' = all countries, 'US' or 'Canada'
 let ltVerdictSortDir = null; // null=off, 'core-first', 'skip-first'
 let ltAddedToSheetSet = new Set(); // tracks symbols added this session
+
+function toggleLtHowPanel() {
+  const body = document.getElementById('ltHowBody');
+  const btn = document.getElementById('ltHowToggleBtn');
+  if (!body || !btn) return;
+  const expanding = body.style.maxHeight === '0px' || body.style.maxHeight === '0' || !body.style.maxHeight;
+  body.style.maxHeight = expanding ? '2000px' : '0';
+  body.style.opacity = expanding ? '1' : '0';
+  btn.textContent = expanding ? '▲ Minimize' : '▼ Expand';
+}
+
+function ltCountryOf(s) {
+  const exchange = (s.exchange || '').trim().toUpperCase();
+  return exchange === 'TSX' || exchange === 'TSE' ? 'Canada' : 'US';
+}
 
 function toggleLtVerdictSort() {
   const VERDICT_ORDER = { 'CORE': 0, 'WATCHLIST': 1, 'SKIP': 2, '': 3 };
@@ -13264,6 +13286,28 @@ function setLtVerdictFilter(v) {
   renderLtTable();
 }
 
+function updateLtCountryButtons() {
+  ['US','Canada'].forEach(k => {
+    const btn = document.getElementById('ltCf-' + k);
+    if (!btn) return;
+    if (k === ltCountryFilter) {
+      btn.style.border = '1px solid #58a6ff';
+      btn.style.background = 'rgba(31,111,235,.24)';
+      btn.style.color = '#79c0ff';
+    } else {
+      btn.style.border = '1px solid rgba(88,166,255,.22)';
+      btn.style.background = 'rgba(88,166,255,.08)';
+      btn.style.color = '#8aaccc';
+    }
+  });
+}
+
+function setLtCountryFilter(country) {
+  ltCountryFilter = ltCountryFilter === country ? '' : country;
+  updateLtCountryButtons();
+  renderLtTable();
+}
+
 // Parse the 4-line AI verdict stored in col AH
 function parseLtVerdict(raw) {
   if (!raw) return { status: '', sip: null, desc: '' };
@@ -13286,10 +13330,16 @@ function parseLtDate(dateStr) {
   return isNaN(d.getTime()) ? 0 : d.getTime();
 }
 
-function updateLtSortSubtitle() {
+function updateLtSortSubtitle(resultCount) {
   const el = document.getElementById('ltSortSubtitle');
   if (!el) return;
-  el.textContent = 'PASS only · Strength ≥ 60% · sorted by Strength % (' + (ltSortDir === 'desc' ? 'high to low' : 'low to high') + ') · from Google Sheet tab: testScreener';
+  const count = Number.isFinite(resultCount)
+    ? resultCount
+    : parseInt((document.getElementById('ltResultBadge') || {}).textContent || '0', 10);
+  const countryText = ltCountryFilter
+    ? `${count} result${count === 1 ? '' : 's'} · ${ltCountryFilter === 'Canada' ? '🇨🇦 Canada' : '🇺🇸 US'} only · `
+    : '';
+  el.textContent = countryText + 'PASS only · Strength ≥ 60% · sorted by Strength % (' + (ltSortDir === 'desc' ? 'high to low' : 'low to high') + ') · from Google Sheet tab: testScreener';
 }
 
 function toggleLtSort() {
@@ -13314,10 +13364,14 @@ function renderLtTable() {
       return pv.status === ltVerdictFilter;
     });
   }
+  if (ltCountryFilter) {
+    filtered = filtered.filter(s => ltCountryOf(s) === ltCountryFilter);
+  }
   if (badge) badge.textContent = filtered.length;
+  updateLtSortSubtitle(filtered.length);
 
   if (!filtered.length) {
-    tbody.innerHTML = `<tr><td colspan="9" style="padding:40px;text-align:center;color:#4a6a8a">No stocks with Strength ≥ 60%${ltVerdictFilter !== 'ALL' ? ' and Verdict = ' + ltVerdictFilter : ''} found</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="9" style="padding:40px;text-align:center;color:#4a6a8a">No stocks with Strength ≥ 60%${ltVerdictFilter !== 'ALL' ? ' and Verdict = ' + ltVerdictFilter : ''}${ltCountryFilter ? ' and Country = ' + ltCountryFilter : ''} found</td></tr>`;
     return;
   }
 
