@@ -13050,6 +13050,16 @@ function ltSelectFund(symbol) {
         <div style="margin-left:auto;display:flex;align-items:center;gap:8px;flex-wrap:wrap">
           <span style="padding:4px 14px;border-radius:20px;font-size:13px;font-weight:700;${d.status==='PASS'?'background:#0d4a20;color:#3fb950;border:1px solid #238636':'background:#2a1a1a;color:#f85149;border:1px solid #6e1a1a'}">${d.status}</span>
           <span style="padding:4px 14px;border-radius:20px;font-size:13px;font-weight:700;background:${gradeBg};color:${gradeColor};border:1px solid ${gradeBorder}">${strength}% · Grade ${grade}</span>
+          ${(() => {
+            const isFav = ltFavoriteSet.has(d.symbol);
+            const sid   = d.symbol.replace(/\./g,'_');
+            return `<button id="ltStarBtn-${sid}" onclick="ltToggleFavorite(this,'${d.symbol}')"
+              title="${isFav ? 'Remove from Favorites' : 'Add to Observatory'}"
+              style="padding:5px 12px;background:transparent;border:1px solid ${isFav?'#f5a623':'#1e3250'};color:${isFav?'#f5a623':'#4a6a8a'};border-radius:5px;font-size:14px;cursor:pointer;white-space:nowrap;transition:all .15s"
+              onmouseover="this.style.borderColor='#f5a623';this.style.color='#f5a623'"
+              onmouseout="if(!ltFavoriteSet.has('${d.symbol}')){this.style.borderColor='#1e3250';this.style.color='#4a6a8a'}"
+              >${isFav ? '★' : '☆'}</button>`;
+          })()}
         </div>
       </div>
       <!-- Strength Bar + Breakdown -->
@@ -13465,14 +13475,20 @@ function ltBuildFavCard(f) {
         ${exchPill}
         ${f.entrySector || f.entryIndustry ? `<span style="font-size:11px;color:#4a6a8a">${[f.entrySector, f.entryIndustry].filter(Boolean).join(' · ')}</span>` : ''}
       </div>
-      <div style="display:flex;align-items:center;gap:8px;flex-shrink:0">
+      <div style="display:flex;align-items:center;gap:6px;flex-shrink:0">
         <span style="font-size:11px;color:#4a6a8a">⭐ Added: ${f.dateAdded || '—'}</span>
+        <button onclick="ltToggleFavCardBody('${safe}',this)"
+          style="padding:3px 9px;background:transparent;border:1px solid #1e3250;color:#8aaccc;border-radius:4px;font-size:11px;cursor:pointer;transition:all .15s"
+          onmouseover="this.style.borderColor='#58a6ff';this.style.color='#58a6ff'"
+          onmouseout="this.style.borderColor='#1e3250';this.style.color='#8aaccc'">▼ Minimize</button>
         <button onclick="ltRemoveFavorite('${f.symbol}',this)"
           style="padding:3px 9px;background:transparent;border:1px solid #4a6a8a;color:#4a6a8a;border-radius:4px;font-size:11px;cursor:pointer;transition:all .15s"
           onmouseover="this.style.borderColor='#f85149';this.style.color='#f85149'"
           onmouseout="this.style.borderColor='#4a6a8a';this.style.color='#4a6a8a'">✕ Remove</button>
       </div>
     </div>
+
+    <div id="ltFavCardBody-${safe}">`
 
     <!-- S2: Price & Performance -->
     <div style="background:#111d2c;border-radius:6px;padding:10px 14px;margin-bottom:10px">
@@ -13561,6 +13577,7 @@ function ltBuildFavCard(f) {
       </div>
     </div>
 
+    </div><!-- /ltFavCardBody -->
   </div>`;
 }
 
@@ -13574,21 +13591,56 @@ function ltToggleFavSection(id, btn) {
   btn.textContent = btn.textContent.replace(hidden ? '▼' : '▲', hidden ? '▲' : '▼');
 }
 
+function ltToggleFavCardBody(safe, btn) {
+  const body = document.getElementById('ltFavCardBody-' + safe);
+  if (!body) return;
+  const minimizing = body.style.display !== 'none';
+  body.style.display = minimizing ? 'none' : 'block';
+  btn.textContent = minimizing ? '▲ Expand' : '▼ Minimize';
+}
+
+function ltShowToast(msg, type) {
+  let t = document.getElementById('ltFavToast');
+  if (!t) {
+    t = document.createElement('div');
+    t.id = 'ltFavToast';
+    t.style.cssText = 'position:fixed;bottom:28px;left:50%;transform:translateX(-50%) translateY(20px);z-index:9999;padding:10px 20px;border-radius:8px;font-size:13px;font-weight:600;font-family:inherit;pointer-events:none;opacity:0;transition:opacity .25s,transform .25s;white-space:nowrap;box-shadow:0 4px 20px rgba(0,0,0,.5)';
+    document.body.appendChild(t);
+  }
+  const styles = {
+    pending: 'background:#1a2c46;color:#f5a623;border:1px solid #f5a623',
+    success: 'background:#0d3320;color:#3fb950;border:1px solid #3fb950',
+    error:   'background:#2a1010;color:#f85149;border:1px solid #f85149',
+  };
+  t.style.cssText += ';' + (styles[type] || styles.pending);
+  t.textContent = msg;
+  t.style.opacity = '1';
+  t.style.transform = 'translateX(-50%) translateY(0)';
+  clearTimeout(t._timer);
+  if (type !== 'pending') {
+    t._timer = setTimeout(() => {
+      t.style.opacity = '0';
+      t.style.transform = 'translateX(-50%) translateY(20px)';
+    }, 3500);
+  }
+}
+
 async function ltToggleFavorite(btn, symbol) {
   const adding = !ltFavoriteSet.has(symbol);
   btn.disabled = true;
+  ltShowToast((adding ? '⏳ Adding ' : '⏳ Removing ') + symbol + '… (may take 5 sec)', 'pending');
   try {
     const action = adding ? 'addToFavorites' : 'removeFromFavorites';
     const resp   = await fetch(`${GS_SCRIPT_URL}?action=${action}&ticker=${encodeURIComponent(symbol)}&t=${Date.now()}`);
     const json   = await resp.json();
-    if (!json.ok) { alert(json.error || 'Error updating Favorites'); return; }
+    if (!json.ok) { ltShowToast('✕ ' + (json.error || 'Error'), 'error'); return; }
     if (adding) {
       ltFavoriteSet.add(symbol);
       btn.textContent    = '★';
       btn.title          = 'Remove from Favorites';
       btn.style.color    = '#f5a623';
       btn.style.borderColor = '#f5a623';
-      // Reload panel if open
+      ltShowToast('★ ' + symbol + ' added to Observatory', 'success');
       if (_ltFavLoaded) loadLtFavorites();
     } else {
       ltFavoriteSet.delete(symbol);
@@ -13596,9 +13648,10 @@ async function ltToggleFavorite(btn, symbol) {
       btn.title          = 'Add to Favorites';
       btn.style.color    = '#4a6a8a';
       btn.style.borderColor = '#1e3250';
+      ltShowToast('✓ ' + symbol + ' removed from Observatory', 'success');
     }
   } catch(err) {
-    alert('Network error: ' + err.message);
+    ltShowToast('✕ Network error: ' + err.message, 'error');
   } finally {
     btn.disabled = false;
   }
@@ -13606,16 +13659,15 @@ async function ltToggleFavorite(btn, symbol) {
 
 async function ltRemoveFavorite(symbol, removeBtn) {
   removeBtn.disabled = true;
+  ltShowToast('⏳ Removing ' + symbol + '… (may take 5 sec)', 'pending');
   try {
     const resp = await fetch(`${GS_SCRIPT_URL}?action=removeFromFavorites&ticker=${encodeURIComponent(symbol)}&t=${Date.now()}`);
     const json = await resp.json();
-    if (!json.ok) { alert(json.error || 'Error removing favorite'); return; }
+    if (!json.ok) { ltShowToast('✕ ' + (json.error || 'Error removing'), 'error'); return; }
     ltFavoriteSet.delete(symbol);
-    // Remove card from DOM
     const safe = symbol.replace(/\./g, '_');
     const card = document.getElementById('ltFavCard-' + safe);
     if (card) card.remove();
-    // Reset star button in table
     const starBtn = document.getElementById('ltStarBtn-' + safe);
     if (starBtn) {
       starBtn.textContent       = '☆';
@@ -13623,13 +13675,13 @@ async function ltRemoveFavorite(symbol, removeBtn) {
       starBtn.style.color       = '#4a6a8a';
       starBtn.style.borderColor = '#1e3250';
     }
-    // If no cards left, show empty message
     const container = document.getElementById('ltFavContent');
     if (container && !container.querySelector('[id^="ltFavCard-"]')) {
       container.innerHTML = '<div style="color:#8aaccc;font-size:13px;text-align:center;padding:20px">No favorites yet. Click ☆ on any stock to track it here.</div>';
     }
+    ltShowToast('✓ ' + symbol + ' removed from Observatory', 'success');
   } catch(err) {
-    alert('Network error: ' + err.message);
+    ltShowToast('✕ Network error: ' + err.message, 'error');
   } finally {
     removeBtn.disabled = false;
   }
