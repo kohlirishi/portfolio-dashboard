@@ -4899,6 +4899,7 @@ async function loadAllRatings(){
         <button id="ltVf-CORE"      onclick="setLtVerdictFilter('CORE')"      style="padding:3px 10px;border-radius:12px;font-size:11px;font-weight:600;cursor:pointer;border:1px solid #1e3250;background:transparent;color:#8aaccc">CORE</button>
         <button id="ltVf-WATCHLIST" onclick="setLtVerdictFilter('WATCHLIST')" style="padding:3px 10px;border-radius:12px;font-size:11px;font-weight:600;cursor:pointer;border:1px solid #1e3250;background:transparent;color:#8aaccc">WATCHLIST</button>
         <button id="ltVf-SKIP"      onclick="setLtVerdictFilter('SKIP')"      style="padding:3px 10px;border-radius:12px;font-size:11px;font-weight:600;cursor:pointer;border:1px solid #1e3250;background:transparent;color:#8aaccc">SKIP</button>
+        <button id="ltVf-ETF"       onclick="setLtVerdictFilter('ETF')"       style="padding:3px 10px;border-radius:12px;font-size:11px;font-weight:600;cursor:pointer;border:1px solid #1e3250;background:transparent;color:#8aaccc">ETF</button>
         <span style="width:1px;background:#1e3250;margin:2px 5px;align-self:stretch"></span>
         <button id="ltCf-ALL"       onclick="setLtCountryFilter('ALL')"        style="padding:3px 10px;border-radius:12px;font-size:11px;font-weight:600;cursor:pointer;border:1px solid #58a6ff;background:rgba(31,111,235,.24);color:#79c0ff">All</button>
         <button id="ltCf-US"        onclick="setLtCountryFilter('US')"         style="padding:3px 10px;border-radius:12px;font-size:11px;font-weight:600;cursor:pointer;border:1px solid rgba(88,166,255,.22);background:rgba(88,166,255,.08);color:#8aaccc">🇺🇸 US</button>
@@ -13870,7 +13871,7 @@ function toggleLtVerdictSort() {
 
 function setLtVerdictFilter(v) {
   ltVerdictFilter = v;
-  ['ALL','CORE','WATCHLIST','SKIP'].forEach(k => {
+  ['ALL','CORE','WATCHLIST','SKIP','ETF'].forEach(k => {
     const btn = document.getElementById('ltVf-' + k);
     if (!btn) return;
     if (k === v) {
@@ -13911,17 +13912,24 @@ function setLtCountryFilter(country) {
 
 // Parse the 4-line AI verdict stored in col AH
 function parseLtVerdict(raw) {
-  if (!raw) return { status: '', sip: null, desc: '' };
+  if (!raw) return { status: '', sip: null, desc: '', etfBadge: '' };
+  // ETF rule-based verdicts: single-line, no VERDICT: prefix, format "CORE ETF — details"
+  if (/^(CORE|WATCHLIST|SKIP) ETF\b/i.test(raw)) {
+    const dashIdx = raw.indexOf('—');
+    const etfBadge = dashIdx > 0 ? raw.slice(0, dashIdx).trim() : raw.split(' ').slice(0,2).join(' ');
+    const desc     = dashIdx > 0 ? raw.slice(dashIdx + 1).trim() : '';
+    return { status: 'ETF', sip: null, desc, etfBadge };
+  }
   const lines = raw.split('\n');
   const vLine = (lines.find(l => /^VERDICT:/i.test(l)) || '').replace(/^VERDICT:\s*/i,'').trim();
   let status = '';
-  if (/^CORE/i.test(vLine))      status = 'CORE';
+  if (/^CORE/i.test(vLine))           status = 'CORE';
   else if (/^WATCHLIST/i.test(vLine)) status = 'WATCHLIST';
-  else if (/^SKIP/i.test(vLine)) status = 'SKIP';
+  else if (/^SKIP/i.test(vLine))      status = 'SKIP';
   const sipM = vLine.match(/\$(\d+(?:\.\d+)?)/);
   const sip  = sipM ? parseFloat(sipM[1]) : null;
   const desc = lines.filter(l => !/^VERDICT:/i.test(l)).join('\n').trim();
-  return { status, sip, desc };
+  return { status, sip, desc, etfBadge: '' };
 }
 
 // Helper: parse date strings like "06-April-2025" or "07-April-2026"
@@ -14038,7 +14046,7 @@ function renderLtTable() {
       onmouseover="this.style.background='#1a2840'" onmouseout="this.style.background=''">
       <td style="padding:14px 16px;vertical-align:top;min-width:160px">
         <div style="font-weight:700;font-size:15px;color:#e2ecf7">${s.symbol}</div>
-        <div style="font-size:11px;color:#8aaccc;margin-top:3px;max-width:160px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${s.name || ''}</div>
+        <div style="font-size:11px;color:#8aaccc;margin-top:3px;max-width:200px;line-height:1.4">${s.name || ''}</div>
         ${s.sector ? `<div style="font-size:10px;color:#58a6ff;margin-top:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:160px">⬡ ${s.sector}</div>` : ''}
         ${s.industry ? `<div style="font-size:10px;color:#4a6a8a;margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:160px">${s.industry}</div>` : ''}
         ${s.exchange ? `<span style="display:inline-block;margin-top:5px;padding:1px 7px;border-radius:4px;font-size:10px;font-weight:700;letter-spacing:.4px;
@@ -14111,8 +14119,10 @@ function renderLtTable() {
         // Verdict badge styles
         const vCfg = pv.status === 'CORE'      ? { c:'#3fb950', bg:'rgba(63,185,80,.12)',    bd:'rgba(63,185,80,.35)'  }
                    : pv.status === 'WATCHLIST'  ? { c:'#d4a017', bg:'rgba(212,160,23,.12)',   bd:'rgba(212,160,23,.35)' }
-                   : pv.status === 'SKIP'        ? { c:'#f85149', bg:'rgba(248,81,73,.1)',     bd:'rgba(248,81,73,.35)'  }
+                   : pv.status === 'SKIP'       ? { c:'#f85149', bg:'rgba(248,81,73,.1)',     bd:'rgba(248,81,73,.35)'  }
+                   : pv.status === 'ETF'        ? { c:'#00c9c9', bg:'rgba(0,201,201,.1)',     bd:'rgba(0,201,201,.3)'   }
                    : null;
+        const vLabel = pv.status === 'ETF' ? (pv.etfBadge || 'ETF') : pv.status;
         // Verdict description lines — format each labeled line
         const descHtml = pv.desc
           ? pv.desc.split('\n').filter(l => l.trim()).map(l => {
@@ -14138,7 +14148,7 @@ function renderLtTable() {
         }
         return `
       <td style="padding:14px 16px;vertical-align:top;white-space:nowrap">
-        ${vCfg ? `<span style="display:inline-block;padding:4px 12px;border-radius:12px;font-size:12px;font-weight:700;background:${vCfg.bg};color:${vCfg.c};border:1px solid ${vCfg.bd}">${pv.status}</span>
+        ${vCfg ? `<span style="display:inline-block;padding:4px 12px;border-radius:12px;font-size:12px;font-weight:700;background:${vCfg.bg};color:${vCfg.c};border:1px solid ${vCfg.bd}">${vLabel}</span>
         ${pv.sip ? `<div style="font-size:11px;color:#8aaccc;margin-top:5px">CAD $${pv.sip}/month</div>` : ''}` : '<div style="font-size:12px;color:#4a6a8a">—</div>'}
       </td>
       <td style="padding:14px 16px;vertical-align:top;min-width:220px;max-width:300px">${descHtml}</td>
