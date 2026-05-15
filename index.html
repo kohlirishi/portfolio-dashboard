@@ -13237,6 +13237,7 @@ async function loadLtFromSheet() {
         sector:      get(31),                // Col AF: Sector (GOOGLEFINANCE)
         industry:    get(32),                // Col AG: Industry (GOOGLEFINANCE)
         aiVerdict:   get(33),               // Col AH: AI Verdict
+        assetType:   get(34),               // Col AI: AssetType (ETF | Stock)
       };
 
       allParsed.push(row);
@@ -14032,11 +14033,17 @@ function renderLtTable() {
     // Beta risk indicator
     const betaColor = s.beta > 0 && s.beta <= 1.2 ? '#3fb950' : s.beta <= 1.8 ? '#d4a017' : '#f85149';
 
+    const isETF = (s.assetType || '').toString().trim() === 'ETF';
+
     const chk = (pass, label) =>
       `<span style="display:inline-flex;align-items:center;gap:3px;padding:2px 7px;border-radius:4px;font-size:10px;font-weight:600;margin:2px;
         background:${pass ? 'rgba(63,185,80,.1)' : 'rgba(248,81,73,.08)'};
         color:${pass ? '#3fb950' : '#f85149'};
         border:1px solid ${pass ? 'rgba(63,185,80,.3)' : 'rgba(248,81,73,.2)'}">${pass ? '✓' : '✗'} ${label}</span>`;
+
+    const chkNA = (label) =>
+      `<span style="display:inline-flex;align-items:center;gap:3px;padding:2px 7px;border-radius:4px;font-size:10px;font-weight:600;margin:2px;
+        background:rgba(100,110,130,.08);color:#4a6a8a;border:1px solid rgba(100,110,130,.2)">— ${label}</span>`;
 
     const chgC    = s.change >= 0 ? '#3fb950' : '#f85149';
     const chgSign = s.change >= 0 ? '+' : '';
@@ -14071,8 +14078,12 @@ function renderLtTable() {
         </div>
         <div style="font-size:10px;color:#4a6a8a;margin-top:6px;line-height:1.5">${(() => {
           const bd = ltStrengthBreakdown(s);
-          if (!bd.shortLine || bd.shortLine === 'All components near maximum') return '<span style="color:#3fb950">All components near max</span>';
-          return '<span style="color:#e3b341">' + bd.shortLine + '</span>';
+          let sl = bd.shortLine;
+          if (isETF && sl && sl !== 'All components near maximum') {
+            sl = sl.split(' · ').filter(p => !/^P\/E/.test(p)).join(' · ') || 'All components near max';
+          }
+          if (!sl || sl === 'All components near maximum') return '<span style="color:#3fb950">All components near max</span>';
+          return '<span style="color:#e3b341">' + sl + '</span>';
         })()}</div>
       </td>
       <td style="padding:14px 16px;vertical-align:top">
@@ -14094,10 +14105,10 @@ function renderLtTable() {
       </td>
       <td style="padding:14px 16px;vertical-align:top">
         <div style="display:flex;flex-wrap:wrap;gap:0;max-width:260px">
-          ${chk(goodMCap,  'MCap>$100B')}
-          ${chk(goodPE,    'P/E 0-65')}
+          ${isETF ? chkNA('MCap>$100B') : chk(goodMCap, 'MCap>$100B')}
+          ${isETF ? chkNA('P/E 0-65')  : chk(goodPE,   'P/E 0-65')}
           ${chk(goodPerf,  '5Y Perf>'+perf5yMin+'%')}
-          ${chk(goodEPS,   'EPS>0')}
+          ${isETF ? chkNA('EPS>0')     : chk(goodEPS,  'EPS>0')}
           ${hasFundamentals ? chk(goodRevGrowth,   'RevGr>10%')   : ''}
           ${hasFundamentals ? chk(goodROE,          'ROE>10%')     : ''}
           ${hasFundamentals ? chk(goodEPSGrowth,    'EPSGr>10%')   : ''}
