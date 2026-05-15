@@ -13337,7 +13337,8 @@ function ltBuildFavCard(f) {
   const isTSX   = exchRaw.includes('TSX') || exchRaw === 'TSE';
 
   // ── local helpers (fmtMCap / fmtN are local to renderLtTable — replicate here) ──
-  const fmtN = (v, d=2) => (v !== null && v !== undefined && v !== '' && v !== 0) ? parseFloat(v).toFixed(d) : '—';
+  // != null catches both null AND undefined (guards against missing fields from old GAS versions)
+  const fmtN = (v, d=2) => (v != null && v !== '') ? parseFloat(v).toFixed(d) : '—';
   const fmtMCap = v => {
     if (v === null || v === undefined || v === '' || v === 0) return '—';
     if (v >= 1e12) return '$' + (v/1e12).toFixed(1) + 'T';
@@ -13385,16 +13386,15 @@ function ltBuildFavCard(f) {
                 : null;
 
   // ── SECTION 3 — Technical Check Chips (entry snapshot) ──
-  const hasSnap = f.sma200w !== null || f.sma50w !== null;
   const techChip = (val, condition, label) =>
-    (val === null || val === undefined) ? chip(null, label) : chip(condition, label);
+    (val == null) ? chip(null, label) : chip(condition, label);
 
   const tcPriceSMA200 = techChip(f.sma200w, f.entryPrice > (f.sma200w || 0), 'Price>SMA200W');
   const tcPriceSMA50  = techChip(f.sma50w,  f.entryPrice > (f.sma50w  || 0), 'Price>SMA50W');
-  const tcGolden      = (f.sma50w === null && f.sma200w === null)
+  const tcGolden      = (f.sma50w == null && f.sma200w == null)
     ? chip(null, 'Golden Cross')
     : chip((f.sma50w || 0) > (f.sma200w || 0), 'Golden Cross');
-  const tc52W         = (f.w52low === null || f.sma200w === null)
+  const tc52W         = (f.w52low == null || f.sma200w == null)
     ? chip(null, '52WLow>SMA200W+5%')
     : chip((f.w52low || 0) >= (f.sma200w || 0) * 1.05, '52WLow>SMA200W+5%');
   const tcEMA50D      = isTSX ? ''
@@ -13404,24 +13404,24 @@ function ltBuildFavCard(f) {
   const mcapThreshold  = isNSE ? 1e12 : 1e11;
   const mcapLabel      = isNSE ? 'MCap>₹1LCr' : 'MCap>$100B';
   const perf5yThr      = isNSE ? 60 : 85;
-  const peRaw          = (f.entryPE !== null && f.entryPE !== '') ? parseFloat(f.entryPE) : null;
+  const peRaw          = (f.entryPE != null && f.entryPE !== '') ? parseFloat(f.entryPE) : null;
 
-  const fcMCap    = f.marketCap === null ? chip(null, mcapLabel)
+  const fcMCap    = f.marketCap == null ? chip(null, mcapLabel)
                   : chip(f.marketCap >= mcapThreshold, mcapLabel);
-  const fcPE      = peRaw === null ? chip(null, 'P/E 0-65')
+  const fcPE      = peRaw == null ? chip(null, 'P/E 0-65')
                   : chip(peRaw > 0 && peRaw <= 65, 'P/E 0-65');
-  const fcPerf    = f.perf5y === null ? chip(null, `5Y Perf>${perf5yThr}%`)
+  const fcPerf    = f.perf5y == null ? chip(null, `5Y Perf>${perf5yThr}%`)
                   : chip(f.perf5y >= perf5yThr, `5Y Perf>${perf5yThr}%`);
-  const fcEPS     = f.eps === null ? chip(null, 'EPS>0')
+  const fcEPS     = f.eps == null ? chip(null, 'EPS>0')
                   : chip(f.eps > 0, 'EPS>0');
-  const revGRaw   = (f.entryRevGrowth !== null && f.entryRevGrowth !== '') ? parseFloat(f.entryRevGrowth) : null;
-  const roeRaw    = (f.entryROE       !== null && f.entryROE       !== '') ? parseFloat(f.entryROE)       : null;
-  const epsGRaw   = (f.entryEPS       !== null && f.entryEPS       !== '') ? parseFloat(f.entryEPS)       : null;
-  const grossRaw  = (f.entryGross     !== null && f.entryGross     !== '') ? parseFloat(f.entryGross)     : null;
-  const fcRevGr   = revGRaw  === null ? chip(null, 'RevGr>10%')  : chip(revGRaw  >= 10, 'RevGr>10%');
-  const fcROE     = roeRaw   === null ? chip(null, 'ROE>10%')    : chip(roeRaw   >= 10, 'ROE>10%');
-  const fcEPSGr   = epsGRaw  === null ? chip(null, 'EPSGr>10%')  : chip(epsGRaw  >= 10, 'EPSGr>10%');
-  const fcGrossM  = grossRaw === null ? chip(null, 'GrossM>10%') : chip(grossRaw >= 10, 'GrossM>10%');
+  const revGRaw   = (f.entryRevGrowth != null && f.entryRevGrowth !== '') ? parseFloat(f.entryRevGrowth) : null;
+  const roeRaw    = (f.entryROE       != null && f.entryROE       !== '') ? parseFloat(f.entryROE)       : null;
+  const epsGRaw   = (f.entryEPS       != null && f.entryEPS       !== '') ? parseFloat(f.entryEPS)       : null;
+  const grossRaw  = (f.entryGross     != null && f.entryGross     !== '') ? parseFloat(f.entryGross)     : null;
+  const fcRevGr   = revGRaw  == null ? chip(null, 'RevGr>10%')  : chip(revGRaw  >= 10, 'RevGr>10%');
+  const fcROE     = roeRaw   == null ? chip(null, 'ROE>10%')    : chip(roeRaw   >= 10, 'ROE>10%');
+  const fcEPSGr   = epsGRaw  == null ? chip(null, 'EPSGr>10%')  : chip(epsGRaw  >= 10, 'EPSGr>10%');
+  const fcGrossM  = grossRaw == null ? chip(null, 'GrossM>10%') : chip(grossRaw >= 10, 'GrossM>10%');
 
   // ── SECTION 5 — Entry AI Verdict ──
   const entVCfg = f.entryVerdict === 'CORE'      ? { c:'#3fb950', bg:'rgba(63,185,80,.12)',   bd:'rgba(63,185,80,.35)'  }
@@ -13484,7 +13484,7 @@ function ltBuildFavCard(f) {
           <span style="font-size:11px;color:#4a6a8a;margin-left:6px">Now</span>
           <span style="font-size:13px;font-weight:700;color:#e2ecf7;margin-left:6px">${currPfx}${(f.currentPrice||0).toFixed(2)}</span>
         </div>
-        <span style="font-size:20px;font-weight:700;color:${pctColor}">${pctSign}${f.pctChange.toFixed(2)}%</span>
+        <span style="font-size:20px;font-weight:700;color:${pctColor}">${pctSign}${(f.pctChange ?? 0).toFixed(2)}%</span>
         ${curVCfg ? `<span style="padding:4px 12px;border-radius:12px;font-size:12px;font-weight:700;background:${curVCfg.bg};color:${curVCfg.c};border:1px solid ${curVCfg.bd}">${f.currentVerdict}</span>` : ''}
       </div>
       <div style="display:flex;align-items:center;gap:10px">
@@ -13540,12 +13540,12 @@ function ltBuildFavCard(f) {
       ${kv('MCap',    fmtMCap(f.marketCap))}
       ${kv('P/E',     fmtN(peRaw))}
       ${kv('EPS',     fmtN(f.eps))}
-      ${kv('5Y Perf', f.perf5y !== null ? f.perf5y.toFixed(1)+'%' : '—')}
+      ${kv('5Y Perf', f.perf5y  != null ? parseFloat(f.perf5y).toFixed(1)+'%'  : '—')}
       ${kv('Beta',    fmtN(f.beta))}
-      ${kv('RevGr',   revGRaw  !== null ? revGRaw.toFixed(1)+'%'  : '—')}
-      ${kv('ROE',     roeRaw   !== null ? roeRaw.toFixed(1)+'%'   : '—')}
-      ${kv('EPSGr',   epsGRaw  !== null ? epsGRaw.toFixed(1)+'%'  : '—')}
-      ${kv('GrossM',  grossRaw !== null ? grossRaw.toFixed(1)+'%' : '—')}
+      ${kv('RevGr',   revGRaw  != null ? revGRaw.toFixed(1)+'%'  : '—')}
+      ${kv('ROE',     roeRaw   != null ? roeRaw.toFixed(1)+'%'   : '—')}
+      ${kv('EPSGr',   epsGRaw  != null ? epsGRaw.toFixed(1)+'%'  : '—')}
+      ${kv('GrossM',  grossRaw != null ? grossRaw.toFixed(1)+'%' : '—')}
     </div>
 
     <!-- S7: Change Log (collapsible) -->
