@@ -13308,9 +13308,10 @@ function toggleLtHowPanel() {
 
 // ─── FAVORITES / STOCK OBSERVATORY ───────────────────────────────────────────
 
-let _ltFavLoaded = false;
-let _ltFavData   = [];
-let _ltFavSort   = { col: 'pctChange', dir: -1 };
+let _ltFavLoaded        = false;
+let _ltFavData          = [];
+let _ltFavSort          = { col: 'pctChange', dir: -1 };
+let _ltFavCountryFilter = '';
 
 function toggleLtFavPanel() {
   const body = document.getElementById('ltFavBody');
@@ -13350,6 +13351,19 @@ function ltSortFavTable(col) {
   if (container && _ltFavData.length) container.innerHTML = ltBuildFavTable(_ltFavData);
 }
 
+function ltSetFavCountry(c) {
+  _ltFavCountryFilter = c;
+  var container = document.getElementById('ltFavContent');
+  if (container && _ltFavData.length) container.innerHTML = ltBuildFavTable(_ltFavData);
+}
+
+function ltCountryFromExchange(exch) {
+  var e = (exch || '').trim().toUpperCase();
+  if (e === 'NSE') return 'India';
+  if (e.indexOf('TSX') >= 0 || e === 'TSE') return 'Canada';
+  return 'US';
+}
+
 function ltToggleFavExpand(safe) {
   var row = document.getElementById('ltFavExpand-' + safe);
   if (!row) return;
@@ -13375,7 +13389,12 @@ function ltBuildFavTable(favs) {
   });
   var col = _ltFavSort.col;
   var dir = _ltFavSort.dir;
-  var sorted = withDays.slice().sort(function(a, b) {
+  // Apply country filter
+  var filtered = _ltFavCountryFilter
+    ? withDays.filter(function(f) { return ltCountryFromExchange(f.entryExchange) === _ltFavCountryFilter; })
+    : withDays;
+
+  var sorted = filtered.slice().sort(function(a, b) {
     var va = 0, vb = 0;
     if      (col === 'daysHeld')  { va = a.daysHeld; vb = b.daysHeld; }
     else if (col === 'pctChange') { va = a.pctChange  != null ? a.pctChange  : 0; vb = b.pctChange  != null ? b.pctChange  : 0; }
@@ -13384,6 +13403,34 @@ function ltBuildFavTable(favs) {
     else if (col === 'fundPass')  { va = ltFundPassCount(a); vb = ltFundPassCount(b); }
     return dir * (va - vb);
   });
+
+  // Count per country for filter badges
+  var cntAll    = withDays.length;
+  var cntIndia  = withDays.filter(function(f) { return ltCountryFromExchange(f.entryExchange) === 'India'; }).length;
+  var cntCanada = withDays.filter(function(f) { return ltCountryFromExchange(f.entryExchange) === 'Canada'; }).length;
+  var cntUS     = withDays.filter(function(f) { return ltCountryFromExchange(f.entryExchange) === 'US'; }).length;
+
+  function filterBtn(label, val, count) {
+    var active = _ltFavCountryFilter === val;
+    var bg  = active ? 'rgba(245,166,35,.15)' : 'transparent';
+    var brd = active ? '#f5a623' : '#1e3250';
+    var clr = active ? '#f5a623' : '#4a6a8a';
+    return '<button onclick="ltSetFavCountry(\'' + val + '\')" '
+      + 'style="padding:3px 10px;background:' + bg + ';border:1px solid ' + brd + ';color:' + clr + ';'
+      + 'border-radius:12px;font-size:11px;font-weight:600;cursor:pointer;margin-right:6px;transition:all .15s" '
+      + 'onmouseover="this.style.borderColor=\'#f5a623\';this.style.color=\'#f5a623\'" '
+      + 'onmouseout="this.style.borderColor=\'' + brd + '\';this.style.color=\'' + clr + '\'">'
+      + label + ' <span style="opacity:.7">(' + count + ')</span></button>';
+  }
+
+  var filterBar = '<div style="display:flex;align-items:center;gap:4px;margin-bottom:10px;flex-wrap:wrap">'
+    + '<span style="font-size:10px;font-weight:700;color:#4a6a8a;letter-spacing:.5px;text-transform:uppercase;margin-right:4px">Country:</span>'
+    + filterBtn('All', '', cntAll)
+    + (cntIndia  > 0 ? filterBtn('🇮🇳 India',  'India',  cntIndia)  : '')
+    + (cntCanada > 0 ? filterBtn('🇨🇦 Canada', 'Canada', cntCanada) : '')
+    + (cntUS     > 0 ? filterBtn('🇺🇸 US',     'US',     cntUS)     : '')
+    + '</div>';
+
   function sh(label, key) {
     var active = _ltFavSort.col === key;
     var arrow  = active ? (_ltFavSort.dir > 0 ? ' ▲' : ' ▼') : '';
@@ -13398,14 +13445,20 @@ function ltBuildFavTable(favs) {
     return '<th style="padding:7px 10px;font-size:10px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;'
          + 'color:#4a6a8a;border-bottom:1px solid #1e3250;white-space:nowrap;text-align:' + (align || 'left') + '">' + label + '</th>';
   }
-  return '<div style="overflow-x:auto;margin-top:4px">'
+
+  var emptyMsg = _ltFavCountryFilter
+    ? '<tr><td colspan="13" style="padding:20px;text-align:center;color:#4a6a8a;font-size:12px">No ' + _ltFavCountryFilter + ' stocks in Favorites.</td></tr>'
+    : '';
+
+  return filterBar
+    + '<div style="overflow-x:auto">'
     + '<table style="width:100%;border-collapse:collapse;font-size:12px">'
     + '<thead><tr style="background:#0d1b2a">'
-    + st('Symbol') + st('Added') + sh('Days', 'daysHeld') + st('Entry → Now')
+    + st('Symbol') + st('Country') + st('Added') + sh('Days', 'daysHeld') + st('Entry → Now')
     + sh('% Chg', 'pctChange') + sh('Strength', 'curStr') + st('Verdict')
     + sh('Tech', 'techPass') + sh('Fund', 'fundPass') + st('AI Verdict') + st('Log', 'center') + st('', 'center')
     + '</tr></thead>'
-    + '<tbody>' + sorted.map(ltBuildFavRow).join('') + '</tbody>'
+    + '<tbody>' + (sorted.length > 0 ? sorted.map(ltBuildFavRow).join('') : emptyMsg) + '</tbody>'
     + '</table></div>';
 }
 
@@ -13576,7 +13629,7 @@ function ltBuildFavRow(f) {
     + (epsGRaw  == null ? chip(null, 'EPSGr>10%')  : chip(epsGRaw >= 10, 'EPSGr>10%'))
     + (grossRaw == null ? chip(null, 'GrossM>10%') : chip(grossRaw >= 10, 'GrossM>10%'));
 
-  var expandTd = '<td colspan="12" style="padding:0;border-bottom:2px solid #1e3250">'
+  var expandTd = '<td colspan="13" style="padding:0;border-bottom:2px solid #1e3250">'
     + '<div style="background:#0d1b2a;padding:14px 18px;display:grid;grid-template-columns:1fr 1fr;gap:16px">'
     + '<div>'
     + '<div style="font-size:10px;font-weight:700;color:#4a6a8a;letter-spacing:.5px;text-transform:uppercase;margin-bottom:6px">Technical — At Entry</div>'
@@ -13610,6 +13663,13 @@ function ltBuildFavRow(f) {
     + (f.entryExchange ? '<span style="padding:1px 6px;border-radius:3px;font-size:9px;font-weight:700;letter-spacing:.4px;background:' + exchBg + ';color:' + exchColor + ';border:1px solid ' + exchBrd + '">' + f.entryExchange + '</span>' : '')
     + (f.name ? '<span style="font-size:10px;color:#4a6a8a;max-width:90px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' + nameEsc + '">' + f.name + '</span>' : '')
     + '</div></td>'
+
+    + (function() {
+        var country = ltCountryFromExchange(f.entryExchange);
+        var flag = country === 'India' ? '🇮🇳' : country === 'Canada' ? '🇨🇦' : '🇺🇸';
+        var cc   = country === 'India' ? '#f5a623' : country === 'Canada' ? '#ff6b6b' : '#58a6ff';
+        return '<td ' + tdC + '><span style="font-size:13px">' + flag + '</span><div style="font-size:10px;color:' + cc + ';font-weight:600;margin-top:1px">' + country + '</div></td>';
+      })()
 
     + '<td ' + td + '>'
     + '<div style="font-size:11px;color:#8aaccc;white-space:nowrap">' + (f.dateAdded || '—') + '</div>'
