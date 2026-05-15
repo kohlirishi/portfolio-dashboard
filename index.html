@@ -4832,6 +4832,22 @@ async function loadAllRatings(){
 
 <div style="max-width:1700px;margin:0 auto;padding:20px 24px 48px">
 
+  <!-- FAVORITES / STOCK OBSERVATORY -->
+  <div id="ltFavPanel" style="background:#152032;border:1px solid #f5a623;border-radius:8px;padding:16px 20px;margin-bottom:20px">
+    <div style="display:flex;align-items:center;justify-content:space-between;gap:12px">
+      <div style="font-size:14px;font-weight:700;color:#f5a623">★ Stock Observatory — Favorites</div>
+      <button id="ltFavToggleBtn" onclick="toggleLtFavPanel()"
+        style="background:transparent;border:1px solid #f5a623;color:#f5a623;font-size:12px;font-weight:600;font-family:inherit;cursor:pointer;padding:4px 10px;border-radius:5px;transition:background .15s,color .15s;white-space:nowrap"
+        onmouseover="this.style.background='#f5a623';this.style.color='#0d1b2a'"
+        onmouseout="this.style.background='transparent';this.style.color='#f5a623'">▼ Expand</button>
+    </div>
+    <div id="ltFavBody" style="max-height:0;opacity:0;overflow:hidden;transition:max-height 500ms ease-in-out,opacity 300ms ease-in-out;margin-top:0">
+      <div id="ltFavContent" style="margin-top:14px">
+        <div style="color:#8aaccc;font-size:13px;text-align:center;padding:20px">Loading favorites…</div>
+      </div>
+    </div>
+  </div>
+
   <!-- HOW IT WORKS -->
   <div style="background:#152032;border:1px solid #1e3250;border-radius:8px;padding:16px 20px;margin-bottom:20px">
     <div style="display:flex;align-items:center;justify-content:space-between;gap:12px">
@@ -13227,6 +13243,25 @@ async function loadLtFromSheet() {
     ltSheetData = passParsed.sort((a, b) => b.strength - a.strength);
     renderLtTable();
 
+    // Sync favorite stars without blocking table render
+    fetch(`${GS_SCRIPT_URL}?action=getFavoriteSymbols&t=${Date.now()}`)
+      .then(r => r.json())
+      .then(json => {
+        if (json.ok && Array.isArray(json.symbols)) {
+          ltFavoriteSet = new Set(json.symbols);
+          json.symbols.forEach(sym => {
+            const btn = document.getElementById('ltStarBtn-' + sym.replace(/\./g, '_'));
+            if (btn) {
+              btn.textContent       = '★';
+              btn.title             = 'Remove from Favorites';
+              btn.style.color       = '#f5a623';
+              btn.style.borderColor = '#f5a623';
+            }
+          });
+        }
+      })
+      .catch(() => {});
+
     const now = new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
     if (status) status.textContent = `✓ ${ltSheetData.length} PASS stocks · ${allParsed.length} total · refreshed ${now}`;
   } catch (err) {
@@ -13249,6 +13284,7 @@ let ltVerdictFilter = 'ALL';
 let ltCountryFilter = ''; // '' = all countries, 'US', 'Canada', or 'India'
 let ltVerdictSortDir = null; // null=off, 'core-first', 'skip-first'
 let ltAddedToSheetSet = new Set(); // tracks symbols added this session
+let ltFavoriteSet = new Set();     // symbols currently in Favorites (session cache)
 
 function toggleLtHowPanel() {
   const body = document.getElementById('ltHowBody');
@@ -13258,6 +13294,165 @@ function toggleLtHowPanel() {
   body.style.maxHeight = expanding ? '2000px' : '0';
   body.style.opacity = expanding ? '1' : '0';
   btn.textContent = expanding ? '▲ Minimize' : '▼ Expand';
+}
+
+// ─── FAVORITES / STOCK OBSERVATORY ───────────────────────────────────────────
+
+let _ltFavLoaded = false;
+
+function toggleLtFavPanel() {
+  const body = document.getElementById('ltFavBody');
+  const btn  = document.getElementById('ltFavToggleBtn');
+  if (!body || !btn) return;
+  const expanding = body.style.maxHeight === '0px' || body.style.maxHeight === '0' || !body.style.maxHeight;
+  body.style.maxHeight = expanding ? '4000px' : '0';
+  body.style.opacity   = expanding ? '1' : '0';
+  btn.textContent      = expanding ? '▲ Minimize' : '▼ Expand';
+  if (expanding && !_ltFavLoaded) { _ltFavLoaded = true; loadLtFavorites(); }
+}
+
+async function loadLtFavorites() {
+  const container = document.getElementById('ltFavContent');
+  if (!container) return;
+  container.innerHTML = '<div style="color:#8aaccc;font-size:13px;text-align:center;padding:20px">Loading…</div>';
+  try {
+    const resp = await fetch(`${GS_SCRIPT_URL}?action=getFavorites&t=${Date.now()}`);
+    const json = await resp.json();
+    if (!json.ok) throw new Error(json.error || 'Unknown error');
+    const favs = json.favorites || [];
+    if (favs.length === 0) {
+      container.innerHTML = '<div style="color:#8aaccc;font-size:13px;text-align:center;padding:20px">No favorites yet. Click ☆ on any stock to track it here.</div>';
+      return;
+    }
+    container.innerHTML = favs.map(f => ltBuildFavCard(f)).join('');
+  } catch(err) {
+    container.innerHTML = `<div style="color:#f85149;font-size:13px;text-align:center;padding:20px">Failed to load favorites: ${err.message}</div>`;
+  }
+}
+
+function ltBuildFavCard(f) {
+  const pctColor   = f.pctChange >= 0 ? '#3fb950' : '#f85149';
+  const pctSign    = f.pctChange >= 0 ? '+' : '';
+  const pctStr     = pctSign + f.pctChange.toFixed(2) + '%';
+  const strDiff    = (f.currentStrength - f.entryStrength).toFixed(1);
+  const strColor   = strDiff >= 0 ? '#3fb950' : '#f85149';
+  const strSign    = strDiff >= 0 ? '+' : '';
+  const verdictColor = f.currentVerdict === 'CORE' ? '#3fb950' : f.currentVerdict === 'WATCHLIST' ? '#f5a623' : '#8aaccc';
+  const safe = f.symbol.replace(/\./g, '_');
+  const logLines   = (f.changeLog || '').split('\n').filter(l => l.trim()).reverse();
+
+  return `<div id="ltFavCard-${safe}" style="background:#0d1b2a;border:1px solid #1e3250;border-radius:8px;padding:14px 16px;margin-bottom:12px">
+    <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px">
+      <div style="display:flex;align-items:center;gap:10px">
+        <span style="font-size:15px;font-weight:700;color:#e2ecf7">${f.symbol}</span>
+        <span style="font-size:12px;color:#8aaccc">${f.name || ''}</span>
+        <span style="font-size:11px;color:#4a6a8a">★ ${f.dateAdded || ''}</span>
+      </div>
+      <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+        <span style="font-size:13px;font-weight:700;color:#e2ecf7">$${(f.currentPrice || 0).toFixed(2)}</span>
+        <span style="font-size:12px;font-weight:600;color:${pctColor}">${pctStr} vs entry</span>
+        <span style="font-size:11px;color:${verdictColor};font-weight:600">${f.currentVerdict}</span>
+        <span style="font-size:11px;color:${strColor}">${strSign}${strDiff}pts strength</span>
+        <button onclick="ltRemoveFavorite('${f.symbol}',this)"
+          style="padding:3px 9px;background:transparent;border:1px solid #4a6a8a;color:#4a6a8a;border-radius:4px;font-size:11px;cursor:pointer;transition:all .15s"
+          onmouseover="this.style.borderColor='#f85149';this.style.color='#f85149'"
+          onmouseout="this.style.borderColor='#4a6a8a';this.style.color='#4a6a8a'">✕ Remove</button>
+      </div>
+    </div>
+    <div style="display:flex;gap:6px;margin-top:10px;flex-wrap:wrap">
+      <button onclick="ltToggleFavSection('ltFavFund-${safe}',this)" style="padding:3px 9px;background:#152032;border:1px solid #1e3250;color:#8aaccc;border-radius:4px;font-size:11px;cursor:pointer">▼ Fundamentals snapshot</button>
+      <button onclick="ltToggleFavSection('ltFavLog-${safe}',this)" style="padding:3px 9px;background:#152032;border:1px solid #1e3250;color:#8aaccc;border-radius:4px;font-size:11px;cursor:pointer">▼ Change log (${logLines.length})</button>
+    </div>
+    <div id="ltFavFund-${safe}" style="display:none;margin-top:10px;font-size:11px;color:#8aaccc;display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:6px 16px">
+      <div><span style="color:#4a6a8a">Entry Price:</span> $${(f.entryPrice||0).toFixed(2)}</div>
+      <div><span style="color:#4a6a8a">Entry Strength:</span> ${Math.round(f.entryStrength||0)}%</div>
+      <div><span style="color:#4a6a8a">Entry Verdict:</span> ${f.entryVerdict||'—'}</div>
+      <div><span style="color:#4a6a8a">P/E:</span> ${f.entryPE||'—'}</div>
+      <div><span style="color:#4a6a8a">Rev Growth:</span> ${f.entryRevGrowth||'—'}</div>
+      <div><span style="color:#4a6a8a">ROE:</span> ${f.entryROE||'—'}</div>
+      <div><span style="color:#4a6a8a">EPS Growth:</span> ${f.entryEPS||'—'}</div>
+      <div><span style="color:#4a6a8a">Gross Margin:</span> ${f.entryGross||'—'}</div>
+      <div><span style="color:#4a6a8a">Sector:</span> ${f.entrySector||'—'}</div>
+      <div><span style="color:#4a6a8a">Industry:</span> ${f.entryIndustry||'—'}</div>
+      <div><span style="color:#4a6a8a">Exchange:</span> ${f.entryExchange||'—'}</div>
+    </div>
+    <div id="ltFavLog-${safe}" style="display:none;margin-top:10px;font-size:11px;color:#8aaccc;line-height:1.8">
+      ${logLines.length > 0
+        ? logLines.map(l => `<div style="border-left:2px solid #1e3250;padding-left:8px">${l}</div>`).join('')
+        : '<div style="color:#4a6a8a">No changes logged yet.</div>'}
+    </div>
+  </div>`;
+}
+
+function ltToggleFavSection(id, btn) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  const hidden = el.style.display === 'none' || el.style.display === '';
+  el.style.display = hidden ? 'block' : 'none';
+  const isGrid = id.includes('Fund');
+  if (hidden && isGrid) el.style.display = 'grid';
+  btn.textContent = btn.textContent.replace(hidden ? '▼' : '▲', hidden ? '▲' : '▼');
+}
+
+async function ltToggleFavorite(btn, symbol) {
+  const adding = !ltFavoriteSet.has(symbol);
+  btn.disabled = true;
+  try {
+    const action = adding ? 'addToFavorites' : 'removeFromFavorites';
+    const resp   = await fetch(`${GS_SCRIPT_URL}?action=${action}&ticker=${encodeURIComponent(symbol)}&t=${Date.now()}`);
+    const json   = await resp.json();
+    if (!json.ok) { alert(json.error || 'Error updating Favorites'); return; }
+    if (adding) {
+      ltFavoriteSet.add(symbol);
+      btn.textContent    = '★';
+      btn.title          = 'Remove from Favorites';
+      btn.style.color    = '#f5a623';
+      btn.style.borderColor = '#f5a623';
+      // Reload panel if open
+      if (_ltFavLoaded) loadLtFavorites();
+    } else {
+      ltFavoriteSet.delete(symbol);
+      btn.textContent    = '☆';
+      btn.title          = 'Add to Favorites';
+      btn.style.color    = '#4a6a8a';
+      btn.style.borderColor = '#1e3250';
+    }
+  } catch(err) {
+    alert('Network error: ' + err.message);
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+async function ltRemoveFavorite(symbol, removeBtn) {
+  removeBtn.disabled = true;
+  try {
+    const resp = await fetch(`${GS_SCRIPT_URL}?action=removeFromFavorites&ticker=${encodeURIComponent(symbol)}&t=${Date.now()}`);
+    const json = await resp.json();
+    if (!json.ok) { alert(json.error || 'Error removing favorite'); return; }
+    ltFavoriteSet.delete(symbol);
+    // Remove card from DOM
+    const safe = symbol.replace(/\./g, '_');
+    const card = document.getElementById('ltFavCard-' + safe);
+    if (card) card.remove();
+    // Reset star button in table
+    const starBtn = document.getElementById('ltStarBtn-' + safe);
+    if (starBtn) {
+      starBtn.textContent       = '☆';
+      starBtn.title             = 'Add to Favorites';
+      starBtn.style.color       = '#4a6a8a';
+      starBtn.style.borderColor = '#1e3250';
+    }
+    // If no cards left, show empty message
+    const container = document.getElementById('ltFavContent');
+    if (container && !container.querySelector('[id^="ltFavCard-"]')) {
+      container.innerHTML = '<div style="color:#8aaccc;font-size:13px;text-align:center;padding:20px">No favorites yet. Click ☆ on any stock to track it here.</div>';
+    }
+  } catch(err) {
+    alert('Network error: ' + err.message);
+  } finally {
+    removeBtn.disabled = false;
+  }
 }
 
 function ltCountryOf(s) {
@@ -13589,6 +13784,16 @@ function renderLtTable() {
             style="padding:5px 12px;background:#1f3a5f;border:1px solid #1e3250;color:#58a6ff;border-radius:5px;font-size:11px;font-weight:600;cursor:pointer;white-space:nowrap;transition:all .15s"
             onmouseover="this.style.background='#1e3250';this.style.borderColor='#58a6ff'"
             onmouseout="this.style.background='#1f3a5f';this.style.borderColor='#1e3250'">Copy Prompt</button>
+          ${(() => {
+            const isFav = ltFavoriteSet.has(s.symbol);
+            const safeId = s.symbol.replace(/\./g,'_');
+            return `<button id="ltStarBtn-${safeId}" onclick="ltToggleFavorite(this,'${s.symbol}')"
+              title="${isFav ? 'Remove from Favorites' : 'Add to Favorites'}"
+              style="padding:5px 12px;background:transparent;border:1px solid ${isFav ? '#f5a623' : '#1e3250'};color:${isFav ? '#f5a623' : '#4a6a8a'};border-radius:5px;font-size:14px;cursor:pointer;white-space:nowrap;transition:all .15s"
+              onmouseover="this.style.borderColor='#f5a623';this.style.color='#f5a623'"
+              onmouseout="if(!ltFavoriteSet.has('${s.symbol}')){this.style.borderColor='#1e3250';this.style.color='#4a6a8a'}"
+              >${isFav ? '★' : '☆'}</button>`;
+          })()}
         </div>
       </td>`;
       })()}
