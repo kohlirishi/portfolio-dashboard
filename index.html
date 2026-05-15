@@ -13331,56 +13331,236 @@ async function loadLtFavorites() {
 }
 
 function ltBuildFavCard(f) {
-  const pctColor   = f.pctChange >= 0 ? '#3fb950' : '#f85149';
-  const pctSign    = f.pctChange >= 0 ? '+' : '';
-  const pctStr     = pctSign + f.pctChange.toFixed(2) + '%';
-  const strDiff    = (f.currentStrength - f.entryStrength).toFixed(1);
-  const strColor   = strDiff >= 0 ? '#3fb950' : '#f85149';
-  const strSign    = strDiff >= 0 ? '+' : '';
-  const verdictColor = f.currentVerdict === 'CORE' ? '#3fb950' : f.currentVerdict === 'WATCHLIST' ? '#f5a623' : '#8aaccc';
-  const safe = f.symbol.replace(/\./g, '_');
-  const logLines   = (f.changeLog || '').split('\n').filter(l => l.trim()).reverse();
+  const safe    = f.symbol.replace(/\./g, '_');
+  const exchRaw = (f.entryExchange || '').trim().toUpperCase();
+  const isNSE   = exchRaw.includes('NSE');
+  const isTSX   = exchRaw.includes('TSX') || exchRaw === 'TSE';
 
-  return `<div id="ltFavCard-${safe}" style="background:#0d1b2a;border:1px solid #1e3250;border-radius:8px;padding:14px 16px;margin-bottom:12px">
-    <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px">
-      <div style="display:flex;align-items:center;gap:10px">
-        <span style="font-size:15px;font-weight:700;color:#e2ecf7">${f.symbol}</span>
+  // ── local helpers (fmtMCap / fmtN are local to renderLtTable — replicate here) ──
+  const fmtN = (v, d=2) => (v !== null && v !== undefined && v !== '' && v !== 0) ? parseFloat(v).toFixed(d) : '—';
+  const fmtMCap = v => {
+    if (v === null || v === undefined || v === '' || v === 0) return '—';
+    if (v >= 1e12) return '$' + (v/1e12).toFixed(1) + 'T';
+    if (v >= 1e9)  return '$' + (v/1e9).toFixed(0)  + 'B';
+    if (v >= 1e6)  return '$' + (v/1e6).toFixed(0)  + 'M';
+    return '$' + v;
+  };
+
+  // chip: pass=true → green ✓, pass=false → red ✗, pass=null → gray N/A
+  const chip = (pass, label) => {
+    const [bg, col, brd, icon] = pass === true
+      ? ['rgba(63,185,80,.1)',    '#3fb950', 'rgba(63,185,80,.3)',    '✓']
+      : pass === false
+      ? ['rgba(248,81,73,.08)',   '#f85149', 'rgba(248,81,73,.2)',    '✗']
+      : ['rgba(139,168,200,.08)', '#8aaccc', 'rgba(139,168,200,.2)', '·'];
+    return `<span style="display:inline-flex;align-items:center;gap:3px;padding:2px 7px;border-radius:4px;font-size:10px;font-weight:600;margin:2px;background:${bg};color:${col};border:1px solid ${brd}">${icon} ${label}</span>`;
+  };
+
+  // ── SECTION 1 — Header ──
+  const exchColor = exchRaw.includes('NYSE')   ? '#3d9fff'
+                  : exchRaw.includes('NASDAQ') ? '#9b6dff' : '#00c9c9';
+  const exchBg    = exchRaw.includes('NYSE')   ? 'rgba(61,159,255,.1)'
+                  : exchRaw.includes('NASDAQ') ? 'rgba(155,109,255,.1)' : 'rgba(0,201,201,.1)';
+  const exchBrd   = exchRaw.includes('NYSE')   ? 'rgba(61,159,255,.3)'
+                  : exchRaw.includes('NASDAQ') ? 'rgba(155,109,255,.3)' : 'rgba(0,201,201,.3)';
+  const exchPill  = f.entryExchange
+    ? `<span style="display:inline-block;padding:1px 7px;border-radius:4px;font-size:10px;font-weight:700;letter-spacing:.4px;background:${exchBg};color:${exchColor};border:1px solid ${exchBrd}">${f.entryExchange}</span>`
+    : '';
+
+  // ── SECTION 2 — Price & Performance ──
+  const currPfx  = ltCurrencyPrefix({ exchange: f.entryExchange });
+  const pctColor = f.pctChange >= 0 ? '#3fb950' : '#f85149';
+  const pctSign  = f.pctChange >= 0 ? '+' : '';
+  const strDiff  = parseFloat((f.currentStrength - f.entryStrength).toFixed(1));
+  const strArrow = strDiff > 0 ? '↑' : strDiff < 0 ? '↓' : '→';
+  const strArrowColor = strDiff > 0 ? '#3fb950' : strDiff < 0 ? '#f85149' : '#8aaccc';
+  const cs = f.currentStrength || 0;
+  const grade = cs >= 80 ? { label:'A', color:'#3fb950', bg:'rgba(63,185,80,.12)',  border:'#238636' }
+              : cs >= 60 ? { label:'B', color:'#d4a017', bg:'rgba(212,160,23,.12)', border:'#9e6a03' }
+              : cs >= 40 ? { label:'C', color:'#f0883e', bg:'rgba(240,136,62,.12)', border:'#bd561d' }
+              :            { label:'D', color:'#f85149', bg:'rgba(248,81,73,.12)',  border:'#6e1a1a' };
+  const curVCfg = f.currentVerdict === 'CORE'      ? { c:'#3fb950', bg:'rgba(63,185,80,.12)',   bd:'rgba(63,185,80,.35)'  }
+                : f.currentVerdict === 'WATCHLIST'  ? { c:'#d4a017', bg:'rgba(212,160,23,.12)',  bd:'rgba(212,160,23,.35)' }
+                : f.currentVerdict === 'SKIP'       ? { c:'#f85149', bg:'rgba(248,81,73,.1)',    bd:'rgba(248,81,73,.35)'  }
+                : null;
+
+  // ── SECTION 3 — Technical Check Chips (entry snapshot) ──
+  const hasSnap = f.sma200w !== null || f.sma50w !== null;
+  const techChip = (val, condition, label) =>
+    (val === null || val === undefined) ? chip(null, label) : chip(condition, label);
+
+  const tcPriceSMA200 = techChip(f.sma200w, f.entryPrice > (f.sma200w || 0), 'Price>SMA200W');
+  const tcPriceSMA50  = techChip(f.sma50w,  f.entryPrice > (f.sma50w  || 0), 'Price>SMA50W');
+  const tcGolden      = (f.sma50w === null && f.sma200w === null)
+    ? chip(null, 'Golden Cross')
+    : chip((f.sma50w || 0) > (f.sma200w || 0), 'Golden Cross');
+  const tc52W         = (f.w52low === null || f.sma200w === null)
+    ? chip(null, '52WLow>SMA200W+5%')
+    : chip((f.w52low || 0) >= (f.sma200w || 0) * 1.05, '52WLow>SMA200W+5%');
+  const tcEMA50D      = isTSX ? ''
+    : techChip(f.sma50daily, f.entryPrice > (f.sma50daily || 0), 'Price>EMA50D');
+
+  // ── SECTION 4 — Fundamental Check Chips (entry snapshot) ──
+  const mcapThreshold  = isNSE ? 1e12 : 1e11;
+  const mcapLabel      = isNSE ? 'MCap>₹1LCr' : 'MCap>$100B';
+  const perf5yThr      = isNSE ? 60 : 85;
+  const peRaw          = (f.entryPE !== null && f.entryPE !== '') ? parseFloat(f.entryPE) : null;
+
+  const fcMCap    = f.marketCap === null ? chip(null, mcapLabel)
+                  : chip(f.marketCap >= mcapThreshold, mcapLabel);
+  const fcPE      = peRaw === null ? chip(null, 'P/E 0-65')
+                  : chip(peRaw > 0 && peRaw <= 65, 'P/E 0-65');
+  const fcPerf    = f.perf5y === null ? chip(null, `5Y Perf>${perf5yThr}%`)
+                  : chip(f.perf5y >= perf5yThr, `5Y Perf>${perf5yThr}%`);
+  const fcEPS     = f.eps === null ? chip(null, 'EPS>0')
+                  : chip(f.eps > 0, 'EPS>0');
+  const revGRaw   = (f.entryRevGrowth !== null && f.entryRevGrowth !== '') ? parseFloat(f.entryRevGrowth) : null;
+  const roeRaw    = (f.entryROE       !== null && f.entryROE       !== '') ? parseFloat(f.entryROE)       : null;
+  const epsGRaw   = (f.entryEPS       !== null && f.entryEPS       !== '') ? parseFloat(f.entryEPS)       : null;
+  const grossRaw  = (f.entryGross     !== null && f.entryGross     !== '') ? parseFloat(f.entryGross)     : null;
+  const fcRevGr   = revGRaw  === null ? chip(null, 'RevGr>10%')  : chip(revGRaw  >= 10, 'RevGr>10%');
+  const fcROE     = roeRaw   === null ? chip(null, 'ROE>10%')    : chip(roeRaw   >= 10, 'ROE>10%');
+  const fcEPSGr   = epsGRaw  === null ? chip(null, 'EPSGr>10%')  : chip(epsGRaw  >= 10, 'EPSGr>10%');
+  const fcGrossM  = grossRaw === null ? chip(null, 'GrossM>10%') : chip(grossRaw >= 10, 'GrossM>10%');
+
+  // ── SECTION 5 — Entry AI Verdict ──
+  const entVCfg = f.entryVerdict === 'CORE'      ? { c:'#3fb950', bg:'rgba(63,185,80,.12)',   bd:'rgba(63,185,80,.35)'  }
+                : f.entryVerdict === 'WATCHLIST'  ? { c:'#d4a017', bg:'rgba(212,160,23,.12)',  bd:'rgba(212,160,23,.35)' }
+                : f.entryVerdict === 'SKIP'       ? { c:'#f85149', bg:'rgba(248,81,73,.1)',    bd:'rgba(248,81,73,.35)'  }
+                : null;
+  const pv = parseLtVerdict(f.fullAiVerdict || '');
+  const entDescHtml = (f.fullAiVerdict && pv.desc)
+    ? pv.desc.split('\n').filter(l => l.trim()).map(l => {
+        const ll = l.toLowerCase();
+        const lc = ll.startsWith('reason:')    ? '#58a6ff'
+                 : ll.startsWith('strength:')  ? '#3fb950'
+                 : ll.startsWith('watch for:') ? '#f5a623'
+                 : '#8aaccc';
+        return `<div style="font-size:11px;line-height:1.6;color:#8aaccc;margin-bottom:3px"><span style="color:${lc};font-weight:600">${l.split(':')[0]}:</span>${l.includes(':') ? l.slice(l.indexOf(':')+1) : ''}</div>`;
+      }).join('')
+    : `<div style="font-size:11px;color:#4a6a8a;font-style:italic">AI verdict not available for this entry. Re-add the stock to capture it.</div>`;
+  const sipLine = pv.sip
+    ? `<div style="font-size:11px;color:#8aaccc;margin-top:4px">SIP: CAD $${pv.sip}/month</div>`
+    : '';
+
+  // ── SECTION 6 — Key Numbers ──
+  const kv = (label, val) =>
+    `<span style="margin-right:14px;white-space:nowrap"><span style="color:#4a6a8a">${label}:</span> <span style="color:#e2ecf7">${val}</span></span>`;
+
+  // ── SECTION 7 — Change Log ──
+  const logLines = (f.changeLog || '').split('\n').filter(l => l.trim()).reverse();
+  const logColor = l => l.includes('⭐') ? '#58a6ff'
+                      : l.includes('⚠️') ? '#f5a623'
+                      : l.includes('↑')  ? '#3fb950'
+                      : l.includes('↓')  ? '#f85149'
+                      : '#8aaccc';
+
+  return `<div id="ltFavCard-${safe}" style="background:#0d1b2a;border:1px solid #1e3250;border-radius:8px;padding:16px 18px;margin-bottom:14px">
+
+    <!-- S1: Header -->
+    <div style="display:flex;align-items:flex-start;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:12px">
+      <div style="display:flex;flex-wrap:wrap;align-items:center;gap:8px">
+        <span style="font-size:16px;font-weight:700;color:#e2ecf7">${f.symbol}</span>
         <span style="font-size:12px;color:#8aaccc">${f.name || ''}</span>
-        <span style="font-size:11px;color:#4a6a8a">★ ${f.dateAdded || ''}</span>
+        ${exchPill}
+        ${f.entrySector || f.entryIndustry ? `<span style="font-size:11px;color:#4a6a8a">${[f.entrySector, f.entryIndustry].filter(Boolean).join(' · ')}</span>` : ''}
       </div>
-      <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
-        <span style="font-size:13px;font-weight:700;color:#e2ecf7">$${(f.currentPrice || 0).toFixed(2)}</span>
-        <span style="font-size:12px;font-weight:600;color:${pctColor}">${pctStr} vs entry</span>
-        <span style="font-size:11px;color:${verdictColor};font-weight:600">${f.currentVerdict}</span>
-        <span style="font-size:11px;color:${strColor}">${strSign}${strDiff}pts strength</span>
+      <div style="display:flex;align-items:center;gap:8px;flex-shrink:0">
+        <span style="font-size:11px;color:#4a6a8a">⭐ Added: ${f.dateAdded || '—'}</span>
         <button onclick="ltRemoveFavorite('${f.symbol}',this)"
           style="padding:3px 9px;background:transparent;border:1px solid #4a6a8a;color:#4a6a8a;border-radius:4px;font-size:11px;cursor:pointer;transition:all .15s"
           onmouseover="this.style.borderColor='#f85149';this.style.color='#f85149'"
           onmouseout="this.style.borderColor='#4a6a8a';this.style.color='#4a6a8a'">✕ Remove</button>
       </div>
     </div>
-    <div style="display:flex;gap:6px;margin-top:10px;flex-wrap:wrap">
-      <button onclick="ltToggleFavSection('ltFavFund-${safe}',this)" style="padding:3px 9px;background:#152032;border:1px solid #1e3250;color:#8aaccc;border-radius:4px;font-size:11px;cursor:pointer">▼ Fundamentals snapshot</button>
-      <button onclick="ltToggleFavSection('ltFavLog-${safe}',this)" style="padding:3px 9px;background:#152032;border:1px solid #1e3250;color:#8aaccc;border-radius:4px;font-size:11px;cursor:pointer">▼ Change log (${logLines.length})</button>
+
+    <!-- S2: Price & Performance -->
+    <div style="background:#111d2c;border-radius:6px;padding:10px 14px;margin-bottom:10px">
+      <div style="display:flex;flex-wrap:wrap;align-items:center;gap:16px;margin-bottom:8px">
+        <div>
+          <span style="font-size:11px;color:#4a6a8a">Entry</span>
+          <span style="font-size:13px;font-weight:600;color:#8aaccc;margin:0 6px">${currPfx}${(f.entryPrice||0).toFixed(2)}</span>
+          <span style="color:#4a6a8a">→</span>
+          <span style="font-size:11px;color:#4a6a8a;margin-left:6px">Now</span>
+          <span style="font-size:13px;font-weight:700;color:#e2ecf7;margin-left:6px">${currPfx}${(f.currentPrice||0).toFixed(2)}</span>
+        </div>
+        <span style="font-size:20px;font-weight:700;color:${pctColor}">${pctSign}${f.pctChange.toFixed(2)}%</span>
+        ${curVCfg ? `<span style="padding:4px 12px;border-radius:12px;font-size:12px;font-weight:700;background:${curVCfg.bg};color:${curVCfg.c};border:1px solid ${curVCfg.bd}">${f.currentVerdict}</span>` : ''}
+      </div>
+      <div style="display:flex;align-items:center;gap:10px">
+        <div style="flex:1;max-width:220px">
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">
+            <span style="font-size:18px;font-weight:700;color:${grade.color}">${cs}%</span>
+            <span style="padding:3px 10px;border-radius:20px;font-size:12px;font-weight:700;background:${grade.bg};color:${grade.color};border:1px solid ${grade.border}">${grade.label}</span>
+          </div>
+          <div style="height:6px;background:#111d2c;border:1px solid #1e3250;border-radius:3px;overflow:hidden">
+            <div style="height:100%;width:${Math.min(cs,100)}%;background:${grade.color};border-radius:3px;transition:width .4s"></div>
+          </div>
+        </div>
+        <div style="font-size:11px;color:#8aaccc">
+          <span style="color:#4a6a8a">Strength:</span>
+          ${Math.round(f.entryStrength||0)}%
+          <span style="color:${strArrowColor};font-size:13px;font-weight:700"> ${strArrow} </span>
+          <span style="color:${grade.color}">${Math.round(cs)}%</span>
+          <span style="color:${strArrowColor};margin-left:4px">(${strDiff > 0 ? '+' : ''}${strDiff}pts)</span>
+        </div>
+      </div>
     </div>
-    <div id="ltFavFund-${safe}" style="display:none;margin-top:10px;font-size:11px;color:#8aaccc;display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:6px 16px">
-      <div><span style="color:#4a6a8a">Entry Price:</span> $${(f.entryPrice||0).toFixed(2)}</div>
-      <div><span style="color:#4a6a8a">Entry Strength:</span> ${Math.round(f.entryStrength||0)}%</div>
-      <div><span style="color:#4a6a8a">Entry Verdict:</span> ${f.entryVerdict||'—'}</div>
-      <div><span style="color:#4a6a8a">P/E:</span> ${f.entryPE||'—'}</div>
-      <div><span style="color:#4a6a8a">Rev Growth:</span> ${f.entryRevGrowth||'—'}</div>
-      <div><span style="color:#4a6a8a">ROE:</span> ${f.entryROE||'—'}</div>
-      <div><span style="color:#4a6a8a">EPS Growth:</span> ${f.entryEPS||'—'}</div>
-      <div><span style="color:#4a6a8a">Gross Margin:</span> ${f.entryGross||'—'}</div>
-      <div><span style="color:#4a6a8a">Sector:</span> ${f.entrySector||'—'}</div>
-      <div><span style="color:#4a6a8a">Industry:</span> ${f.entryIndustry||'—'}</div>
-      <div><span style="color:#4a6a8a">Exchange:</span> ${f.entryExchange||'—'}</div>
+
+    <!-- S3: Technical Checks -->
+    <div style="margin-bottom:8px">
+      <div style="font-size:10px;font-weight:600;color:#4a6a8a;letter-spacing:.5px;margin-bottom:4px;text-transform:uppercase">Technical Checks — At Entry Snapshot</div>
+      <div style="display:flex;flex-wrap:wrap">
+        ${tcPriceSMA200}${tcPriceSMA50}${tcGolden}${tc52W}${tcEMA50D}
+      </div>
     </div>
-    <div id="ltFavLog-${safe}" style="display:none;margin-top:10px;font-size:11px;color:#8aaccc;line-height:1.8">
-      ${logLines.length > 0
-        ? logLines.map(l => `<div style="border-left:2px solid #1e3250;padding-left:8px">${l}</div>`).join('')
-        : '<div style="color:#4a6a8a">No changes logged yet.</div>'}
+
+    <!-- S4: Fundamental Checks -->
+    <div style="margin-bottom:10px">
+      <div style="font-size:10px;font-weight:600;color:#4a6a8a;letter-spacing:.5px;margin-bottom:4px;text-transform:uppercase">Fundamental Checks — At Entry Snapshot</div>
+      <div style="display:flex;flex-wrap:wrap">
+        ${fcMCap}${fcPE}${fcPerf}${fcEPS}${fcRevGr}${fcROE}${fcEPSGr}${fcGrossM}
+      </div>
     </div>
+
+    <!-- S5: Entry AI Verdict -->
+    <div style="background:#111d2c;border-radius:6px;padding:10px 14px;margin-bottom:10px">
+      <div style="font-size:10px;font-weight:600;color:#4a6a8a;letter-spacing:.5px;margin-bottom:6px;text-transform:uppercase;font-style:italic">Entry AI Verdict — Snapshot</div>
+      <div style="display:flex;align-items:flex-start;gap:10px;flex-wrap:wrap">
+        <div>
+          ${entVCfg ? `<span style="display:inline-block;padding:4px 12px;border-radius:12px;font-size:12px;font-weight:700;background:${entVCfg.bg};color:${entVCfg.c};border:1px solid ${entVCfg.bd}">${f.entryVerdict}</span>` : '<span style="font-size:12px;color:#4a6a8a">—</span>'}
+          ${sipLine}
+        </div>
+        <div style="flex:1;min-width:200px">${entDescHtml}</div>
+      </div>
+    </div>
+
+    <!-- S6: Key Numbers -->
+    <div style="font-size:11px;color:#8aaccc;margin-bottom:10px;line-height:2;flex-wrap:wrap;display:flex">
+      ${kv('MCap',    fmtMCap(f.marketCap))}
+      ${kv('P/E',     fmtN(peRaw))}
+      ${kv('EPS',     fmtN(f.eps))}
+      ${kv('5Y Perf', f.perf5y !== null ? f.perf5y.toFixed(1)+'%' : '—')}
+      ${kv('Beta',    fmtN(f.beta))}
+      ${kv('RevGr',   revGRaw  !== null ? revGRaw.toFixed(1)+'%'  : '—')}
+      ${kv('ROE',     roeRaw   !== null ? roeRaw.toFixed(1)+'%'   : '—')}
+      ${kv('EPSGr',   epsGRaw  !== null ? epsGRaw.toFixed(1)+'%'  : '—')}
+      ${kv('GrossM',  grossRaw !== null ? grossRaw.toFixed(1)+'%' : '—')}
+    </div>
+
+    <!-- S7: Change Log (collapsible) -->
+    <div>
+      <button onclick="ltToggleFavSection('ltFavLog-${safe}',this)"
+        style="padding:3px 9px;background:#152032;border:1px solid #1e3250;color:#8aaccc;border-radius:4px;font-size:11px;cursor:pointer;margin-bottom:4px">
+        ▼ 📋 Change Log (${logLines.length})
+      </button>
+      <div id="ltFavLog-${safe}" style="display:none;margin-top:6px">
+        ${logLines.length > 0
+          ? logLines.map(l => `<div style="border-left:2px solid #1e3250;padding:3px 0 3px 10px;margin-bottom:4px;font-size:11px;color:${logColor(l)}">${l}</div>`).join('')
+          : '<div style="font-size:11px;color:#4a6a8a;padding-left:10px">No changes recorded yet.</div>'}
+      </div>
+    </div>
+
   </div>`;
 }
 
