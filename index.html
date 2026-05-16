@@ -4509,6 +4509,14 @@ async function loadAllRatings(){
       <div style="font-size:10px;font-weight:700;letter-spacing:.08em;color:#8aaccc;text-transform:uppercase">🐂 BULL MODE &nbsp;<span style="color:#4a6a8a">⏳</span></div>
       <div style="font-size:13px;color:#4a6a8a;margin-top:6px">Loading…</div>
     </div>
+    <div id="breakout-nifty" style="flex:1;min-width:180px;background:#0d1117;border:1px solid #1e3250;border-radius:10px;padding:14px 16px;opacity:.6">
+      <div style="font-size:10px;font-weight:700;letter-spacing:.08em;color:#8aaccc;text-transform:uppercase">NIFTY 50 &nbsp;<span style="color:#4a6a8a">⏳</span></div>
+      <div style="font-size:13px;color:#4a6a8a;margin-top:6px">Loading market data…</div>
+    </div>
+    <div id="breakout-indiavix" style="flex:1;min-width:180px;background:#0d1117;border:1px solid #1e3250;border-radius:10px;padding:14px 16px;opacity:.6">
+      <div style="font-size:10px;font-weight:700;letter-spacing:.08em;color:#8aaccc;text-transform:uppercase">INDIA VIX &nbsp;<span style="color:#4a6a8a">⏳</span></div>
+      <div style="font-size:13px;color:#4a6a8a;margin-top:6px">Loading VIX data…</div>
+    </div>
   </div>
 
   <!-- AUTO SCREENER -->
@@ -9123,6 +9131,64 @@ async function _fetchVixPanel() {
   }
 }
 
+async function _fetchIndiaVixPanel() {
+  const el = document.getElementById('breakout-indiavix');
+  if (!el) return;
+  try {
+    const url = `https://query1.finance.yahoo.com/v8/finance/chart/%5EINDIAVIX?interval=1d&range=5d`;
+    const d   = await _proxyFetch(url);
+    const res = d?.chart?.result?.[0];
+    if (!res) throw new Error('No data');
+    const closes = (res.indicators.quote[0].close || []).filter(c => c != null && !isNaN(c));
+    if (closes.length < 2) throw new Error('Not enough history');
+    const vix      = closes[closes.length - 1];
+    const prevClose = closes[closes.length - 2];
+    const dayChg   = (vix - prevClose) / prevClose * 100;
+    const chgStr   = (dayChg >= 0 ? '+' : '') + dayChg.toFixed(1) + '%';
+
+    let level, color, bgColor, icon, subText;
+    if (vix > 40) {
+      level = 'CRISIS';     color = '#ff4444'; bgColor = '#2a0505'; icon = '💀';
+      subText = 'Extreme panic — avoid entries';
+    } else if (vix > 30) {
+      level = 'HIGH PANIC'; color = '#ff6b35'; bgColor = '#1f0a02'; icon = '🚨';
+      subText = 'Exit live positions';
+    } else if (vix >= 20) {
+      level = 'ELEVATED';   color = '#d4a017'; bgColor = '#1a1200'; icon = '⚠️';
+      subText = 'Caution — tighten stops';
+    } else {
+      level = 'NORMAL';     color = '#3fb950'; bgColor = '#071a0f'; icon = '🟢';
+      subText = 'Breakouts favoured';
+    }
+
+    el.style.opacity    = '1';
+    el.style.border     = `1px solid ${color}55`;
+    el.style.background = bgColor;
+    el.innerHTML = `
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+        <div style="font-size:9px;font-weight:700;letter-spacing:.09em;color:#8aaccc;text-transform:uppercase">INDIA VIX</div>
+        <span style="background:${color}22;color:${color};border:1px solid ${color}44;padding:1px 7px;border-radius:4px;font-size:9px;font-weight:700">● LIVE</span>
+      </div>
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
+        <div style="width:38px;height:38px;border-radius:50%;border:2.5px solid ${color};display:flex;align-items:center;justify-content:center;font-size:20px;flex-shrink:0">${icon}</div>
+        <div>
+          <div style="font-size:15px;font-weight:800;color:${color};line-height:1.2">${level} — ${vix.toFixed(1)}</div>
+          <div style="font-size:11px;color:${color};opacity:.8;margin-top:2px">${subText}</div>
+        </div>
+      </div>
+      <div style="font-size:11px;color:#8aaccc">
+        <strong style="color:#c9d1d9">India VIX</strong>: ${vix.toFixed(2)}
+        &nbsp;|&nbsp; Prev Close: <span style="color:#c9d1d9">${prevClose.toFixed(2)}</span>
+        &nbsp;|&nbsp; Day Chg: <span style="color:${dayChg > 0 ? '#f85149' : '#3fb950'};font-weight:600">${chgStr}</span>
+      </div>`;
+  } catch(e) {
+    el.style.opacity = '1';
+    el.innerHTML = `<div style="font-size:11px;color:#4a6a8a;padding:4px 0">
+      <strong style="color:#8aaccc">India VIX</strong> — data unavailable (${e.message})
+      <div style="font-size:10px;margin-top:4px;color:#3a5a7a">Check connection or try refreshing</div></div>`;
+  }
+}
+
 async function _fetchSpy15Panel() {
   const el = document.getElementById('breakout-spy15');
   if (!el) return;
@@ -9276,13 +9342,15 @@ async function _fetchSpyDailyReturn() {
 
 async function fetchBreakoutConditions() {
   await Promise.allSettled([
-    _fetchOneBreakout('breakout-spx', '^GSPC',   'S&P 500'),
-    _fetchOneBreakout('breakout-ndx', '^NDX',    'NASDAQ 100'),
-    _fetchOneBreakout('breakout-tsx', '^GSPTSE', 'TSX Composite'),
+    _fetchOneBreakout('breakout-spx',   '^GSPC',   'S&P 500'),
+    _fetchOneBreakout('breakout-ndx',   '^NDX',    'NASDAQ 100'),
+    _fetchOneBreakout('breakout-tsx',   '^GSPTSE', 'TSX Composite'),
     _fetchVixPanel(),
     _fetchSpy15Panel(),
     _fetchBullModePanel(),
     _fetchSpyDailyReturn(),
+    _fetchOneBreakout('breakout-nifty', '^NSEI',   'NIFTY 50'),
+    _fetchIndiaVixPanel(),
   ]);
   // Re-render pending + live so weak-mkt badges/banners update
   if (typeof _renderPending === 'function') _renderPending();
