@@ -4525,7 +4525,15 @@ async function loadAllRatings(){
       ⏰ Auto Screener
       <div class="right">
         <span id="regimeTag" style="font-size:11px;color:#8aaccc;font-weight:400"></span>
-        <button id="runNowBtn" class="btn btn-green" onclick="runScreenerNow()">▶ Run Now</button>
+        <div style="display:inline-flex;position:relative">
+          <button id="runNowBtn" class="btn btn-green" onclick="runScreenerNow('USTSX')" style="border-radius:6px 0 0 6px;border-right:1px solid rgba(0,0,0,.25);margin:0">▶ Run Now</button>
+          <button id="runDropdownBtn" class="btn btn-green" onclick="toggleRunDropdown(event)" style="border-radius:0 6px 6px 0;padding:0 9px;margin:0;font-size:10px">▼</button>
+          <div id="runDropdownMenu" style="display:none;position:absolute;top:calc(100% + 6px);right:0;background:#161b22;border:1px solid #30363d;border-radius:8px;z-index:200;min-width:190px;overflow:hidden;box-shadow:0 8px 24px rgba(0,0,0,.5)">
+            <div onclick="runScreenerNow('USTSX')" style="padding:10px 16px;cursor:pointer;font-size:13px;color:#c9d1d9" onmouseover="this.style.background='#21262d'" onmouseout="this.style.background=''">▶ US / TSX Screener</div>
+            <div onclick="runScreenerNow('INDIA')" style="padding:10px 16px;cursor:pointer;font-size:13px;color:#c9d1d9;border-top:1px solid #21262d" onmouseover="this.style.background='#21262d'" onmouseout="this.style.background=''">🇮🇳 India Screener (NSE)</div>
+            <div onclick="runScreenerNow('BOTH')"  style="padding:10px 16px;cursor:pointer;font-size:13px;color:#c9d1d9;border-top:1px solid #21262d" onmouseover="this.style.background='#21262d'" onmouseout="this.style.background=''">▶ Both</div>
+          </div>
+        </div>
         <button class="btn btn-ghost" onclick="fetchPortfolioState()" title="Refresh data from Google Sheets">↻ Refresh</button>
         <button id="stopBtn" class="btn btn-ghost" onclick="stopScreenerRun()" style="display:none">⏹ Stop</button>
       </div>
@@ -11270,9 +11278,26 @@ function _stopProgressBar(success) {
   }
 }
 
-async function runScreenerNow() {
+function toggleRunDropdown(e) {
+  if (e) e.stopPropagation();
+  const menu = document.getElementById('runDropdownMenu');
+  if (!menu) return;
+  const isOpen = menu.style.display !== 'none';
+  menu.style.display = isOpen ? 'none' : 'block';
+  if (!isOpen) {
+    const close = () => { menu.style.display = 'none'; document.removeEventListener('click', close); };
+    setTimeout(() => document.addEventListener('click', close), 0);
+  }
+}
+
+async function runScreenerNow(market) {
+  document.getElementById('runDropdownMenu') && (document.getElementById('runDropdownMenu').style.display = 'none');
   if (_isScreenerRunning) return; // prevent double-clicks
   _isScreenerRunning = true;
+
+  const actionMap = { USTSX: 'runManualScreener', INDIA: 'runManualScreenerIndia', BOTH: 'runManualScreenerBoth' };
+  const action = actionMap[market] || 'runManualScreener';
+  const label  = market === 'INDIA' ? '🇮🇳 India' : market === 'BOTH' ? 'Both' : 'US/TSX';
 
   const btn  = document.getElementById('runNowBtn');
   const stop = document.getElementById('stopBtn');
@@ -11280,14 +11305,14 @@ async function runScreenerNow() {
   const originalDisabled = btn ? btn.disabled   : false;
 
   if (btn)  { btn.disabled = true; btn.innerHTML = '⏳ Queuing…'; }
-  if (stop) stop.style.display = 'none'; // stop button not applicable for async
+  if (stop) stop.style.display = 'none';
 
   try {
     // POST returns in ~1 sec — backend immediately schedules a 1-min trigger
     const res = await fetch(PORTFOLIO_WEBAPP_URL, {
       method:  'POST',
       headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-      body:    JSON.stringify({ action: 'runManualScreener' }),
+      body:    JSON.stringify({ action }),
       signal:  AbortSignal.timeout(15000) // 15s — just for the queue response
     });
 
@@ -11297,7 +11322,7 @@ async function runScreenerNow() {
       // Screener is queued — start progress bar and poll for completion
       _startProgressBar();
       if (btn) btn.innerHTML = '⏳ Running…';
-      showNotification('✅ Screener queued — runs in ~1 min. Auto-refreshing every 30s…', 'success');
+      showNotification(`✅ ${label} screener queued — runs in ~1 min. Auto-refreshing every 30s…`, 'success');
       _pollForNewRun((portfolioState?.screenerRuns || []).length);
     } else {
       const errMsg = (json && (json.error || json.message)) || 'Unknown error';
