@@ -4745,6 +4745,10 @@ async function loadAllRatings(){
     <span id="tsxMarketDot" class="market-dot-closed">●</span>
     TSX Market: <strong id="tsxMarketStatus">Closed</strong>
   </div>
+  <div class="stat">
+    <span id="nseMarketDot" class="market-dot-closed">●</span>
+    NSE Market: <strong id="nseMarketStatus">Closed</strong>
+  </div>
   <span class="stat-divider">|</span>
   <div class="stat">Regime: <strong id="regimeStatus" style="color:#8aaccc">—</strong></div>
   <div class="stat">Last run: <strong id="lastRunStat">never</strong></div>
@@ -10500,16 +10504,23 @@ function _renderRunLog() {
     tbody.innerHTML = '<tr><td colspan="9" class="empty">No runs yet</td></tr>';
     return;
   }
-  tbody.innerHTML = runs.map(r => `<tr>
-    <td>${_fmtDate(r.date)}</td>
-    <td>${_fmtTime(r.time)}</td>
-    <td>${r.athCount||0}</td><td>${r.swingCount||0}</td>
-    <td><span class="badge-profit">${r.tradedCount||0}</span></td>
-    <td><span class="badge-pending">${r.pendingCount||0}</span></td>
-    <td><span style="color:#8aaccc">${r.skippedCount||0}</span></td>
-    <td style="font-size:11px">US: ${r.regimeUS||'—'} CA: ${r.regimeTSX||'—'}</td>
-    <td>${r.totalScreened||0}</td>
-  </tr>`).join('');
+  tbody.innerHTML = runs.map(r => {
+    const isIndia = r.market === 'INDIA';
+    const regimeCell = isIndia
+      ? `<span style="color:#f5a623">🇮🇳</span> NSE: ${r.regimeNifty||'—'} VIX: ${r.indiaVix||'—'}`
+      : `US: ${r.regimeUS||'—'} CA: ${r.regimeTSX||'—'}`;
+    const rowStyle = isIndia ? 'background:rgba(245,166,35,.04);' : '';
+    return `<tr style="${rowStyle}">
+      <td>${_fmtDate(r.date)}</td>
+      <td>${_fmtTime(r.time)}</td>
+      <td>${r.athCount||0}</td><td>${r.swingCount||0}</td>
+      <td><span class="badge-profit">${r.tradedCount||0}</span></td>
+      <td><span class="badge-pending">${r.pendingCount||0}</span></td>
+      <td><span style="color:#8aaccc">${r.skippedCount||0}</span></td>
+      <td style="font-size:11px">${regimeCell}</td>
+      <td>${r.totalScreened||0}</td>
+    </tr>`;
+  }).join('');
 }
 
 // ─── SCHEDULE INFO ────────────────────────────────────────────────────────────
@@ -11397,6 +11408,38 @@ function _buildTSXHolidays(year) {
   return [...base, ...extra];
 }
 const TSX_HOLIDAYS = new Set([2024,2025,2026,2027].flatMap(y => _buildTSXHolidays(y)));
+
+// NSE holidays (IST, yyyy-MM-dd). 2025 official; 2026-2028 estimated.
+// Update annually from nseindia.com/resources/exchange-communication-holidays
+const NSE_HOLIDAYS = new Set([
+  // 2025 (official)
+  "2025-02-26","2025-03-14","2025-04-14","2025-04-18","2025-05-01","2025-05-12",
+  "2025-08-15","2025-08-27","2025-10-02","2025-10-20","2025-10-21","2025-11-05","2025-12-25",
+  // 2026 (estimated)
+  "2026-01-26","2026-02-26","2026-03-04","2026-04-03","2026-04-14","2026-05-01","2026-05-20",
+  "2026-09-15","2026-10-02","2026-10-21","2026-11-09","2026-11-10","2026-11-25","2026-12-25",
+  // 2027 (estimated)
+  "2027-01-26","2027-02-17","2027-03-23","2027-03-26","2027-04-14","2027-05-10",
+  "2027-09-03","2027-10-11","2027-10-29","2027-11-04",
+  // 2028 (estimated)
+  "2028-01-26","2028-02-23","2028-03-12","2028-04-14","2028-05-01","2028-08-15",
+  "2028-08-22","2028-10-02","2028-10-17","2028-10-18","2028-11-23","2028-12-25",
+]);
+function isNSEMarketOpen() {
+  const now = new Date();
+  const ist = new Date(now.toLocaleString('en-US', { timeZone: 'Asia/Kolkata' }));
+  if (ist.getDay() === 0 || ist.getDay() === 6) return false;
+  const ymd = `${ist.getFullYear()}-${String(ist.getMonth()+1).padStart(2,'0')}-${String(ist.getDate()).padStart(2,'0')}`;
+  if (NSE_HOLIDAYS.has(ymd)) return false;
+  const mins = ist.getHours() * 60 + ist.getMinutes();
+  return mins >= 555 && mins < 930;  // 9:15 AM – 3:30 PM IST
+}
+function isNSEHolidayToday() {
+  const now = new Date();
+  const ist = new Date(now.toLocaleString('en-US', { timeZone: 'Asia/Kolkata' }));
+  const ymd = `${ist.getFullYear()}-${String(ist.getMonth()+1).padStart(2,'0')}-${String(ist.getDate()).padStart(2,'0')}`;
+  return NSE_HOLIDAYS.has(ymd);
+}
 
 // ── Ticker lists ─────────────────────────────────────────────────────────────
 const SP500_TICKERS = [
@@ -12701,6 +12744,9 @@ function updateStats() {
   document.getElementById('usMarketStatus').textContent = usOpen ? 'Open' : isUSHolidayToday() ? 'Holiday' : 'Closed';
   document.getElementById('tsxMarketDot').className = tsxOpen ? 'market-dot-open' : 'market-dot-closed';
   document.getElementById('tsxMarketStatus').textContent = tsxOpen ? 'Open' : isTSXHolidayToday() ? 'Holiday' : 'Closed';
+  const nseOpen = isNSEMarketOpen();
+  document.getElementById('nseMarketDot').className = nseOpen ? 'market-dot-open' : 'market-dot-closed';
+  document.getElementById('nseMarketStatus').textContent = nseOpen ? 'Open' : isNSEHolidayToday() ? 'Holiday' : 'Closed';
 }
 
 function updateProgress(idx, ticker, total) {
