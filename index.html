@@ -9554,11 +9554,26 @@ function _renderCapitalBar() {
 
   let realized = 0, closedInvested = 0;
   trades.forEach(t => {
+    const isNSE = (t.exchange||'').toUpperCase() === 'NSE';
     if (t.status !== 'live' && t.status !== 'partial') {
-      realized       += parseFloat(t.pnl)      || 0;
-      closedInvested += parseFloat(t.invested)  || 0;
+      // NSE closed: use pnlUSD (USD-converted at close). US/TSX: pnl is already USD.
+      realized       += isNSE ? (parseFloat(t.pnlUSD) || 0) : (parseFloat(t.pnl) || 0);
+      closedInvested += parseFloat(t.invested) || 0;
     } else if ((t.partialExitDone === true || t.partialExitDone === 'true') && t.partialExitPnl != null) {
-      realized += parseFloat(t.partialExitPnl) || 0;
+      // Live partial: NSE convert INR partial pnl using stored fx rate; US/TSX already USD.
+      if (isNSE) {
+        const fx1 = parseFloat(t.partialExitFxRate);
+        realized += fx1 > 0 ? (parseFloat(t.partialExitPnl) / fx1) : 0;
+      } else {
+        realized += parseFloat(t.partialExitPnl) || 0;
+      }
+    }
+    if (isNSE && (t.status === 'live' || t.status === 'partial')) {
+      // Stage 2 partial for live NSE trades
+      if ((t.partial2Done === true || t.partial2Done === 'true') && t.partial2Pnl != null) {
+        const fx2 = parseFloat(t.partial2FxRate);
+        realized += fx2 > 0 ? (parseFloat(t.partial2Pnl) / fx2) : 0;
+      }
     }
   });
 
@@ -10445,7 +10460,16 @@ function _renderClosed() {
       <td>${curC}${parseFloat(t.buyPrice||0).toFixed(2)}</td>
       <td>${curC}${parseFloat(t.sellPrice||0).toFixed(2)}${partNote}${slNote}</td>
       <td>${curC}${_fmtUSD(t.invested)}</td>
-      <td class="${cls}">${pnl>=0?'+':'-'}${curC}${_fmtUSD(Math.abs(pnl))}</td>
+      <td class="${cls}">${(() => {
+        const pnlSign = pnl >= 0 ? '+' : '-';
+        const pnlAbs  = _fmtUSD(Math.abs(pnl));
+        if (isNSEClosed && t.pnlUSD) {
+          const usd    = parseFloat(t.pnlUSD);
+          const usdSign = usd >= 0 ? '+' : '-';
+          return `${pnlSign}${curC}${pnlAbs} <small style="color:#8aaccc;font-weight:600">[${usdSign}$${_fmtUSD(Math.abs(usd))} USD]</small>`;
+        }
+        return `${pnlSign}${curC}${pnlAbs}`;
+      })()}</td>
       <td class="${cls}">${pnlPct>=0?'+':''}${pnlPct.toFixed(2)}%</td>
       <td>${reasonBadge}</td>
       <td>${_tvBadge(t.tvRating)}</td>
