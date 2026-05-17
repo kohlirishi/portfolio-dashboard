@@ -13811,6 +13811,34 @@ function ltBuildFavRow(f) {
     + (epsGRaw  == null ? chip(null, 'EPSGr>10%')  : chip(epsGRaw >= 10, 'EPSGr>10%'))
     + (grossRaw == null ? chip(null, 'GrossM>10%') : chip(grossRaw >= 10, 'GrossM>10%'));
 
+  var failingTechChecks = [];
+  if (_s200 != null && !(f.entryPrice > _s200)) failingTechChecks.push('Price>SMA200W');
+  if (_s50  != null && !(f.entryPrice > _s50))  failingTechChecks.push('Price>SMA50W');
+  if (_s50 != null && _s200 != null && !(_s50 > _s200)) failingTechChecks.push('Golden Cross');
+  if (_w52 != null && _s200 != null && !(_w52 >= _s200 * 1.05)) failingTechChecks.push('52WLow>SMA+5%');
+  if (!isTSX && _s50d != null && !(f.entryPrice > _s50d)) failingTechChecks.push('Price>EMA50D');
+  var failingFundChecks = [];
+  if (f.marketCap != null && f.marketCap !== 0 && !(f.marketCap >= mcapThr)) failingFundChecks.push(mcapLabel);
+  if (peRaw    != null && !(peRaw > 0 && peRaw <= 65)) failingFundChecks.push('P/E 0-65');
+  if (f.perf5y != null && f.perf5y !== 0 && !(f.perf5y >= perf5yThr)) failingFundChecks.push(perf5yLbl);
+  if (f.eps    != null && !(f.eps > 0)) failingFundChecks.push('EPS>0');
+  if (revGRaw  != null && !(revGRaw >= 10)) failingFundChecks.push('RevGr>10%');
+  if (roeRaw   != null && !(roeRaw  >= 10)) failingFundChecks.push('ROE>10%');
+  if (epsGRaw  != null && !(epsGRaw >= 10)) failingFundChecks.push('EPSGr>10%');
+  if (grossRaw != null && !(grossRaw >= 10)) failingFundChecks.push('GrossM>10%');
+  var whyDroppedHtml = '';
+  (function() {
+    var parts = [];
+    if (failingTechChecks.length > 0) parts.push('Tech: ' + techRatio + ' &mdash; <span style="color:#f85149">' + failingTechChecks.join(', ') + '</span> failed');
+    if (failingFundChecks.length > 0) parts.push('Fund: ' + fundRatio + ' &mdash; <span style="color:#f85149">' + failingFundChecks.join(', ') + '</span> failed');
+    if (parts.length > 0) {
+      whyDroppedHtml = '<div style="margin-top:10px;padding:8px 10px;background:rgba(248,81,73,.06);border:1px solid rgba(248,81,73,.2);border-radius:6px">'
+        + '<div style="font-size:10px;font-weight:700;color:#f85149;letter-spacing:.5px;text-transform:uppercase;margin-bottom:5px">Why Dropped</div>'
+        + parts.map(function(p) { return '<div style="font-size:11px;color:#8aaccc;margin-bottom:3px">' + p + '</div>'; }).join('')
+        + '</div>';
+    }
+  })();
+
   var expandTd = '<td colspan="13" style="padding:0;border-bottom:2px solid #1e3250">'
     + '<div style="background:#0d1b2a;padding:14px 18px;display:grid;grid-template-columns:1fr 1fr;gap:16px">'
     + '<div>'
@@ -13826,6 +13854,7 @@ function ltBuildFavRow(f) {
     + '<div style="font-size:11px;color:#8aaccc;line-height:1.6">' + aiDetailHtml + '</div>'
     + '</div>'
     + logHtml
+    + whyDroppedHtml
     + '</div>'
     + '</div></td>';
 
