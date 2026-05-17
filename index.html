@@ -10281,23 +10281,27 @@ function _renderLive() {
                        : partial  ? 'S1 done · 2% trail'
                        :            'No stage yet';
 
+    const isNSE = (t.exchange||'').toUpperCase() === 'NSE';
+    const cur   = isNSE ? '₹' : '$';
+
     // Tag line showing completed exits under ticker name
     const partTag = partial2
-      ? `<div style="font-size:10px;color:#e3b341;margin-top:2px">⚡ ${s1Pct}%@$${_fmtUSD(t.partialExitPrice)} · 25%@$${_fmtUSD(t.partial2Price)}</div>`
+      ? `<div style="font-size:10px;color:#e3b341;margin-top:2px">⚡ ${s1Pct}%@${cur}${_fmtUSD(t.partialExitPrice)} · 25%@${cur}${_fmtUSD(t.partial2Price)}</div>`
       : partial
-        ? `<div style="font-size:10px;color:#e3b341;margin-top:2px">⚡ ${s1Pct}% @ $${_fmtUSD(t.partialExitPrice)} (+$${_fmtUSD(partPnl)})</div>`
+        ? `<div style="font-size:10px;color:#e3b341;margin-top:2px">⚡ ${s1Pct}% @ ${cur}${_fmtUSD(t.partialExitPrice)} (+${cur}${_fmtUSD(partPnl)})</div>`
         : '';
 
     // Target display: show next pending stage
     const targets = partial2
-      ? `<span style="color:#3fb950">Final 25% @ $${ft.toFixed(2)} (+8%)</span>`
+      ? `<span style="color:#3fb950">Final 25% @ ${cur}${ft.toFixed(2)} (+8%)</span>`
       : partial
-        ? `<span style="color:#58a6ff">25%→$${pt2.toFixed(2)} (+5%)</span> / <span style="color:#3fb950">$${ft.toFixed(2)} (+8%)</span>`
-        : `<span style="color:#e3b341">50%→$${pt.toFixed(2)} (+3%)</span> / <span style="color:#58a6ff">25%→$${pt2.toFixed(2)}</span> / <span style="color:#3fb950">$${ft.toFixed(2)}</span>`;
+        ? `<span style="color:#58a6ff">25%→${cur}${pt2.toFixed(2)} (+5%)</span> / <span style="color:#3fb950">${cur}${ft.toFixed(2)} (+8%)</span>`
+        : `<span style="color:#e3b341">50%→${cur}${pt.toFixed(2)} (+3%)</span> / <span style="color:#58a6ff">25%→${cur}${pt2.toFixed(2)}</span> / <span style="color:#3fb950">${cur}${ft.toFixed(2)}</span>`;
 
-    const mktState   = window._mktEmaState?.[(t.exchange||'US') === 'TSX' ? 'CA' : 'US'];
-    const isWeakMkt  = mktState && !mktState.above;
-    const weakBadge  = isWeakMkt
+    const _exchKey  = isNSE ? 'IN' : ((t.exchange||'US') === 'TSX' ? 'CA' : 'US');
+    const mktState  = isNSE ? null : window._mktEmaState?.[_exchKey];
+    const isWeakMkt = mktState && !mktState.above;
+    const weakBadge = isWeakMkt
       ? `<div style="display:inline-block;font-size:9px;font-weight:700;color:#d4a017;background:#2a1a00;border:1px solid #d4a01766;border-radius:3px;padding:1px 5px;margin-top:3px">⚠ Weak Mkt</div>`
       : '';
 
@@ -10306,13 +10310,13 @@ function _renderLive() {
       <td>${_typeBadge(t.type)}</td>
       <td>${_pBadge(t.prob)}</td>
       <td style="min-width:80px"><div>${_fmtDate(t.buyDate)}</div><small style="color:#8aaccc">${_fmtTime(t.buyTime)}</small></td>
-      <td>$${bp.toFixed(2)}</td>
-      <td>$${cp.toFixed(2)}<br><small style="color:#8aaccc">${chg>=0?'+':''}${chg.toFixed(2)}%</small></td>
-      <td class="${cls}">${totalUnreal>=0?'+':'-'}$${_fmtUSD(Math.abs(totalUnreal))}</td>
+      <td>${cur}${bp.toFixed(2)}</td>
+      <td>${cur}${cp.toFixed(2)}<br><small style="color:#8aaccc">${chg>=0?'+':''}${chg.toFixed(2)}%</small></td>
+      <td class="${cls}">${totalUnreal>=0?'+':'-'}${cur}${_fmtUSD(Math.abs(totalUnreal))}</td>
       <td class="${cls}">${chg>=0?'+':''}${chg.toFixed(2)}%</td>
       <td style="font-size:12px">${targets}</td>
       <td style="color:#f85149">
-        $${trail.toFixed(2)}
+        ${cur}${trail.toFixed(2)}
         <br><small style="color:${cushionColor};font-weight:600">${cushionPct !== null ? '−' + cushionPct.toFixed(1) + '% cushion' : '—'}</small>
         <br><small style="color:#4a6a8a;font-size:10px">${stageLabel}</small>
       </td>
@@ -10409,8 +10413,10 @@ function _renderClosed() {
     else if (t.exitReason === 'crashexit') reasonBadge = '<span class="badge-crash">🚨 Crash Exit</span>';
     else                                   reasonBadge = '<span class="badge-manual">Manual</span>';
     const s1PctClosed = parseInt(t.partialExitPct) || 50; // 25 in Bull Mode, 50 in Normal Mode
+    const isNSEClosed = (t.exchange||'').toUpperCase() === 'NSE';
+    const curC = isNSEClosed ? '₹' : '$';
     const partNote = (t.partialExitDone===true || t.partialExitDone==='true')
-      ? `<br><small style="color:#e3b341">⚡ ${s1PctClosed}% @ $${_fmtUSD(t.partialExitPrice)} (+$${_fmtUSD(t.partialExitPnl)})</small>` : '';
+      ? `<br><small style="color:#e3b341">⚡ ${s1PctClosed}% @ ${curC}${_fmtUSD(t.partialExitPrice)} (+${curC}${_fmtUSD(t.partialExitPnl)})</small>` : '';
     const name = (window.COMPANY_NAMES && COMPANY_NAMES[t.ticker]) || '';
 
     // SL context shown under sell price for stop-loss exits
@@ -10423,7 +10429,7 @@ function _renderClosed() {
       ? ((closedHigh - closedSell) / closedHigh * 100)
       : null;
     const slNote = isStopExit && fromHighPct !== null
-      ? `<br><small style="color:#8aaccc;font-size:10px">−${fromHighPct.toFixed(1)}% from high $${closedHigh.toFixed(2)}</small>`
+      ? `<br><small style="color:#8aaccc;font-size:10px">−${fromHighPct.toFixed(1)}% from high ${curC}${closedHigh.toFixed(2)}</small>`
       : '';
 
     return `<tr>
@@ -10432,10 +10438,10 @@ function _renderClosed() {
       <td>${_pBadge(t.prob)}</td>
       <td style="white-space:nowrap">${_fmtDate(t.buyDate)}</td>
       <td style="white-space:nowrap">${_fmtDate(t.sellDate||'—')}</td>
-      <td>$${parseFloat(t.buyPrice||0).toFixed(2)}</td>
-      <td>$${parseFloat(t.sellPrice||0).toFixed(2)}${partNote}${slNote}</td>
-      <td>$${_fmtUSD(t.invested)}</td>
-      <td class="${cls}">${pnl>=0?'+':'-'}$${_fmtUSD(Math.abs(pnl))}</td>
+      <td>${curC}${parseFloat(t.buyPrice||0).toFixed(2)}</td>
+      <td>${curC}${parseFloat(t.sellPrice||0).toFixed(2)}${partNote}${slNote}</td>
+      <td>${curC}${_fmtUSD(t.invested)}</td>
+      <td class="${cls}">${pnl>=0?'+':'-'}${curC}${_fmtUSD(Math.abs(pnl))}</td>
       <td class="${cls}">${pnlPct>=0?'+':''}${pnlPct.toFixed(2)}%</td>
       <td>${reasonBadge}</td>
       <td>${_tvBadge(t.tvRating)}</td>
