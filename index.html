@@ -9927,7 +9927,9 @@ async function _fetchPendingCMP() {
     const ticker   = cell.id.replace('pcmp-', '');
     const reclaim  = parseFloat(cell.dataset.reclaim) || 0;
     const exchange = cell.dataset.exchange || 'US';
-    const yhTicker = exchange === 'TSX' ? ticker + '.TO' : exchange === 'NSE' ? ticker + '.NS' : ticker;
+    const yhTicker = exchange === 'TSX' ? ticker + '.TO'
+                  : exchange === 'NSE' ? (ticker.endsWith('.NS') ? ticker : ticker + '.NS')
+                  : ticker;
     const currSymbol = exchange === 'NSE' ? '₹' : '$';
 
     try {
@@ -9970,6 +9972,8 @@ async function _fetchPendingCMP() {
       }
     } catch(e) {
       cell.innerHTML = '<span style="color:#4a6a8a">—</span>';
+      const statusCell = document.getElementById('pstatus-' + ticker);
+      if (statusCell) statusCell.innerHTML = '<span style="color:#4a6a8a;font-size:12px">⚠️ Price unavailable</span>';
     }
   }
 
