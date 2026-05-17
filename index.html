@@ -8999,7 +8999,7 @@ async function _fetchOneBreakout(elId, symbol, label) {
     const pctDiff  = ((price - ema21) / ema21 * 100);
     const pctStr   = (above ? '+' : '') + pctDiff.toFixed(2) + '% vs 21 EMA';
     // Save state globally so live positions + learning notes can read it
-    const stateKey = elId === 'breakout-spx' ? 'US' : elId === 'breakout-tsx' ? 'CA' : null;
+    const stateKey = elId === 'breakout-spx' ? 'US' : elId === 'breakout-tsx' ? 'CA' : elId === 'breakout-nifty' ? 'IN' : null;
     if (stateKey) { window._mktEmaState = window._mktEmaState || {}; window._mktEmaState[stateKey] = { above, price, ema21, pctDiff }; }
     const color    = above ? '#3fb950' : '#f85149';
     const bgColor  = above ? '#071a0f' : '#1a0707';
@@ -9154,6 +9154,7 @@ async function _fetchIndiaVixPanel() {
     const closes = (res.indicators.quote[0].close || []).filter(c => c != null && !isNaN(c));
     if (closes.length < 2) throw new Error('Not enough history');
     const vix      = closes[closes.length - 1];
+    window._indiaVix = vix;   // global — live targets bull mode detection reads this
     const prevClose = closes[closes.length - 2];
     const dayChg   = (vix - prevClose) / prevClose * 100;
     const chgStr   = (dayChg >= 0 ? '+' : '') + dayChg.toFixed(1) + '%';
@@ -10285,9 +10286,16 @@ function _renderLive() {
     const cls        = totalUnreal >= 0 ? 'positive' : 'negative';
     const trail      = parseFloat(t.trailingStop) || 0;
     const partial3   = t.partial3Done === true || t.partial3Done === 'true';
-    const pt         = parseFloat(t.partialTarget) || 0;  // +3% target
-    const ft         = parseFloat(t.finalTarget)   || 0;  // +8% target
-    const pt2        = bp > 0 ? bp * 1.05 : 0;            // +5% target (computed)
+    const pt         = parseFloat(t.partialTarget) || 0;  // +3% target (same in bull/normal)
+    // Bull mode for NSE: India VIX < 20 AND NIFTY above 21 EMA
+    const _niftyAbove  = window._mktEmaState?.IN?.above === true;
+    const _indiaVixVal = typeof window._indiaVix === 'number' ? window._indiaVix : null;
+    const _nseBull     = isNSE && _niftyAbove && _indiaVixVal != null && _indiaVixVal > 0 && _indiaVixVal < 20;
+    const _pt2pct      = _nseBull ? 6 : 5;
+    const _ftpct       = _nseBull ? 9 : 8;
+    const pt2          = bp > 0 ? bp * (1 + _pt2pct / 100) : 0;
+    const ft           = bp > 0 ? bp * (1 + _ftpct  / 100) : 0;
+    const _s1split     = _nseBull ? 25 : 50;  // bull=25% Stage1, normal=50%
 
     // SL cushion: how many % the stock can still fall before stop triggers
     const cushionPct   = (cp > 0 && trail > 0) ? ((cp - trail) / cp * 100) : null;
@@ -10310,12 +10318,12 @@ function _renderLive() {
         ? `<div style="font-size:10px;color:#e3b341;margin-top:2px">⚡ ${s1Pct}% @ ${cur}${_fmtUSD(t.partialExitPrice)} (+${cur}${_fmtUSD(partPnl)})</div>`
         : '';
 
-    // Target display: show next pending stage
+    // Target display: show next pending stage (% labels adapt to bull/normal mode)
     const targets = partial2
-      ? `<span style="color:#3fb950">Final 25% @ ${cur}${ft.toFixed(2)} (+8%)</span>`
+      ? `<span style="color:#3fb950">Final 25% @ ${cur}${ft.toFixed(2)} (+${_ftpct}%)</span>`
       : partial
-        ? `<span style="color:#58a6ff">25%→${cur}${pt2.toFixed(2)} (+5%)</span> / <span style="color:#3fb950">${cur}${ft.toFixed(2)} (+8%)</span>`
-        : `<span style="color:#e3b341">50%→${cur}${pt.toFixed(2)} (+3%)</span> / <span style="color:#58a6ff">25%→${cur}${pt2.toFixed(2)}</span> / <span style="color:#3fb950">${cur}${ft.toFixed(2)}</span>`;
+        ? `<span style="color:#58a6ff">25%→${cur}${pt2.toFixed(2)} (+${_pt2pct}%)</span> / <span style="color:#3fb950">${cur}${ft.toFixed(2)} (+${_ftpct}%)</span>`
+        : `<span style="color:#e3b341">${_s1split}%→${cur}${pt.toFixed(2)} (+3%)</span> / <span style="color:#58a6ff">25%→${cur}${pt2.toFixed(2)}</span> / <span style="color:#3fb950">${cur}${ft.toFixed(2)}</span>`;
 
     const _exchKey  = isNSE ? 'IN' : ((t.exchange||'US') === 'TSX' ? 'CA' : 'US');
     const mktState  = isNSE ? null : window._mktEmaState?.[_exchKey];
