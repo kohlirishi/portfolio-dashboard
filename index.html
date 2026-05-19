@@ -1682,6 +1682,7 @@ table.div-ht tfoot td{padding:10px 14px;font-size:13px;font-weight:700;backgroun
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg>
         Run Rebalance Analysis
       </button>
+      <div id="rb-cache-badge" style="font-size:11px;font-weight:700;border-radius:999px;padding:5px 10px;background:rgba(148,163,184,.08);border:1px solid rgba(148,163,184,.18);color:var(--text3);white-space:nowrap">🔴 No cache · Click Run Rebalance to analyse</div>
     </div>
   </div>
 
@@ -5158,12 +5159,178 @@ let _rbEAICache     = {};   // { [ticker]: verdict } — Section E AI verdicts, 
 let _rbESortState   = 0;    // 0=plP desc (default), 1=HARVEST first, 2=NOACTION first
 let _rbAIBannerDone  = 0;  // completed AI calls (G + F combined) for progress banner
 let _rbAIBannerTotal = 0;  // total AI calls queued for progress banner
+let _rbAIVerdictsForCache = null; // full-run cache batch only; manual single-stock runs leave this null
 (function _rbFAILoadCache() {
   try { const r = localStorage.getItem('rbFAICache'); if (r) Object.assign(_rbFAICache, JSON.parse(r)); } catch(e) {}
 })();
 const _rbScriptUrl  = 'https://script.google.com/macros/s/AKfycbzy9yLFOXBxf8qoEc1O8pQIMXSTwZ3-FGUKIdXa22i-LiGg50qweZls_JrmUpuWxs-euA/exec';
 fetchMonthlyPerformance(); // call here so _rbScriptUrl is already defined
 // Fundamentals fetched via App Script → Yahoo Finance proxy (no API key needed)
+
+async function _rbCacheGet(action) {
+  const resp = await fetch(`${_rbScriptUrl}?action=${encodeURIComponent(action)}&t=${Date.now()}`, { method: 'GET' });
+  const json = await resp.json().catch(() => null);
+  if (!json || !json.ok) throw new Error((json && json.error) || `Cache ${action} failed`);
+  return json;
+}
+
+async function _rbCachePost(action, payload) {
+  const body = JSON.stringify({ action, ...(payload || {}) });
+  try {
+    const resp = await fetch(_rbScriptUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain' },
+      body
+    });
+    const json = await resp.json().catch(() => null);
+    if (!json || !json.ok) throw new Error((json && json.error) || `Cache ${action} failed`);
+    return json;
+  } catch(err) {
+    await fetch(_rbScriptUrl, {
+      method: 'POST',
+      mode: 'no-cors',
+      headers: { 'Content-Type': 'text/plain' },
+      body
+    });
+    return { ok: true, optimistic: true };
+  }
+}
+
+function _rbFormatCacheTimestamp(timestamp) {
+  if (!timestamp) return '';
+  const d = new Date(timestamp);
+  if (isNaN(d.getTime())) return '';
+  return d.toLocaleDateString('en-CA', {
+    weekday: 'short', day: '2-digit',
+    month: 'short', year: 'numeric',
+    hour: '2-digit', minute: '2-digit'
+  });
+}
+
+function _rbSetCacheBadge(state, timestamp, progressText) {
+  const el = document.getElementById('rb-cache-badge');
+  if (!el) return;
+  if (state === 'active') {
+    el.textContent = '🟢 Cached · Last run ' + _rbFormatCacheTimestamp(timestamp);
+    el.style.background = 'rgba(16,208,122,.08)';
+    el.style.borderColor = 'rgba(16,208,122,.28)';
+    el.style.color = 'var(--green)';
+  } else if (state === 'running') {
+    el.textContent = '🔄 Running fresh AI analysis...' + (progressText ? ' ' + progressText : '');
+    el.style.background = 'rgba(91,143,255,.1)';
+    el.style.borderColor = 'rgba(91,143,255,.3)';
+    el.style.color = '#5b8fff';
+  } else {
+    el.textContent = '🔴 No cache · Click Run Rebalance to analyse';
+    el.style.background = 'rgba(148,163,184,.08)';
+    el.style.borderColor = 'rgba(148,163,184,.18)';
+    el.style.color = 'var(--text3)';
+  }
+}
+
+function _rbCacheTicker(stock) {
+  return (stock && (stock.ticker_v || stock.ticker)) || '';
+}
+
+function _rbFindStockByCacheTicker(cacheTicker) {
+  const target = String(cacheTicker || '').trim().toUpperCase();
+  if (!target || typeof ALL === 'undefined') return null;
+  return ALL.find(d =>
+    String(d.ticker_v || '').trim().toUpperCase() === target ||
+    String(d.ticker || '').trim().toUpperCase() === target ||
+    String(d.ticker || '').trim().toUpperCase() === target.split(':').pop()
+  ) || null;
+}
+
+function _rbCacheLabel(section, stock, aiVerdict) {
+  if (section === 'E') {
+    const harvestAmt = stock && parseFloat(stock.curval) > 0 ? (parseFloat(stock.curval) * 0.25).toFixed(2) : '';
+    return aiVerdict === 'HARVEST' ? 'Sell 25% → $' + harvestAmt : 'No Action';
+  }
+  if (section === 'F') {
+    if (aiVerdict === 'YES') return 'Keep in Core SIP — Thesis Intact';
+    if (aiVerdict === 'NO') return 'Move to Watchlist — Stop SIP';
+    return aiVerdict || '';
+  }
+  if (section === 'G') return aiVerdict === 'YES' ? 'Promote to Core SIP' : 'Not suitable for Core SIP';
+  if (section === 'I') return aiVerdict || '';
+  if (section === 'J') return aiVerdict === 'YES' ? 'Keep in Core SIP' : 'Confirm Demote to Watchlist';
+  return aiVerdict || '';
+}
+
+function _rbPushAIVerdictForCache(section, stock, aiVerdict, harvestAmount, verdictLabel) {
+  if (!_rbAIVerdictsForCache || !stock || !aiVerdict || aiVerdict === 'ERROR') return;
+  const fullTicker = _rbCacheTicker(stock);
+  if (!fullTicker) return;
+  _rbAIVerdictsForCache.push({
+    section,
+    ticker: fullTicker,
+    fundName: stock.name || stock.shortName || stock.ticker,
+    aiVerdict,
+    harvestAmount: harvestAmount || '',
+    verdictLabel: verdictLabel || _rbCacheLabel(section, stock, aiVerdict)
+  });
+}
+
+function _rbApplyCachedVerdicts(verdicts) {
+  if (!Array.isArray(verdicts)) return;
+  const now = new Date().toISOString();
+  verdicts.forEach(v => {
+    const section = String(v.section || '').trim().toUpperCase();
+    const stock = _rbFindStockByCacheTicker(v.ticker);
+    if (!stock) return;
+    const ticker = stock.ticker;
+    const raw = String(v.aiVerdict || '').trim().toUpperCase();
+    if (!raw) return;
+
+    if (section === 'E') {
+      _rbEAICache[ticker] = raw;
+      _rbEShowVerdict(ticker, raw);
+    } else if (section === 'F') {
+      _rbFAICache[ticker] = { verdict: raw, analyzedOn: now };
+      _rbShowFAIVerdict(ticker, raw);
+    } else if (section === 'G') {
+      const uid = 'g_' + ticker;
+      const label = v.verdictLabel || _rbCacheLabel('G', stock, raw);
+      const reason = raw === 'YES'
+        ? 'AI Agent said: Promote to Core SIP — suitable for Bi-Weekly SIP investment.'
+        : 'AI Agent said: Not suitable for Core SIP — does not meet SIP criteria right now.';
+      if (!_rbReportCache[uid]) _rbReportCache[uid] = {};
+      _rbReportCache[uid].verdict = label;
+      _rbReportCache[uid].reason = reason;
+      _rbReportCache[uid].analyzedOn = now;
+      _rbVerdicts[uid] = raw === 'YES' ? 'promote' : 'stay';
+      ['promote','onetime','stay'].forEach(vv => {
+        const b = document.getElementById(`vbtn-${vv}-${uid}`);
+        if (b) b.classList.toggle('sel', vv === _rbVerdicts[uid]);
+      });
+      const vEl = document.getElementById('rb-verdict-' + uid);
+      if (vEl) {
+        vEl.style.display = 'block';
+        vEl.innerHTML = `<div style="display:flex;align-items:flex-start;gap:10px">
+          <div style="font-size:18px">${raw === 'YES' ? '🟢' : '🔴'}</div>
+          <div>
+            <div style="font-size:13px;font-weight:700;color:${raw === 'YES' ? 'var(--green)' : 'var(--red)'}">${label}</div>
+            <div style="font-size:12px;color:var(--text2);margin-top:2px">${reason}</div>
+            <div style="font-size:11px;color:var(--text3);margin-top:4px">Source: Rebalance cache · ${_fmtOrdinalDate(new Date(now))}</div>
+          </div>
+        </div>`;
+      }
+    } else if (section === 'I') {
+      _rbIAICache[ticker] = raw;
+      _rbIShowVerdict(ticker, raw);
+    } else if (section === 'J') {
+      _rbJAICache[ticker] = raw;
+      _rbShowJAIVerdict(ticker, raw);
+    }
+  });
+  _rbEUpdateSummaryBar();
+  _rbIUpdateSummaryBar();
+  _rbBuildWatchlistSummaryTable();
+  _rbRefreshPlanWatchlistCard();
+  _rbRefreshCommandStripPromote();
+  _rbUpdateCommandStripAfterAI();
+}
 
 // ── Quarter badge ─────────────────────────────────────────────────────────────
 (function setQuarterBadge() {
@@ -5189,6 +5356,21 @@ function showRebalance() {
   if (!_rbMacroLoaded) fetchMacroAll();
   // Load saved fundamental reports from Google Sheets
   rbLoadReports();
+  _rbRefreshCacheBadge();
+}
+
+async function _rbRefreshCacheBadge() {
+  try {
+    const cacheCheck = await _rbCacheGet('isCacheValid');
+    if (!cacheCheck.valid) {
+      _rbSetCacheBadge('empty');
+      return;
+    }
+    const cached = await _rbCacheGet('readCachedVerdicts');
+    _rbSetCacheBadge('active', cached.cache && cached.cache.timestamp);
+  } catch(e) {
+    _rbSetCacheBadge('empty');
+  }
 }
 
 // ── Section toggle ────────────────────────────────────────────────────────────
@@ -5604,6 +5786,7 @@ async function _updateWatchlistVerdictWithAI(uid, sym, ticker, reportText) {
     const color    = aiYes ? 'var(--green)' : 'var(--red)';
     const icon     = aiYes ? '🟢' : '🔴';
     const dateStr  = _fmtOrdinalDate(new Date());
+    _rbPushAIVerdictForCache('G', stock, json.verdict, '', verdict);
 
     if (innerEl) {
       innerEl.innerHTML = `
@@ -5688,7 +5871,7 @@ async function rbLoadReports() {
 
 
 // ── Main analysis runner ──────────────────────────────────────────────────────
-function runRebalance() {
+async function runRebalance() {
   if (!ALL || ALL.length === 0) {
     alert('Portfolio data not loaded yet. Go to Dashboard first and wait for it to load, then come back.');
     return;
@@ -5698,38 +5881,74 @@ function runRebalance() {
   btn.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg> Analysing…';
 
   setTimeout(async () => { // allow UI to update
-    try { _doRebalance(); } catch(e) { console.error(e); }
-    btn.disabled = false;
-    btn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg> Re-Run Analysis';
-    document.getElementById('rb-last-run').textContent = 'Last run: ' + new Date().toLocaleTimeString('en-CA', { hour:'2-digit', minute:'2-digit' });
-    document.getElementById('rb-results').style.display = 'block';
-    // Collapse all sections by default — user clicks to expand what they need
-    ['a','b','c','d','e','f','g','h','i','j','plan','prompt'].forEach(id => {
-      const body = document.getElementById('rb-body-' + id);
-      const tog  = document.getElementById('rb-tog-' + id);
-      if (body) body.style.display = 'none';
-      if (tog)  tog.textContent = '▸';
-    });
-    document.getElementById('rb-results').scrollIntoView({ behavior: 'smooth', block: 'start' });
+    try {
+      try { _doRebalance(); } catch(e) { console.error(e); }
+      document.getElementById('rb-last-run').textContent = 'Last run: ' + new Date().toLocaleTimeString('en-CA', { hour:'2-digit', minute:'2-digit' });
+      document.getElementById('rb-results').style.display = 'block';
+      // Collapse all sections by default — user clicks to expand what they need
+      ['a','b','c','d','e','f','g','h','i','j','plan','prompt'].forEach(id => {
+        const body = document.getElementById('rb-body-' + id);
+        const tog  = document.getElementById('rb-tog-' + id);
+        if (body) body.style.display = 'none';
+        if (tog)  tog.textContent = '▸';
+      });
+      document.getElementById('rb-results').scrollIntoView({ behavior: 'smooth', block: 'start' });
 
-    // Auto-fetch fundamentals for watchlist stocks missing a fresh report
-    await _rbAutoFetchWatchlist();
-    // Auto-fetch Yahoo fundamentals for dead weight stocks missing a report
-    await _rbAutoFetchDeadWeight();
-    // Auto-fetch fundamentals for demote candidates (stale > 7 days or missing)
-    // then filter out stocks where fundamentals say Hold — no demotion needed
-    await _rbAutoFetchAndFilterDemote();
-    // Run Section G, F, J, and I AI queues in parallel (each internally sequential with 2s gap)
-    const _watchStocks = (typeof ALL !== 'undefined' ? ALL.filter(d => d.isWatch && (d.type || '').toLowerCase() !== 'etf') : []);
-    const _aiTotalCount = (typeof ALL !== 'undefined' ? ALL.filter(d => d.isWatch).length : 0) +
-      (_rbAnalysisData ? (_rbAnalysisData.deadWeight || []).length : 0) +
-      (_rbAnalysisData ? (_rbAnalysisData.demote || []).length : 0) +
-      _watchStocks.length +
-      (_rbAnalysisData ? (_rbAnalysisData.profitAbove || []).length : 0);
-    _rbAIBannerShow(_aiTotalCount);
-    await Promise.all([_rbAutoRunSectionGAI(), _rbAutoRunSectionFAI(), _rbAutoRunSectionJAI(), _rbAutoRunSectionIAI(), _rbAutoRunSectionEAI()]);
-    _rbAIBannerHide();
-    _rbUpdateCommandStripAfterAI();
+      let cacheValid = false;
+      try {
+        const cacheCheck = await _rbCacheGet('isCacheValid');
+        cacheValid = cacheCheck.valid === true;
+      } catch(cacheErr) {
+        console.warn('[Rebalance Cache] Validity check failed; running fresh AI.', cacheErr);
+      }
+
+      if (cacheValid) {
+        const cached = await _rbCacheGet('readCachedVerdicts');
+        const cachePayload = cached.cache || {};
+        _rbApplyCachedVerdicts(cachePayload.verdicts || []);
+        _rbSetCacheBadge('active', cachePayload.timestamp);
+        if (cachePayload.timestamp) {
+          document.getElementById('rb-last-run').textContent = 'Cached run: ' + _rbFormatCacheTimestamp(cachePayload.timestamp);
+        }
+        return;
+      }
+
+      _rbSetCacheBadge('running');
+      // Auto-fetch fundamentals for watchlist stocks missing a fresh report
+      await _rbAutoFetchWatchlist();
+      // Auto-fetch Yahoo fundamentals for dead weight stocks missing a report
+      await _rbAutoFetchDeadWeight();
+      // Auto-fetch fundamentals for demote candidates (stale > 7 days or missing)
+      // then filter out stocks where fundamentals say Hold — no demotion needed
+      await _rbAutoFetchAndFilterDemote();
+      // Run Section G, F, J, I, and E AI queues in parallel (each internally sequential with 2s gap)
+      const _watchStocks = (typeof ALL !== 'undefined' ? ALL.filter(d => d.isWatch && (d.type || '').toLowerCase() !== 'etf') : []);
+      const _aiTotalCount = (typeof ALL !== 'undefined' ? ALL.filter(d => d.isWatch).length : 0) +
+        (_rbAnalysisData ? (_rbAnalysisData.deadWeight || []).length : 0) +
+        (_rbAnalysisData ? (_rbAnalysisData.demote || []).length : 0) +
+        _watchStocks.length +
+        (_rbAnalysisData ? (_rbAnalysisData.profitAbove || []).length : 0);
+      _rbFAICache = {};
+      _rbJAICache = {};
+      _rbIAICache = {};
+      _rbEAICache = {};
+      try { localStorage.removeItem('rbFAICache'); } catch(e) {}
+      _rbAIVerdictsForCache = [];
+      _rbAIBannerShow(_aiTotalCount);
+      await Promise.all([_rbAutoRunSectionGAI(), _rbAutoRunSectionFAI(), _rbAutoRunSectionJAI(), _rbAutoRunSectionIAI(), _rbAutoRunSectionEAI()]);
+      _rbAIBannerHide();
+      _rbUpdateCommandStripAfterAI();
+      await _rbCachePost('writeCachedVerdicts', { verdicts: _rbAIVerdictsForCache });
+      _rbSetCacheBadge('active', new Date().toISOString());
+    } catch(err) {
+      console.error('[Rebalance]', err);
+      _rbSetCacheBadge('empty');
+      showNotification('⚠ Rebalance analysis hit an error: ' + (err.message || err), 'error');
+    } finally {
+      _rbAIVerdictsForCache = null;
+      btn.disabled = false;
+      btn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg> Re-Run Analysis';
+    }
   }, 80);
 }
 
@@ -6994,6 +7213,7 @@ function _rbAIBannerUpdate(ticker, section) {
   if (textEl) textEl.textContent = label;
   if (barEl)  barEl.style.width  = pct + '%';
   if (pctEl)  pctEl.textContent  = pct + '%';
+  _rbSetCacheBadge('running', null, `(${_rbAIBannerDone} of ${_rbAIBannerTotal} stocks)`);
 }
 
 function _rbAIBannerHide() {
@@ -7078,6 +7298,7 @@ async function _rbAutoRunSectionFAI() {
     const faiEl  = document.getElementById('rb-f-ai-' + d.ticker);
     const verdict = await _rbFAICallGAS(d.ticker, faiEl, d);
     _rbFAISaveAndReport(d.ticker, verdict);
+    _rbPushAIVerdictForCache('F', d, verdict, '', _rbCacheLabel('F', d, verdict));
 
     if (i < deadWeight.length - 1) await new Promise(r => setTimeout(r, 2000));
   }
@@ -7351,6 +7572,7 @@ async function _rbAutoRunSectionJAI() {
       const verdict = await _rbJAICallGAS(d.ticker, d);
       _rbJAICache[d.ticker] = verdict;
       _rbShowJAIVerdict(d.ticker, verdict);
+      _rbPushAIVerdictForCache('J', d, verdict, '', _rbCacheLabel('J', d, verdict));
       _rbAIBannerUpdate(d.ticker, 'J');
     }));
     if (i + BATCH < demote.length) await new Promise(r => setTimeout(r, 2000));
@@ -7452,6 +7674,8 @@ async function rbRemoveFromWatchlist(ticker, fundName, btnEl) {
     cancelBtn.disabled     = true;
 
     try {
+      await _rbCacheGet('clearRebalanceCache').catch(err => console.warn('[Rebalance Cache] Clear before remove failed:', err));
+      _rbSetCacheBadge('empty');
       const rmUrl = `${_rbScriptUrl}?action=removeFromWatchlist&fundName=${encodeURIComponent(fundName)}&t=${Date.now()}`;
       let json = null;
 
@@ -7558,6 +7782,8 @@ async function rbPromoteToCoreSIP(ticker, fundName, btnEl) {
     const ptcUrl = `${_rbScriptUrl}?action=promoteToCoreSIP&fundName=${encodeURIComponent(fundName)}&monthlyCAD=${encodeURIComponent(amt)}&t=${Date.now()}`;
     let json = null;
     try {
+      await _rbCacheGet('clearRebalanceCache').catch(err => console.warn('[Rebalance Cache] Clear before promote failed:', err));
+      _rbSetCacheBadge('empty');
       try {
         const resp = await fetch(ptcUrl, { method: 'GET' });
         const text = await resp.text();
@@ -7740,6 +7966,7 @@ async function _rbAutoRunSectionIAI() {
       const verdict = await _rbIAICallGAS(d.ticker, d);
       _rbIAICache[d.ticker] = verdict;
       _rbIShowVerdict(d.ticker, verdict);
+      _rbPushAIVerdictForCache('I', d, verdict, '', _rbCacheLabel('I', d, verdict));
       _rbAIBannerUpdate(d.ticker, 'I');
     }));
     if (i + BATCH < stocks.length) await new Promise(r => setTimeout(r, 2000));
@@ -8096,6 +8323,8 @@ async function _rbAutoRunSectionEAI() {
       const verdict = await _rbEAICallGAS(d.ticker, d);
       _rbEAICache[d.ticker] = verdict;
       _rbEShowVerdict(d.ticker, verdict);
+      const harvestAmt = verdict === 'HARVEST' && parseFloat(d.curval) > 0 ? (parseFloat(d.curval) * 0.25).toFixed(2) : '';
+      _rbPushAIVerdictForCache('E', d, verdict, harvestAmt, _rbCacheLabel('E', d, verdict));
       _rbAIBannerUpdate(d.ticker, 'E');
     }));
     if (i + BATCH < stocks.length) await new Promise(r => setTimeout(r, 2000));
