@@ -5992,6 +5992,16 @@ async function _rbAutoFetchAndFilterDemote() {
     console.log('[AutoFetch] Fetching demote fundamentals for ' + toFetch.length + ' stock(s)…');
     for (let i = 0; i < toFetch.length; i++) {
       const d = toFetch[i];
+      // ETFs have no meaningful fundamentals — fetching hangs or returns empty data.
+      // Bypass the fundamentals fetch and call AI directly with available market data.
+      const _isEtfOrFund = d.type === 'ETF'
+        || _rbIsBroadIndexFund(d)
+        || /\b(ETF|Trust|Funds?|Index)\b/i.test(d.shortName || d.name || '');
+      if (_isEtfOrFund) {
+        console.log('[AutoFetch] ETF/Fund detected — skipping fundamentals, queuing direct AI: ' + d.ticker);
+        _rbRunSectionJAIForETF(d); // fire-and-forget; runner later finds cache set → re-renders
+        continue;
+      }
       if (lastRunEl) lastRunEl.textContent = `Checking fundamentals: ${d.ticker} (${i+1}/${toFetch.length})…`;
       try {
         await rbFetchFundamentals('j_' + d.ticker, d.ticker, 'core', d.ticker_v || d.ticker);
@@ -7626,6 +7636,21 @@ async function _rbAutoRunSectionJAI() {
   console.log('[AutoAI-J] Section J AI complete.');
 }
 
+// ── ETF fast-path: skip fundamentals fetch, go straight to AI ────────────────
+async function _rbRunSectionJAIForETF(d) {
+  const ticker = d.ticker || '';
+  if (_rbJAICache[ticker]) {
+    _rbShowJAIVerdict(ticker, _rbJAICache[ticker]);
+    _rbAIBannerUpdate(ticker, 'J');
+    return;
+  }
+  const verdict = await _rbJAICallGAS(ticker, d);
+  _rbJAICache[ticker] = verdict;
+  _rbShowJAIVerdict(ticker, verdict);
+  _rbPushAIVerdictForCache('J', d, verdict, '', _rbCacheLabel('J', d, verdict));
+  _rbAIBannerUpdate(ticker, 'J');
+}
+
 // ── Section I: Watchlist Cleanup Advisor ─────────────────────────────────────
 
 function _rbIAIVerdictBadge(ticker, verdict) {
@@ -8743,7 +8768,7 @@ function _rbRenderCommandStrip(deadWeight, profitAbove, planReport, watch, promo
   // Set grid columns dynamically based on visible card count
   const numCards = (dwNeedingReport.length > 0 ? 1 : 0) + 1 + (planReport.length > 0 ? 1 : 0) + 1 + 1
     + (faiNoStocks.length > 0 ? 1 : 0) + (groupBorderline.length > 0 ? 1 : 0) + (groupB.length > 0 ? 1 : 0)
-    + (_iStocks.length > 0 ? 1 : 0);
+    + (_iStocks.length > 0 ? 1 : 0) + (demote.length > 0 ? 1 : 0);
   const gridEl = document.getElementById('cs-cards-grid');
   gridEl.style.gridTemplateColumns = `repeat(${Math.min(numCards, 3)}, 1fr)`;
 
@@ -8756,6 +8781,13 @@ function _rbRenderCommandStrip(deadWeight, profitAbove, planReport, watch, promo
     top3Card +
     borderlineCard +
     waitCard +
+    (demote.length > 0 ? mkCard('cs-card-amber', '↓', demote.length,
+      'Core → Watchlist — Demote Candidates (Sect. J)',
+      demote.map(d => {
+        const cached = _rbReportCache['j_' + d.ticker] || _rbReportCache['c_' + d.ticker] || {};
+        const tag = /exit/i.test(cached.verdict || '') ? 'Sect. J — exit flagged' : 'Sect. J — review needed';
+        return { name: d.shortName || d.ticker, tag };
+      }), 'J') : '') +
     watchlistActionsCard;
 
   // ── Movement block — only visible when there are actual demotion candidates ──
