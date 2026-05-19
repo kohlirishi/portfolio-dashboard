@@ -5248,6 +5248,16 @@ function _rbIsManagedBankFund(stock) {
   if (name.includes('SCOTIA') && (name.includes('FUND') || name.includes('SERIES'))) return true;
   return false;
 }
+function _rbIsEtfAsset(d) {
+  if (!d) return false;
+  const name   = String(d.shortName || d.name || d.fundName || '').toUpperCase();
+  const ticker = String(d.ticker || d.symbol || '').toUpperCase();
+  if (d.type === 'ETF') return true;
+  if (_rbIsBroadIndexFund(d)) return true;
+  if (/\b(ETF|TRUST|FUND|INDEX)\b/.test(name)) return true;
+  if (/(ISHARES|VANGUARD|SPDR|INVESCO|VANECK|GLOBAL X|PROSHARES|ABRDN|WISDOMTREE|DIREXION|ARK |SCHWAB)/i.test(name)) return true;
+  return false;
+}
 
 function _rbFindStockByCacheTicker(cacheTicker) {
   const target = String(cacheTicker || '').trim().toUpperCase();
@@ -5992,14 +6002,10 @@ async function _rbAutoFetchAndFilterDemote() {
     console.log('[AutoFetch] Fetching demote fundamentals for ' + toFetch.length + ' stock(s)…');
     for (let i = 0; i < toFetch.length; i++) {
       const d = toFetch[i];
-      // ETFs have no meaningful fundamentals — fetching hangs or returns empty data.
-      // Bypass the fundamentals fetch and call AI directly with available market data.
-      const _isEtfOrFund = d.type === 'ETF'
-        || _rbIsBroadIndexFund(d)
-        || /\b(ETF|Trust|Funds?|Index)\b/i.test(d.shortName || d.name || '');
-      if (_isEtfOrFund) {
-        console.log('[AutoFetch] ETF/Fund detected — skipping fundamentals, queuing direct AI: ' + d.ticker);
-        _rbRunSectionJAIForETF(d); // fire-and-forget; runner later finds cache set → re-renders
+      if (_rbIsManagedBankFund(d)) continue;
+      if (_rbIsEtfAsset(d)) {
+        console.log('[AutoFetch] ETF detected — bypassing fundamentals, running AI directly: ' + d.ticker);
+        await _rbRunSectionJAIForETF(d);
         continue;
       }
       if (lastRunEl) lastRunEl.textContent = `Checking fundamentals: ${d.ticker} (${i+1}/${toFetch.length})…`;
@@ -8266,6 +8272,68 @@ function _rbEShowVerdict(ticker, verdict) {
   const cell = document.getElementById('rb-e-cell-' + ticker);
   if (cell) cell.innerHTML = _rbEAIVerdictBadge(ticker, verdict);
   _rbEUpdateSummaryBar();
+  _rbUpdateProfitAboveCard();
+}
+
+function _rbBuildProfitAboveCard(profitAbove) {
+  const withVerdict = profitAbove.filter(d => _rbEAICache[d.ticker] && _rbEAICache[d.ticker] !== '');
+  const isAIRun = withVerdict.length > 0;
+
+  const harvestStocks = profitAbove.filter(d => _rbEAICache[d.ticker] === 'HARVEST');
+  const failedStocks  = profitAbove.filter(d => {
+    const v = _rbEAICache[d.ticker];
+    return v && v !== 'HARVEST' && v !== 'NOACTION';
+  });
+  const noActionCount = profitAbove.length - harvestStocks.length - failedStocks.length;
+
+  let inner = '';
+  if (!isAIRun) {
+    // STATE A — no verdicts yet, show top 5 by P/L
+    const stateAItems = profitAbove.slice(0, 5)
+      .map(d => `<div class="cs-card-item"><span class="cs-card-item-name">${d.ticker}</span><span class="cs-card-item-tag">+${d.plP.toFixed(0)}%</span></div>`)
+      .join('');
+    const moreA = profitAbove.length > 5 ? `<div class="cs-card-more">+${profitAbove.length - 5} more · see Section E</div>` : '';
+    inner = stateAItems + moreA;
+  } else if (harvestStocks.length === 0 && failedStocks.length === 0) {
+    // STATE C — all clear
+    inner = `<div class="cs-card-item"><span style="color:var(--green);font-weight:600">✅ All ${profitAbove.length} reviewed — No action required</span></div>
+      <div class="cs-card-more">· see Section E for full details</div>`;
+  } else {
+    // STATE B — show harvest + failed groups
+    if (harvestStocks.length > 0) {
+      inner += `<div style="font-size:10px;color:#3d9fff;font-weight:700;margin:4px 0 2px">🔵 HARVEST (${harvestStocks.length})</div>`;
+      inner += harvestStocks.map(d => {
+        const harvest = parseFloat(d.curval) > 0 ? '~' + fmtUSD(parseFloat(d.curval) * 0.25) : '';
+        const tag = 'Sell 25%' + (harvest ? ' · ' + harvest : '');
+        return `<div class="cs-card-item"><span class="cs-card-item-name">${d.ticker} +${d.plP.toFixed(0)}%</span><span class="cs-card-item-tag" style="color:#3d9fff">${tag}</span></div>`;
+      }).join('');
+    }
+    if (failedStocks.length > 0) {
+      inner += `<div style="font-size:10px;color:#f59e0b;font-weight:700;margin:4px 0 2px">⚠️ FAILED (${failedStocks.length})</div>`;
+      inner += failedStocks.map(d =>
+        `<div class="cs-card-item"><span class="cs-card-item-name">${d.ticker} +${d.plP.toFixed(0)}%</span><span class="cs-card-item-tag" style="color:#f59e0b">AI failed · rerun needed</span></div>`
+      ).join('');
+    }
+    if (noActionCount > 0) {
+      inner += `<div class="cs-card-item" style="margin-top:4px"><span style="color:var(--green);font-size:11px">✅ ${noActionCount} stock${noActionCount !== 1 ? 's' : ''}: No Action</span></div>`;
+    }
+    inner += `<div class="cs-card-more">· see Section E for full details</div>`;
+  }
+
+  return `<div class="cs-card cs-card-green" id="cs-profit-above-card">
+    <div class="cs-card-icon">↗</div>
+    <div class="cs-card-count">${profitAbove.length}</div>
+    <div class="cs-card-label">Positions Above +20% — Review for Overweight</div>
+    <div class="cs-card-items">${inner}</div>
+  </div>`;
+}
+
+function _rbUpdateProfitAboveCard() {
+  const cardEl = document.getElementById('cs-profit-above-card');
+  if (!cardEl) return;
+  const profitAbove = _rbAnalysisData ? (_rbAnalysisData.profitAbove || []) : [];
+  if (profitAbove.length === 0) return;
+  cardEl.outerHTML = _rbBuildProfitAboveCard(profitAbove);
 }
 
 function _rbEUpdateSummaryBar() {
@@ -8638,8 +8706,8 @@ function _rbRenderCommandStrip(deadWeight, profitAbove, planReport, watch, promo
   // Card 1 — Dead Weight (F) needing reports
   const card1Items = dwNeedingReport.map(d => ({ name: d.shortName, tag: 'report needed' }));
 
-  // Card 2 — Positions Above +20% (E)
-  const card2Items = profitAbove.map(d => ({ name: d.ticker, tag: '+' + d.plP.toFixed(0) + '%' }));
+  // Card 2 — Positions Above +20% (E) — 3-state: no AI / harvest+failed / all clear
+  const card2Html = _rbBuildProfitAboveCard(profitAbove);
 
   // Card 3 — Fundamental Reports Blocked (planReport already has: stocksDown(C) + dw(F) + demote(J))
   const card3Items = [
@@ -8775,7 +8843,7 @@ function _rbRenderCommandStrip(deadWeight, profitAbove, planReport, watch, promo
   gridEl.innerHTML =
     card6Html +
     (dwNeedingReport.length > 0 ? mkCard('cs-card-amber', '⚠', dwNeedingReport.length, 'Dead Weight — Fundamental Report Required', card1Items, 'F') : '') +
-    mkCard('cs-card-green',  '↗',  profitAbove.length,   'Positions Above +20% — Review for Overweight',         card2Items, 'E') +
+    card2Html +
     (planReport.length > 0 ? mkCard('cs-card-blue', '◎', planReport.length, 'Reports Needed Before Any Move — Check Sect. F & J', card3ItemsFiltered, 'F/J') : '') +
     mkCard('cs-card-purple', '☆',  promoteToCore.length, card4Label,                                             card4Items, 'G') +
     top3Card +
