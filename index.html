@@ -5241,6 +5241,13 @@ function _rbIsBroadIndexFund(stock) {
   if (/INDEX FUND/.test(name) && /NIFTY/.test(name)) return true;
   return false;
 }
+function _rbIsManagedBankFund(stock) {
+  if (!stock) return false;
+  const name = String(stock.shortName || stock.name || '').toUpperCase();
+  if (name.includes('CIBC')) return true;
+  if (name.includes('SCOTIA') && (name.includes('FUND') || name.includes('SERIES'))) return true;
+  return false;
+}
 
 function _rbFindStockByCacheTicker(cacheTicker) {
   const target = String(cacheTicker || '').trim().toUpperCase();
@@ -5904,6 +5911,11 @@ async function runRebalance() {
       });
       document.getElementById('rb-results').scrollIntoView({ behavior: 'smooth', block: 'start' });
 
+      if (!window._rbCacheBustedV2) {
+        window._rbCacheBustedV2 = true;
+        try { await _rbCacheGet('clearRebalanceCache'); } catch(e) { console.warn('[Cache] v2 bust failed:', e); }
+      }
+
       let cacheValid = false;
       try {
         const cacheCheck = await _rbCacheGet('isCacheValid');
@@ -6455,7 +6467,7 @@ function _doRebalance() {
       )).join('');
 
   // ── SECTION E: Profit booking >20% ───────────────────────────────────────
-  const profitAbove = main.filter(d => d.plP !== null && d.plP > 20).sort((a, b) => b.plP - a.plP);
+  const profitAbove = main.filter(d => !_rbIsManagedBankFund(d) && d.plP !== null && d.plP > 20).sort((a, b) => b.plP - a.plP);
   document.getElementById('rb-e-badge').textContent = profitAbove.length > 0 ? `${profitAbove.length} Positions` : 'None';
   document.getElementById('rb-e-badge').className   = 'rb-sec-badge ' + (profitAbove.length > 0 ? 'rb-badge-info' : 'rb-badge-ok');
 
@@ -6517,6 +6529,7 @@ function _doRebalance() {
 
   // ── SECTION F: Dead weight ────────────────────────────────────────────────
   const deadWeight = main.filter(d => !_rbIsBroadIndexFund(d)
+    && !_rbIsManagedBankFund(d)
     && d.ytd !== null && d.ytd < 0
     && d.s30d !== null && d.s30d < 0);
 
@@ -6568,7 +6581,7 @@ function _doRebalance() {
       )).join('');
 
   // ── SECTION G: Watchlist Promotion ───────────────────────────────────────
-  const watchStocks = watch;
+  const watchStocks = watch.filter(d => !_rbIsManagedBankFund(d));
   document.getElementById('rb-g-badge').textContent = `${watchStocks.length} Asset${watchStocks.length !== 1 ? 's' : ''} in Watchlist`;
   document.getElementById('rb-g-badge').className   = 'rb-sec-badge rb-badge-purple';
 
@@ -6650,7 +6663,7 @@ function _doRebalance() {
     </div>`;
 
   // ── SECTION I: Watchlist Cleanup Advisor ─────────────────────────────────
-  const watchStocksI = watch;
+  const watchStocksI = watch.filter(d => !_rbIsManagedBankFund(d));
   document.getElementById('rb-i-badge').textContent = watchStocksI.length > 0 ? `${watchStocksI.length} Asset${watchStocksI.length !== 1 ? 's' : ''}` : '—';
   document.getElementById('rb-i-badge').className   = 'rb-sec-badge ' + (watchStocksI.length > 0 ? 'rb-badge-info' : 'rb-badge-ok');
 
@@ -6719,6 +6732,7 @@ function _doRebalance() {
   const demote  = [];   // core → consider moving to watchlist
 
   for (const d of watch) {
+    if (_rbIsManagedBankFund(d)) continue;
     const cachedVerdict = (_rbReportCache['g_' + d.ticker] || {}).verdict || '';
     const hasFundamentalsPromote = /promote to core sip/i.test(cachedVerdict);
     const hasSignal = (d.recommend === 'Buy') || (d.s30d !== null && d.s30d > 0);
@@ -6727,9 +6741,8 @@ function _doRebalance() {
     }
   }
   for (const d of main) {
-    if (_rbIsBroadIndexFund(d)) {
-      continue;
-    }
+    if (_rbIsBroadIndexFund(d)) continue;
+    if (_rbIsManagedBankFund(d)) continue;
     if (d.recommend === 'Sell' && (d.sip || 0) > 0) {
       demote.push({ ...d, reason: 'Sell signal while SIP is active — consider stopping SIP and moving to Watchlist' });
     } else if (d.recommend === 'Sell' && (d.sip || 0) === 0 && d.ytd !== null && d.ytd < -10 && d.s30d !== null && d.s30d < -5) {
@@ -8610,7 +8623,7 @@ function _rbRenderCommandStrip(deadWeight, profitAbove, planReport, watch, promo
   ].slice(0, MAX + 4);
 
   // Card 4 — Ready to Promote (AI verdict = promote), sorted by score high→low
-  const promoteToCore = watch.filter(d => /promote to core sip/i.test((_rbReportCache['g_' + d.ticker] || {}).verdict || ''));
+  const promoteToCore = watch.filter(d => !_rbIsManagedBankFund(d) && /promote to core sip/i.test((_rbReportCache['g_' + d.ticker] || {}).verdict || ''));
 
   // Score all promoted stocks upfront — reused for card4 display and all top-picks panels
   const allScored = promoteToCore
