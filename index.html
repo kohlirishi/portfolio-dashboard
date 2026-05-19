@@ -5232,6 +5232,16 @@ function _rbCacheTicker(stock) {
   return (stock && (stock.ticker_v || stock.ticker)) || '';
 }
 
+function _rbIsBroadIndexFund(stock) {
+  if (!stock) return false;
+  const sym = String((stock.ticker_v || stock.ticker || '').split(':').pop()).toUpperCase();
+  const name = String(stock.name || stock.shortName || '').toUpperCase();
+  if (['QQQ','TQQQ','SPY','VTI','XEQT','VEQT','VOO','VFV','CIBCN'].includes(sym)) return true;
+  if (/CIBC NASDAQ INDEX|CIBCN/.test(name)) return true;
+  if (/INDEX FUND/.test(name) && /NIFTY/.test(name)) return true;
+  return false;
+}
+
 function _rbFindStockByCacheTicker(cacheTicker) {
   const target = String(cacheTicker || '').trim().toUpperCase();
   if (!target || typeof ALL === 'undefined') return null;
@@ -5743,7 +5753,7 @@ async function _updateWatchlistVerdictWithAI(uid, sym, ticker, reportText) {
     const stock = (typeof ALL !== 'undefined' ? ALL.find(d => d.ticker === ticker) : null) || {};
     const enc = encodeURIComponent;
     const tickerFull = stock.ticker_v || sym || ticker;
-    const pp = `&section=G&tickerFull=${enc(tickerFull)}&inv=${enc(stock.inv ?? '')}&curval=${enc(stock.curval ?? '')}&plP=${enc(stock.plP ?? '')}&s30d=${enc(stock.s30d ?? '')}&ytd=${enc(stock.ytd ?? '')}&sip=${enc(stock.sip ?? '')}`;
+    const pp = `&section=G&tickerFull=${enc(tickerFull)}&fundName=${enc(stock.name || stock.shortName || ticker)}&assetType=${enc(stock.type || '')}&inv=${enc(stock.inv ?? '')}&curval=${enc(stock.curval ?? '')}&plP=${enc(stock.plP ?? '')}&s30d=${enc(stock.s30d ?? '')}&ytd=${enc(stock.ytd ?? '')}&sip=${enc(stock.sip ?? '')}`;
 
     // ── Attempt 1: Mistral primary via Apps Script ───────────────────────────
     _phase = 'Trying Mistral AI…';
@@ -5922,7 +5932,7 @@ async function runRebalance() {
       // then filter out stocks where fundamentals say Hold — no demotion needed
       await _rbAutoFetchAndFilterDemote();
       // Run Section G, F, J, I, and E AI queues in parallel (each internally sequential with 2s gap)
-      const _watchStocks = (typeof ALL !== 'undefined' ? ALL.filter(d => d.isWatch && (d.type || '').toLowerCase() !== 'etf') : []);
+      const _watchStocks = (typeof ALL !== 'undefined' ? ALL.filter(d => d.isWatch) : []);
       const _aiTotalCount = (typeof ALL !== 'undefined' ? ALL.filter(d => d.isWatch).length : 0) +
         (_rbAnalysisData ? (_rbAnalysisData.deadWeight || []).length : 0) +
         (_rbAnalysisData ? (_rbAnalysisData.demote || []).length : 0) +
@@ -6029,7 +6039,7 @@ async function _rbAutoFetchWatchlist() {
     return;
   }
 
-  console.log('[AutoFetch] Fetching fundamentals for ' + needsFetch.length + ' watchlist stock(s)…');
+  console.log('[AutoFetch] Fetching fundamentals for ' + needsFetch.length + ' watchlist asset(s)…');
   const lastRunEl = document.getElementById('rb-last-run');
 
   for (let i = 0; i < needsFetch.length; i++) {
@@ -6160,7 +6170,7 @@ function _rbSortWatchlist(col) {
 function _rbBuildWatchlistSummaryTable() {
   const el = document.getElementById('rb-g-summary');
   if (!el || !_rbAnalysisData) return;
-  let watch = (_rbAnalysisData.watch || []).filter(d => (d.type || '').toLowerCase() !== 'etf').slice();
+  let watch = (_rbAnalysisData.watch || []).slice();
   if (watch.length === 0) { el.innerHTML = ''; return; }
 
   // Verdict sort order: Promote(0) > One-Time(1) > Hold/Stay/Not Suitable(2) > Not Ready(3) > Pending(4)
@@ -6506,7 +6516,7 @@ function _doRebalance() {
   }
 
   // ── SECTION F: Dead weight ────────────────────────────────────────────────
-  const deadWeight = main.filter(d => d.type === 'Stock'
+  const deadWeight = main.filter(d => !_rbIsBroadIndexFund(d)
     && d.ytd !== null && d.ytd < 0
     && d.s30d !== null && d.s30d < 0);
 
@@ -6557,9 +6567,9 @@ function _doRebalance() {
         `<div id="rb-f-ai-${d.ticker}" style="margin-top:8px">${_rbFAIPendingHtml(d.ticker)}</div>`
       )).join('');
 
-  // ── SECTION G: Watchlist Promotion (stocks only — ETFs excluded) ─────────
-  const watchStocks = watch.filter(d => (d.type || '').toLowerCase() !== 'etf');
-  document.getElementById('rb-g-badge').textContent = `${watchStocks.length} Stock${watchStocks.length !== 1 ? 's' : ''} in Watchlist`;
+  // ── SECTION G: Watchlist Promotion ───────────────────────────────────────
+  const watchStocks = watch;
+  document.getElementById('rb-g-badge').textContent = `${watchStocks.length} Asset${watchStocks.length !== 1 ? 's' : ''} in Watchlist`;
   document.getElementById('rb-g-badge').className   = 'rb-sec-badge rb-badge-purple';
 
   document.getElementById('rb-body-g').innerHTML = watchStocks.length === 0
@@ -6640,8 +6650,8 @@ function _doRebalance() {
     </div>`;
 
   // ── SECTION I: Watchlist Cleanup Advisor ─────────────────────────────────
-  const watchStocksI = watch.filter(d => (d.type || '').toLowerCase() !== 'etf');
-  document.getElementById('rb-i-badge').textContent = watchStocksI.length > 0 ? `${watchStocksI.length} Stock${watchStocksI.length !== 1 ? 's' : ''}` : '—';
+  const watchStocksI = watch;
+  document.getElementById('rb-i-badge').textContent = watchStocksI.length > 0 ? `${watchStocksI.length} Asset${watchStocksI.length !== 1 ? 's' : ''}` : '—';
   document.getElementById('rb-i-badge').className   = 'rb-sec-badge ' + (watchStocksI.length > 0 ? 'rb-badge-info' : 'rb-badge-ok');
 
   if (watchStocksI.length === 0) {
@@ -6717,6 +6727,9 @@ function _doRebalance() {
     }
   }
   for (const d of main) {
+    if (_rbIsBroadIndexFund(d)) {
+      continue;
+    }
     if (d.recommend === 'Sell' && (d.sip || 0) > 0) {
       demote.push({ ...d, reason: 'Sell signal while SIP is active — consider stopping SIP and moving to Watchlist' });
     } else if (d.recommend === 'Sell' && (d.sip || 0) === 0 && d.ytd !== null && d.ytd < -10 && d.s30d !== null && d.s30d < -5) {
@@ -6927,10 +6940,18 @@ function rbCopySipPrompt(ticker, btn) {
       'This is a NEW investment decision — the investor does NOT\n' +
       'currently hold this stock in their active SIP.\n' +
       'Evaluate it as a fresh entry at today\'s price and conditions.\n\n' +
-      'YOUR ONLY OUTPUT: YES (promote to Core SIP) or NO (keep on watchlist).\n' +
-      'One word only. No explanation. No punctuation. No emoji.\n\n' +
-      '---\n\n' +
-      'INTERNAL CHECKLIST (run silently, output nothing):\n\n' +
+	      'YOUR ONLY OUTPUT: YES (promote to Core SIP) or NO (keep on watchlist).\n' +
+	      'One word only. No explanation. No punctuation. No emoji.\n\n' +
+	      '---\n\n' +
+	      'ASSET TYPE CONTEXT:\n' +
+	      'If this is an ETF or Index Fund:\n' +
+	      '  - Do NOT evaluate P/E ratio, earnings growth, management quality, or moat.\n' +
+	      '  - DO evaluate: sector/theme trend momentum, AUM growth, expense ratio reasonableness,\n' +
+	      '    whether this fits a long-term SIP strategy, and 5-year sector outlook.\n' +
+	      '  - Thematic ETFs (uranium, bitcoin, AI, healthcare) should only be promoted if sector has\n' +
+	      '    strong multi-year tailwinds, not just recent price spike.\n' +
+	      '  - Broad market ETFs (QQQ, VTI) → promote if investor does not already hold a similar one.\n\n' +
+	      'INTERNAL CHECKLIST (run silently, output nothing):\n\n' +
       'FUNDAMENTALS:\n' +
       '1. Is revenue growing over the last 4 to 8 quarters?\n' +
       '2. Is net profit positive and growing?\n' +
@@ -7018,10 +7039,20 @@ function rbCopySipPrompt(ticker, btn) {
       'This is NOT about whether to buy today.\n' +
       'This is ONLY about whether the underlying business is healthy enough\n' +
       'to keep investing in over the next 10 years.\n\n' +
-      'YOUR ONLY OUTPUT: YES (continue SIP) or NO (stop SIP).\n' +
-      'One word only. No explanation. No punctuation. No emoji.\n\n' +
-      '---\n\n' +
-      'EVALUATE ONLY THESE FUNDAMENTALS (run silently, output nothing):\n\n' +
+	      'YOUR ONLY OUTPUT: YES (continue SIP) or NO (stop SIP).\n' +
+	      'One word only. No explanation. No punctuation. No emoji.\n\n' +
+	      '---\n\n' +
+	      'ASSET TYPE CONTEXT:\n' +
+	      'If this is an ETF or Index Fund:\n' +
+	      '  - Do NOT evaluate company revenue, EPS, management.\n' +
+	      '  - DO evaluate: sector/theme momentum, AUM trend (is the ETF seeing outflows?),\n' +
+	      '    whether the investment thesis for this sector is broken, whether better alternatives exist.\n' +
+	      '  - Niche/thematic ETFs (silver, uranium, bitcoin, single-sector) CAN be dead weight\n' +
+	      '    if their sector thesis has collapsed.\n' +
+	      '  - Broad market ETFs (SPY, QQQ, VTI) are NEVER dead weight — answer YES (continue SIP) always.\n\n' +
+	      'If this is an individual stock:\n' +
+	      '  - Evaluate using standard fundamentals as below.\n\n' +
+	      'EVALUATE ONLY THESE FUNDAMENTALS (run silently, output nothing):\n\n' +
       '1. Is revenue growing or stable over the last 4 to 8 quarters?\n' +
       '2. Is the company profitable with positive net income?\n' +
       '3. Is Debt-to-Equity below 2.0?\n' +
@@ -7124,7 +7155,7 @@ async function _rbFAICallGAS(ticker, aiEl, stock) {
   const enc = encodeURIComponent;
   const tickerFull = (stock && stock.ticker_v) ? stock.ticker_v : ticker; // e.g. TSE:L, NASDAQ:TMUS
   const pp = stock
-    ? `&section=F&tickerFull=${enc(tickerFull)}&inv=${enc(stock.inv ?? '')}&curval=${enc(stock.curval ?? '')}&plP=${enc(stock.plP ?? '')}&s30d=${enc(stock.s30d ?? '')}&ytd=${enc(stock.ytd ?? '')}&sip=${enc(stock.sip ?? '')}`
+    ? `&section=F&tickerFull=${enc(tickerFull)}&fundName=${enc(stock.name || stock.shortName || ticker)}&assetType=${enc(stock.type || '')}&inv=${enc(stock.inv ?? '')}&curval=${enc(stock.curval ?? '')}&plP=${enc(stock.plP ?? '')}&s30d=${enc(stock.s30d ?? '')}&ytd=${enc(stock.ytd ?? '')}&sip=${enc(stock.sip ?? '')}`
     : `&section=F&tickerFull=${enc(tickerFull)}`;
 
   try {
@@ -7235,7 +7266,7 @@ async function _rbAutoRunSectionGAI() {
   if (watch.length === 0) return;
 
   const lastRunEl  = document.getElementById('rb-last-run');
-  console.log('[AutoAI-G] Starting Section G AI for ' + watch.length + ' watchlist stock(s)…');
+  console.log('[AutoAI-G] Starting Section G AI for ' + watch.length + ' watchlist asset(s)…');
 
   for (let i = 0; i < watch.length; i++) {
     const d   = watch[i];
@@ -7358,7 +7389,7 @@ async function _rbJAICallGAS(ticker, stock) {
   const enc = encodeURIComponent;
   const tickerFull = (stock && stock.ticker_v) ? stock.ticker_v : ticker;
   const pp = stock
-    ? `&section=J&tickerFull=${enc(tickerFull)}&inv=${enc(stock.inv ?? '')}&curval=${enc(stock.curval ?? '')}&plP=${enc(stock.plP ?? '')}&s30d=${enc(stock.s30d ?? '')}&ytd=${enc(stock.ytd ?? '')}&sip=${enc(stock.sip ?? '')}`
+    ? `&section=J&tickerFull=${enc(tickerFull)}&fundName=${enc(stock.name || stock.shortName || ticker)}&assetType=${enc(stock.type || '')}&inv=${enc(stock.inv ?? '')}&curval=${enc(stock.curval ?? '')}&plP=${enc(stock.plP ?? '')}&s30d=${enc(stock.s30d ?? '')}&ytd=${enc(stock.ytd ?? '')}&sip=${enc(stock.sip ?? '')}`
     : `&section=J&tickerFull=${enc(tickerFull)}`;
 
   try {
@@ -7848,6 +7879,7 @@ async function _rbIAICallGAS(ticker, stock) {
     const _ytd  = parseFloat(stock.ytd);
     const _s30d = parseFloat(stock.s30d);
     const _hasShares = !isNaN(_inv) && _inv > 0;
+    if (_rbIsBroadIndexFund(stock))                                      return 'KEEP'; // broad index ETF/fund
     if (_hasShares && !isNaN(_plP) && _plP > 0)                           return 'KEEP'; // in profit
     if (!isNaN(_ytd)  && _ytd  > 0)                                       return 'KEEP'; // positive YTD
     if (!isNaN(_s30d) && _s30d > 10)                                      return 'KEEP'; // strong 30d
@@ -7871,7 +7903,7 @@ async function _rbIAICallGAS(ticker, stock) {
   const enc = encodeURIComponent;
   const tickerFull = (stock && stock.ticker_v) ? stock.ticker_v : ticker;
   const pp = stock
-    ? `&section=I&tickerFull=${enc(tickerFull)}&inv=${enc(stock.inv ?? '')}&curval=${enc(stock.curval ?? '')}&plP=${enc(stock.plP ?? '')}&s30d=${enc(stock.s30d ?? '')}&ytd=${enc(stock.ytd ?? '')}&sip=${enc(stock.sip ?? '')}`
+    ? `&section=I&tickerFull=${enc(tickerFull)}&fundName=${enc(stock.name || stock.shortName || ticker)}&assetType=${enc(stock.type || '')}&inv=${enc(stock.inv ?? '')}&curval=${enc(stock.curval ?? '')}&plP=${enc(stock.plP ?? '')}&s30d=${enc(stock.s30d ?? '')}&ytd=${enc(stock.ytd ?? '')}&sip=${enc(stock.sip ?? '')}`
     : `&section=I&tickerFull=${enc(tickerFull)}`;
 
   try {
@@ -7951,7 +7983,7 @@ async function _rbAutoRunSectionIAI() {
   ['DECK', 'SHOP', 'BRK.B'].forEach(t => { delete _rbIAICache[t]; });
   const stocks = data.watchStocksI;
   const lastRunEl = document.getElementById('rb-last-run');
-  console.log('[AutoAI-I] Starting Section I AI for ' + stocks.length + ' watchlist stock(s)…');
+  console.log('[AutoAI-I] Starting Section I AI for ' + stocks.length + ' watchlist asset(s)…');
 
   const BATCH = 3;
   for (let i = 0; i < stocks.length; i += BATCH) {
@@ -7991,8 +8023,13 @@ function rbCopyIPrompt(ticker, btn) {
     'You are a senior equity research analyst with 20+ years\n' +
     'of experience and deep expertise in Peter Lynch-style\n' +
     'fundamental investing.\n\n' +
-    'NOTE: This analysis is for individual stocks only.\n' +
-    'ETFs are excluded from Section I entirely.\n\n' +
+	    'ASSET TYPE CONTEXT:\n' +
+	    'If this is an ETF or Index Fund:\n' +
+	    '  - SELL: Investor holds ETF shares AND sector thesis is completely broken with no recovery expected.\n' +
+	    '  - REMOVE: Investor holds NO shares AND sector no longer deserves monitoring.\n' +
+	    '  - KEEP: Sector thesis still intact OR investor holds shares and loss appears cyclical/temporary.\n' +
+	    '  - Broad market ETFs → always KEEP, never REMOVE.\n' +
+	    '  - Do NOT evaluate individual company fundamentals. Evaluate: sector trend, AUM, thematic outlook.\n\n' +
     'QUESTION:\n' +
     'This stock is on the investor\'s Watchlist.\n' +
     'The investor may or may not hold shares in it.\n' +
@@ -8218,9 +8255,8 @@ async function _rbEAICallGAS(ticker, stock) {
   if (stock) {
     const _plP  = parseFloat(stock.plP);
     const _sym  = ((stock.ticker_v || ticker) + '').split(':').pop().toUpperCase();
-    const _type = (stock.type || '').toUpperCase();
-    // ETFs → always NOACTION
-    if (_type === 'ETF' || _type === 'FUND') return 'NOACTION';
+    // Broad market index funds are long-term core holdings, not harvest candidates.
+    if (_rbIsBroadIndexFund(stock)) return 'NOACTION';
     // P&L under 100% → always NOACTION
     if (!isNaN(_plP) && _plP < 100) return 'NOACTION';
     // Canadian/global banks & income stocks → NOACTION
@@ -8242,7 +8278,7 @@ async function _rbEAICallGAS(ticker, stock) {
   const enc        = encodeURIComponent;
   const tickerFull = (stock && stock.ticker_v) ? stock.ticker_v : ticker;
   const pp = stock
-    ? `&section=E&tickerFull=${enc(tickerFull)}&inv=${enc(stock.inv ?? '')}&curval=${enc(stock.curval ?? '')}&plP=${enc(stock.plP ?? '')}&s30d=${enc(stock.s30d ?? '')}&ytd=${enc(stock.ytd ?? '')}&sip=${enc(stock.sip ?? '')}`
+    ? `&section=E&tickerFull=${enc(tickerFull)}&fundName=${enc(stock.name || stock.shortName || ticker)}&assetType=${enc(stock.type || '')}&inv=${enc(stock.inv ?? '')}&curval=${enc(stock.curval ?? '')}&plP=${enc(stock.plP ?? '')}&s30d=${enc(stock.s30d ?? '')}&ytd=${enc(stock.ytd ?? '')}&sip=${enc(stock.sip ?? '')}`
     : `&section=E&tickerFull=${enc(tickerFull)}`;
 
   try {
@@ -8359,23 +8395,38 @@ function rbCopyEPrompt(ticker, btn) {
     'One word only. No explanation. No punctuation. No emoji.\n\n' +
     '---\n\n' +
     'EVALUATE SILENTLY:\n\n' +
-    'STEP 1 — Classify the stock:\n' +
-    '  CYCLICAL: Technology hardware, semiconductors, storage,\n' +
-    '  memory chips, solar, crypto miners, commodity stocks, materials.\n' +
-    '  COMPOUNDER: Banks, insurance, financials, conglomerates,\n' +
-    '  dividend stocks, pipeline/utility, consumer staples, healthcare.\n' +
-    '  ETF/FUND: Any ETF, index fund, sector fund.\n\n' +
+    'STEP 1 — Classify the asset:\n\n' +
+    '  ETF/INDEX FUND:\n' +
+    '    Any ticker containing ETF, Trust, Index Fund,\n' +
+    '    or known ETF providers: iShares, Vanguard,\n' +
+    '    SPDR, Invesco, VanEck, ProShares, Global X,\n' +
+    '    Schwab, Direxion, ARK, WisdomTree.\n' +
+    '    → ETFs ARE eligible for HARVEST if P&L > +100%.\n' +
+    '    → Use ETF-specific evaluation in Step 2.\n\n' +
+    '  CYCLICAL STOCK:\n' +
+    '    Technology hardware, semiconductors, storage,\n' +
+    '    memory chips, solar, crypto miners, commodity\n' +
+    '    stocks, materials, mining, energy producers.\n\n' +
+    '  COMPOUNDER STOCK:\n' +
+    '    Banks, insurance, financials, conglomerates,\n' +
+    '    dividend stocks, pipeline/utility, consumer\n' +
+    '    staples, healthcare, REIT.\n\n' +
     'STEP 2 — Apply the HARVEST rule:\n' +
     '  HARVEST only if ALL true:\n' +
-    '    1. Asset type is CYCLICAL\n' +
+    '    1. Asset is CYCLICAL STOCK or ETF/INDEX FUND\n' +
     '    2. P&L is above +100% (more than doubled)\n' +
-    '    3. Not a forever-hold type business\n' +
+    '    3. For ETFs: sector trend still broadly upward\n' +
+    '       (if sector is in structural decline at +100%,\n' +
+    '       HARVEST is even more justified)\n' +
+    '    4. Not a broad market index (SPY, QQQ, VTI,\n' +
+    '       CIBCN-type index funds → NOACTION always)\n' +
     '  NOACTION if ANY true:\n' +
-    '    1. Asset type is ETF or FUND — never trim\n' +
-    '    2. Asset type is COMPOUNDER — let it compound\n' +
+    '    1. Asset is a broad market index ETF\n' +
+    '       (SPY, QQQ, VTI, XEQT, or similar)\n' +
+    '    2. Asset is a COMPOUNDER STOCK\n' +
     '    3. P&L is below +100%\n' +
     '    4. Stock pays significant dividend >2% yield\n' +
-    '    5. Peter Lynch: stalwart or slow grower — hold your best positions\n\n' +
+    '       AND is a stalwart/slow grower\n\n' +
     'STEP 3 — Peter Lynch final check:\n' +
     '  Never sell just because it went up. Only reduce if:\n' +
     '    a. Position dangerously concentrated\n' +
@@ -8399,7 +8450,7 @@ function rbCopyEPrompt(ticker, btn) {
     'IF HARVEST — the investor will sell this amount:\n' +
     '  Sell Value = ' + curval + ' × 0.25 = ~$' + harvest + ' USD\n\n' +
     'FINAL OUTPUT RULE:\n' +
-    'HARVEST if: Cyclical stock AND P&L above 100%.\n' +
+    'HARVEST if: Cyclical stock or eligible ETF/Index Fund AND P&L above 100%.\n' +
     'NOACTION for everything else. When in doubt → NOACTION.\n' +
     'One word: HARVEST or NOACTION';
 
@@ -8660,7 +8711,7 @@ function _rbRenderCommandStrip(deadWeight, profitAbove, planReport, watch, promo
     : '';
 
   // Watchlist Actions card (Section I) — shows counts if AI has run, else prompt
-  const _iStocks = (typeof ALL !== 'undefined' ? ALL.filter(d => d.isWatch && (d.type || '').toLowerCase() !== 'etf') : []);
+  const _iStocks = (typeof ALL !== 'undefined' ? ALL.filter(d => d.isWatch) : []);
   const iCounts = _rbIGetCounts(_iStocks);
   const watchlistActionsCard = _iStocks.length > 0
     ? `<div class="cs-card cs-card-blue" style="cursor:pointer" onclick="rbToggleSec('i')">
