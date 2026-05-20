@@ -5287,6 +5287,7 @@ function _rbCacheLabel(section, stock, aiVerdict) {
 
 function _rbPushAIVerdictForCache(section, stock, aiVerdict, harvestAmount, verdictLabel) {
   if (!_rbAIVerdictsForCache || !stock || !aiVerdict || aiVerdict === 'ERROR') return;
+  if (_rbIsManagedBankFund(stock)) return;
   const fullTicker = _rbCacheTicker(stock);
   if (!fullTicker) return;
   _rbAIVerdictsForCache.push({
@@ -5920,11 +5921,6 @@ async function runRebalance() {
         if (tog)  tog.textContent = '▸';
       });
       document.getElementById('rb-results').scrollIntoView({ behavior: 'smooth', block: 'start' });
-
-      if (!window._rbCacheBustedV2) {
-        window._rbCacheBustedV2 = true;
-        try { await _rbCacheGet('clearRebalanceCache'); } catch(e) { console.warn('[Cache] v2 bust failed:', e); }
-      }
 
       let cacheValid = false;
       try {
