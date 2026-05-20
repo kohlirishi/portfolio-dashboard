@@ -5987,6 +5987,7 @@ async function _rbAutoFetchAndFilterDemote() {
 
   const SEVEN_DAYS = 7 * 24 * 3600 * 1000;
   const toFetch = data.demote.filter(d => {
+    if (_rbIsEtfAsset(d)) return false; // ETFs have no fundamentals — AI handles them directly
     const cached = _rbReportCache['j_' + d.ticker] || _rbReportCache['c_' + d.ticker] || {};
     if (!cached.reportText) return true;
     return cached.analyzedOn && (Date.now() - new Date(cached.analyzedOn).getTime() > SEVEN_DAYS);
@@ -6015,7 +6016,9 @@ async function _rbAutoFetchAndFilterDemote() {
   }
 
   // Filter: keep demote only if no verdict OR verdict is Exit (Hold/Recovery = stay in SIP)
+  // ETFs always kept — their verdict comes from AI, not fundamentals
   const demoteFiltered = data.demote.filter(d => {
+    if (_rbIsEtfAsset(d)) return true;
     const cached = _rbReportCache['j_' + d.ticker] || _rbReportCache['c_' + d.ticker] || {};
     if (!cached.verdict) return true;
     return /exit/i.test(cached.verdict);
