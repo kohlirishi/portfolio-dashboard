@@ -10687,6 +10687,7 @@ function _renderLive() {
     const trail      = parseFloat(t.trailingStop) || 0;
     const partial3   = t.partial3Done === true || t.partial3Done === 'true';
     const pt         = parseFloat(t.partialTarget) || 0;  // +3% target (same in bull/normal)
+    const isNSE = (t.exchange||'').toUpperCase() === 'NSE';
     // Bull mode for NSE: India VIX < 20 AND NIFTY above 21 EMA
     const _niftyAbove  = window._mktEmaState?.IN?.above === true;
     const _indiaVixVal = typeof window._indiaVix === 'number' ? window._indiaVix : null;
@@ -10708,7 +10709,6 @@ function _renderLive() {
                        : partial  ? 'S1 done · 2% trail'
                        :            'No stage yet';
 
-    const isNSE = (t.exchange||'').toUpperCase() === 'NSE';
     const cur   = isNSE ? '₹' : '$';
 
     // Tag line showing completed exits under ticker name
