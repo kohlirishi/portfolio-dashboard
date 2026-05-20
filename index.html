@@ -6000,8 +6000,7 @@ async function _rbAutoFetchAndFilterDemote() {
       const d = toFetch[i];
       if (_rbIsManagedBankFund(d)) continue;
       if (_rbIsEtfAsset(d)) {
-        console.log('[AutoFetch] ETF detected — bypassing fundamentals, running AI directly: ' + d.ticker);
-        await _rbRunSectionJAIForETF(d);
+        console.log('[AutoFetch] ETF — skipping fundamentals: ' + d.ticker);
         continue;
       }
       if (lastRunEl) lastRunEl.textContent = `Checking fundamentals: ${d.ticker} (${i+1}/${toFetch.length})…`;
@@ -7614,24 +7613,33 @@ async function _rbAutoRunSectionJAI() {
   const lastRunEl = document.getElementById('rb-last-run');
   console.log('[AutoAI-J] Starting Section J AI for ' + demote.length + ' demote candidate(s)…');
 
-  // Batch max 3 at a time
+  // ETFs: sequential — no fundamentals report needed, direct AI call
+  const etfs   = demote.filter(d => _rbIsEtfAsset(d));
+  // Stocks: batch-3 — fundamentals already fetched by _rbAutoFetchAndFilterDemote
+  const stocks = demote.filter(d => !_rbIsEtfAsset(d));
+
+  for (const d of etfs) {
+    if (lastRunEl) lastRunEl.textContent = `AI Analyzing J (ETF): ${d.ticker}…`;
+    await _rbRunSectionJAIForETF(d);
+  }
+
   const BATCH = 3;
-  for (let i = 0; i < demote.length; i += BATCH) {
-    const batch = demote.slice(i, i + BATCH);
+  for (let i = 0; i < stocks.length; i += BATCH) {
+    const batch = stocks.slice(i, i + BATCH);
     await Promise.all(batch.map(async (d, bi) => {
       if (_rbJAICache[d.ticker]) {
         _rbShowJAIVerdict(d.ticker, _rbJAICache[d.ticker]);
         _rbAIBannerUpdate(d.ticker, 'J');
         return;
       }
-      if (lastRunEl) lastRunEl.textContent = `AI Analyzing J (${i + bi + 1}/${demote.length}): ${d.ticker}…`;
+      if (lastRunEl) lastRunEl.textContent = `AI Analyzing J (${i + bi + 1}/${stocks.length}): ${d.ticker}…`;
       const verdict = await _rbJAICallGAS(d.ticker, d);
       _rbJAICache[d.ticker] = verdict;
       _rbShowJAIVerdict(d.ticker, verdict);
       _rbPushAIVerdictForCache('J', d, verdict, '', _rbCacheLabel('J', d, verdict));
       _rbAIBannerUpdate(d.ticker, 'J');
     }));
-    if (i + BATCH < demote.length) await new Promise(r => setTimeout(r, 2000));
+    if (i + BATCH < stocks.length) await new Promise(r => setTimeout(r, 2000));
   }
 
   if (lastRunEl) lastRunEl.textContent = 'Last run: ' + new Date().toLocaleTimeString('en-CA', { hour: '2-digit', minute: '2-digit' });
