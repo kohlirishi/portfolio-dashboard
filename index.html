@@ -8363,7 +8363,42 @@ function _rbEUpdateSummaryBar() {
   }
 }
 
-async function _rbEAICallGAS(ticker, stock) {
+async function _rbFetchHarvestHistory(ticker) {
+  try {
+    const url  = `${_rbScriptUrl}?action=getHarvestHistory&ticker=${encodeURIComponent(ticker)}`;
+    const resp = await _rbFAIFetchWithTimeout(url, 15000);
+    if (!resp.ok) return [];
+    const json = await resp.json().catch(() => null);
+    return (json && json.ok && Array.isArray(json.history)) ? json.history : [];
+  } catch (e) {
+    console.warn('[HarvestHistory] fetch failed for', ticker, e.message);
+    return [];
+  }
+}
+
+function _rbBuildHarvestContext(history, stock) {
+  if (!history || history.length === 0) return '';
+  const today = new Date();
+  const recent = history.filter(r => r.date && (today - new Date(r.date)) / 86400000 <= 365);
+  if (recent.length === 0) return '';
+  const last       = recent[0];
+  const daysSince  = Math.round((today - new Date(last.date)) / 86400000);
+  const s30d       = parseFloat(stock && stock.s30d) || 0;
+  const lines = [
+    'HARVEST HISTORY FOR THIS STOCK:',
+    `Last partial sell: ${last.date} (${daysSince} days ago), ${last.shares} shares at ${last.sellPrice} ${last.currency}.`,
+  ];
+  if (recent.length > 1) lines.push(`Total harvests in last 12 months: ${recent.length}.`);
+  lines.push(`Current 30-day gain: ${s30d.toFixed(1)}%.`);
+  lines.push('');
+  lines.push('ADJUSTED HARVEST RULES (apply when recent sell history exists):');
+  lines.push('- Last harvest < 180 days ago AND 30-day gain < 5% → NOACTION (position has not recovered enough)');
+  lines.push('- Last harvest < 180 days ago AND 30-day gain ≥ 5% → HARVEST (position has grown again, trim is justified)');
+  lines.push('- Last harvest ≥ 180 days ago → apply standard HARVEST/NOACTION rules above');
+  return lines.join('\n');
+}
+
+async function _rbEAICallGAS(ticker, stock, harvestCtx) {
   // ── Pre-checks: skip AI for clear NOACTION cases ─────────────────────────
   if (stock) {
     const _plP  = parseFloat(stock.plP);
@@ -8390,9 +8425,10 @@ async function _rbEAICallGAS(ticker, stock) {
 
   const enc        = encodeURIComponent;
   const tickerFull = (stock && stock.ticker_v) ? stock.ticker_v : ticker;
+  const hCtx       = harvestCtx ? `&harvestContext=${enc(harvestCtx)}` : '';
   const pp = stock
-    ? `&section=E&tickerFull=${enc(tickerFull)}&fundName=${enc(stock.name || stock.shortName || ticker)}&assetType=${enc(stock.type || '')}&inv=${enc(stock.inv ?? '')}&curval=${enc(stock.curval ?? '')}&plP=${enc(stock.plP ?? '')}&s30d=${enc(stock.s30d ?? '')}&ytd=${enc(stock.ytd ?? '')}&sip=${enc(stock.sip ?? '')}`
-    : `&section=E&tickerFull=${enc(tickerFull)}`;
+    ? `&section=E&tickerFull=${enc(tickerFull)}&fundName=${enc(stock.name || stock.shortName || ticker)}&assetType=${enc(stock.type || '')}&inv=${enc(stock.inv ?? '')}&curval=${enc(stock.curval ?? '')}&plP=${enc(stock.plP ?? '')}&s30d=${enc(stock.s30d ?? '')}&ytd=${enc(stock.ytd ?? '')}&sip=${enc(stock.sip ?? '')}${hCtx}`
+    : `&section=E&tickerFull=${enc(tickerFull)}${hCtx}`;
 
   try {
     let resp = await _rbFAIFetchWithTimeout(
@@ -8434,8 +8470,14 @@ async function rbRunSingleEAI(ticker) {
   delete _rbEAICache[ticker];
   const cell = document.getElementById('rb-e-cell-' + ticker);
   if (cell) cell.innerHTML = `<div id="rb-e-ai-${ticker}" style="display:inline-flex;align-items:center;gap:5px"><span style="color:var(--text3);font-size:11px">🤖 Analysing…</span></div>`;
-  const stock   = (typeof ALL !== 'undefined' ? ALL.find(d => d.ticker === ticker) : null) || null;
-  const verdict = await _rbEAICallGAS(ticker, stock);
+  const stock      = (typeof ALL !== 'undefined' ? ALL.find(d => d.ticker === ticker) : null) || null;
+  const history    = await _rbFetchHarvestHistory(ticker);
+  const harvestCtx = _rbBuildHarvestContext(history, stock);
+  if (history.length > 0) {
+    const el = document.getElementById('rb-e-ai-' + ticker);
+    if (el) el.innerHTML = `<span title="Harvested on ${history[0].date}" style="color:#d97706;font-size:11px">📦 Prev. harvest — checking…</span>`;
+  }
+  const verdict = await _rbEAICallGAS(ticker, stock, harvestCtx);
   _rbEAICache[ticker] = verdict;
   _rbEShowVerdict(ticker, verdict);
 }
@@ -8455,9 +8497,25 @@ async function _rbRunAllSectionEAI() {
 async function _rbAutoRunSectionEAI() {
   const data = _rbAnalysisData;
   if (!data || !data.profitAbove || data.profitAbove.length === 0) return;
-  const stocks   = data.profitAbove;
+  const stocks    = data.profitAbove;
   const lastRunEl = document.getElementById('rb-last-run');
   console.log('[AutoAI-E] Starting Section E AI for ' + stocks.length + ' position(s)…');
+
+  // Step 5: Pre-fetch harvest history for all stocks in parallel, show amber badge early
+  const historyMap = {};
+  await Promise.all(stocks.map(async d => {
+    const history = await _rbFetchHarvestHistory(d.ticker);
+    historyMap[d.ticker] = history;
+    if (history.length > 0) {
+      const el = document.getElementById('rb-e-ai-' + d.ticker);
+      if (el) el.innerHTML = `<span title="Harvested on ${history[0].date}" style="color:#d97706;font-size:11px">📦 Prev. harvest — checking…</span>`;
+    }
+    // Step 6: invalidate stale cache if harvest history exists
+    if (history.length > 0 && _rbEAICache[d.ticker]) {
+      console.log('[AutoAI-E] Invalidating cached verdict for', d.ticker, '— harvest history found');
+      delete _rbEAICache[d.ticker];
+    }
+  }));
 
   const BATCH = 3;
   for (let i = 0; i < stocks.length; i += BATCH) {
@@ -8469,7 +8527,8 @@ async function _rbAutoRunSectionEAI() {
         return;
       }
       if (lastRunEl) lastRunEl.textContent = `AI Analyzing E (${i + bi + 1}/${stocks.length}): ${d.ticker}…`;
-      const verdict = await _rbEAICallGAS(d.ticker, d);
+      const harvestCtx = _rbBuildHarvestContext(historyMap[d.ticker] || [], d);
+      const verdict    = await _rbEAICallGAS(d.ticker, d, harvestCtx);
       _rbEAICache[d.ticker] = verdict;
       _rbEShowVerdict(d.ticker, verdict);
       const harvestAmt = verdict === 'HARVEST' && parseFloat(d.curval) > 0 ? (parseFloat(d.curval) * 0.25).toFixed(2) : '';
