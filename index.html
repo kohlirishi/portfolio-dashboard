@@ -14023,8 +14023,17 @@ function ltBuildFavTable(favs) {
   var withDays = favs.map(function(f) {
     var daysHeld = 0;
     if (f.dateAdded) {
-      var d = new Date(f.dateAdded);
-      if (!isNaN(d.getTime())) daysHeld = Math.max(0, Math.round((today - d) / 86400000));
+      var d = (function(str) {
+        var clean = str.replace(/^\[|\]$/g, '').trim();
+        var parts = clean.split('-');
+        if (parts.length === 3) {
+          var M = {Jan:0,Feb:1,Mar:2,Apr:3,May:4,Jun:5,Jul:6,Aug:7,Sep:8,Oct:9,Nov:10,Dec:11};
+          var day = parseInt(parts[0], 10), mon = M[parts[1]], yr = parseInt(parts[2], 10);
+          if (!isNaN(day) && mon !== undefined && !isNaN(yr)) return new Date(yr, mon, day);
+        }
+        return new Date(clean);
+      })(f.dateAdded);
+      if (d && !isNaN(d.getTime())) daysHeld = Math.max(0, Math.round((today - d) / 86400000));
     }
     var copy = {};
     for (var k in f) copy[k] = f[k];
