@@ -10496,6 +10496,10 @@ async function _ltFetchFavCMP() {
         pctCell.textContent = pctSign + pct.toFixed(2) + '%';
         pctCell.style.color = pctColor;
       }
+
+      // Write back to _ltFavData so sort uses live pctChange, not stale sheet value
+      const favEntry = _ltFavData.find(function(f) { return f.symbol.replace(/\./g, '_') === safe; });
+      if (favEntry) { favEntry.currentPrice = live; favEntry.pctChange = pct; }
     } catch(e) {
       // fail silently — stale value stays until next tick
     }
