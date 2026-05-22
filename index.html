@@ -10458,6 +10458,54 @@ async function _fetchPendingCMP() {
   }
 }
 
+// ─── FAVORITES LIVE PRICE FETCH ──────────────────────────────────────────────
+let _ltFavCmpTimer = null;
+async function _ltFetchFavCMP() {
+  const cells = document.querySelectorAll('[id^="ltfav-now-"]');
+  if (!cells.length) return;
+  const proxy = s => 'https://corsproxy.io/?url=' + encodeURIComponent(s);
+
+  for (const cell of cells) {
+    const safe     = cell.id.replace('ltfav-now-', '');
+    const ticker   = safe.replace(/_/g, '.');
+    const entry    = parseFloat(cell.dataset.entry) || 0;
+    const exchange = (cell.dataset.exchange || 'US').toUpperCase();
+    const currPfx  = cell.dataset.currency || '$';
+
+    const isNSE = exchange.indexOf('NSE') >= 0;
+    const isTSX = exchange.indexOf('TSX') >= 0 || exchange === 'TSE';
+    const yhTicker = isTSX ? (ticker.endsWith('.TO') ? ticker : ticker + '.TO')
+                   : isNSE ? (ticker.endsWith('.NS') ? ticker : ticker + '.NS')
+                   : ticker;
+
+    try {
+      const resp   = await fetch(proxy('https://query2.finance.yahoo.com/v8/finance/chart/' + encodeURIComponent(yhTicker) + '?interval=1m&range=1d'));
+      const json   = await resp.json();
+      const closes = (json.chart?.result?.[0]?.indicators?.quote?.[0]?.close || []).filter(v => v != null);
+      if (!closes.length) { cell.innerHTML = currPfx + entry.toFixed(2) + ' → <span style="color:#4a6a8a">—</span>'; continue; }
+
+      const live     = closes[closes.length - 1];
+      const pct      = entry > 0 ? (live - entry) / entry * 100 : 0;
+      const pctColor = pct >= 0 ? '#3fb950' : '#f85149';
+      const pctSign  = pct >= 0 ? '+' : '';
+
+      cell.innerHTML = currPfx + entry.toFixed(2) + ' → <span style="color:' + pctColor + '">' + currPfx + live.toFixed(2) + '</span>';
+
+      const pctCell = document.getElementById('ltfav-pct-' + safe);
+      if (pctCell) {
+        pctCell.textContent = pctSign + pct.toFixed(2) + '%';
+        pctCell.style.color = pctColor;
+      }
+    } catch(e) {
+      // fail silently — stale value stays until next tick
+    }
+  }
+
+  if (!_ltFavCmpTimer) {
+    _ltFavCmpTimer = setInterval(_ltFetchFavCMP, 60000);
+  }
+}
+
 // ─── LIVE POSITIONS SORT ──────────────────────────────────────────────────────
 // ─── SEARCH / FILTER STATE ────────────────────────────────────────────────────
 let _pendingSearch = '', _pendingTypeF = '', _pendingExchF = '', _pendingDateF = '', _pendingTvF = '';
@@ -13983,6 +14031,7 @@ async function loadLtFavorites() {
     }
     _ltFavData = favs;
     container.innerHTML = ltBuildFavTable(favs);
+    setTimeout(_ltFetchFavCMP, 100);
   } catch(err) {
     container.innerHTML = `<div style="color:#f85149;font-size:13px;text-align:center;padding:20px">Failed to load favorites: ${err.message}</div>`;
   }
@@ -13992,13 +14041,13 @@ function ltSortFavTable(col) {
   if (_ltFavSort.col === col) _ltFavSort.dir *= -1;
   else { _ltFavSort.col = col; _ltFavSort.dir = -1; }
   var container = document.getElementById('ltFavContent');
-  if (container && _ltFavData.length) container.innerHTML = ltBuildFavTable(_ltFavData);
+  if (container && _ltFavData.length) { container.innerHTML = ltBuildFavTable(_ltFavData); setTimeout(_ltFetchFavCMP, 100); }
 }
 
 function ltSetFavCountry(c) {
   _ltFavCountryFilter = c;
   var container = document.getElementById('ltFavContent');
-  if (container && _ltFavData.length) container.innerHTML = ltBuildFavTable(_ltFavData);
+  if (container && _ltFavData.length) { container.innerHTML = ltBuildFavTable(_ltFavData); setTimeout(_ltFetchFavCMP, 100); }
 }
 
 function ltCountryFromExchange(exch) {
@@ -14397,10 +14446,10 @@ function ltBuildFavRow(f) {
     + '<div style="font-size:9px;color:#4a6a8a">days</div></td>'
 
     + '<td ' + td + '>'
-    + '<div style="font-size:11px;color:#8aaccc;white-space:nowrap">' + currPfx + (f.entryPrice || 0).toFixed(2) + ' → ' + currPfx + (f.currentPrice || 0).toFixed(2) + '</div></td>'
+    + '<div id="ltfav-now-' + safe + '" data-entry="' + (f.entryPrice || 0) + '" data-exchange="' + exchRaw + '" data-currency="' + currPfx + '" style="font-size:11px;color:#8aaccc;white-space:nowrap">' + currPfx + (f.entryPrice || 0).toFixed(2) + ' → <span style="color:#4a6a8a">⌛</span></div></td>'
 
     + '<td ' + tdC + '>'
-    + '<span style="font-size:15px;font-weight:700;color:' + pctColor + ';white-space:nowrap">' + pctSign + pct.toFixed(2) + '%</span></td>'
+    + '<span id="ltfav-pct-' + safe + '" style="font-size:15px;font-weight:700;color:' + pctColor + ';white-space:nowrap">' + pctSign + pct.toFixed(2) + '%</span></td>'
 
     + '<td ' + tdC + '>'
     + '<div style="font-size:12px;white-space:nowrap">'
