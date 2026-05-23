@@ -2288,6 +2288,43 @@ function shToggle() {
   btn.textContent = open ? '▲ Minimize' : '▼ Expand';
 }
 
+// Maps sheet col P sector names → canonical heatmap sector names (case-insensitive)
+const SH_SECTOR_ALIASES = {
+  'technology':             'Technology',
+  'information technology': 'Technology',
+  'tech':                   'Technology',
+  'communication services': 'Comm. Services',
+  'communications':         'Comm. Services',
+  'telecommunication':      'Comm. Services',
+  'telecom':                'Comm. Services',
+  'comm. services':         'Comm. Services',
+  'financials':             'Financials',
+  'financial':              'Financials',
+  'financial services':     'Financials',
+  'banking':                'Financials',
+  'healthcare':             'Healthcare',
+  'health care':            'Healthcare',
+  'health':                 'Healthcare',
+  'consumer discretionary': 'Consumer Disc.',
+  'consumer disc.':         'Consumer Disc.',
+  'consumer cyclicals':     'Consumer Disc.',
+  'consumer cyclical':      'Consumer Disc.',
+  'consumer staples':       'Consumer Staples',
+  'consumer defensive':     'Consumer Staples',
+  'industrials':            'Industrials',
+  'industrial':             'Industrials',
+  'energy':                 'Energy',
+  'materials':              'Materials',
+  'basic materials':        'Materials',
+  'real estate':            'Real Estate',
+  'realty':                 'Real Estate',
+  'utilities':              'Utilities',
+};
+
+function _shNormSector(raw) {
+  return SH_SECTOR_ALIASES[(raw || '').trim().toLowerCase()] || null;
+}
+
 function _shColorClass(pct) {
   if (pct >=  5) return 'g3';
   if (pct >=  2) return 'g2';
@@ -2308,6 +2345,14 @@ async function fetchSectorHeatmap() {
   if (!grid) return;
   grid.innerHTML = '<div style="grid-column:1/-1;text-align:center;padding:18px 0;font-size:12px;color:var(--text3)">Loading sector data…</div>';
 
+  // Build set of canonical sector names from active ETF holdings (any country)
+  const investedSectors = new Set(
+    (typeof ALL !== 'undefined' ? ALL : [])
+      .filter(f => !f.isWatch && (f.type || '').toUpperCase() === 'ETF')
+      .map(f => _shNormSector(f.sector))
+      .filter(Boolean)
+  );
+
   const proxy   = s => 'https://corsproxy.io/?url=' + encodeURIComponent(s);
   const cutoff  = Date.now() - 90 * 24 * 60 * 60 * 1000;  // 90 days ago in ms
 
@@ -2317,7 +2362,7 @@ async function fetchSectorHeatmap() {
       const resp = await fetch(proxy(url));
       const json = await resp.json();
       const res  = json.chart?.result?.[0];
-      if (!res) return { etf, name, pct: null };
+      if (!res) return { etf, name, pct: null, invested: investedSectors.has(name) };
 
       const ts     = res.timestamp || [];
       const closes = (res.indicators?.adjclose?.[0]?.adjclose || res.indicators?.quote?.[0]?.close || []);
@@ -2329,12 +2374,12 @@ async function fetchSectorHeatmap() {
       }
       const base = closes[baseIdx];
       const last = closes.filter(v => v != null).slice(-1)[0];
-      if (!base || !last) return { etf, name, pct: null };
+      if (!base || !last) return { etf, name, pct: null, invested: investedSectors.has(name) };
 
       const pct = (last - base) / base * 100;
-      return { etf, name, pct };
+      return { etf, name, pct, invested: investedSectors.has(name) };
     } catch(e) {
-      return { etf, name, pct: null };
+      return { etf, name, pct: null, invested: investedSectors.has(name) };
     }
   }));
 
@@ -2346,15 +2391,19 @@ async function fetchSectorHeatmap() {
     return b.pct - a.pct;
   });
 
-  grid.innerHTML = results.map(({ etf, name, pct }) => {
+  grid.innerHTML = results.map(({ etf, name, pct, invested }) => {
     const cls     = pct != null ? _shColorClass(pct) : 'n0';
     const color   = pct != null ? _shPctColor(pct) : '#8aaccc';
     const sign    = pct != null && pct > 0 ? '+' : '';
     const pctStr  = pct != null ? sign + pct.toFixed(2) + '%' : '—';
+    const badge   = invested
+      ? `<div style="font-size:9px;font-weight:600;color:#58a6ff;letter-spacing:.3px;margin-top:4px">● Invested</div>`
+      : '';
     return `<div class="sh-tile ${cls}">
       <div class="sh-sname">${name}</div>
       <div class="sh-pct" style="color:${color}">${pctStr}</div>
       <div class="sh-etf">${etf}</div>
+      ${badge}
     </div>`;
   }).join('');
 }
