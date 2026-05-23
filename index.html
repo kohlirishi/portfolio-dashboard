@@ -2322,7 +2322,13 @@ const SH_SECTOR_ALIASES = {
 };
 
 function _shNormSector(raw) {
-  return SH_SECTOR_ALIASES[(raw || '').trim().toLowerCase()] || null;
+  const lower = (raw || '').trim().toLowerCase();
+  if (SH_SECTOR_ALIASES[lower]) return SH_SECTOR_ALIASES[lower];
+  // Prefix fallback for thematic ETFs e.g. "Energy (Uranium / Nuclear)"
+  for (const key of Object.keys(SH_SECTOR_ALIASES)) {
+    if (lower.startsWith(key)) return SH_SECTOR_ALIASES[key];
+  }
+  return null;
 }
 
 function _shColorClass(pct) {
