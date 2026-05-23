@@ -102,6 +102,7 @@ header{background:var(--surface);border-bottom:1px solid var(--border);padding:1
 .sh-tile.r1{background:rgba(80,14,14,.15);border-color:rgba(248,81,73,.15)}
 .sh-tile.r2{background:rgba(80,14,14,.3);border-color:rgba(248,81,73,.25)}
 .sh-tile.r3{background:rgba(80,14,14,.55);border-color:rgba(248,81,73,.45)}
+.sh-tile.thematic{box-shadow:inset 0 0 0 9999px rgba(0,0,0,.13)}
 .sh-sname{font-size:12px;font-weight:700;color:var(--text);margin-bottom:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .sh-pct{font-size:18px;font-weight:700;margin-bottom:2px}
 .sh-etf{font-size:10px;color:var(--text3);letter-spacing:.4px}
@@ -1423,7 +1424,7 @@ table.div-ht tfoot td{padding:10px 14px;font-size:13px;font-weight:700;backgroun
   <div class="sh-wrap">
     <div class="sh-header" onclick="shToggle()">
       <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#4a6a8a" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>
-      <span class="sh-title">US Sector Heatmap</span>
+      <span class="sh-title">Sector &amp; Theme Watch</span>
       <span class="sh-badge">90D</span>
       <button class="sh-toggle" id="sh-toggle-btn">▼ Expand</button>
     </div>
@@ -2340,6 +2341,15 @@ const SH_SECTORS = [
   { etf: 'XLU',  name: 'Utilities' },
 ];
 
+const SH_THEMATICS = [
+  { etf: 'SMH',  name: 'Semiconductors'    },
+  { etf: 'VGT',  name: 'Tech Innovation'   },
+  { etf: 'XAR',  name: 'Aerospace/Defence' },
+  { etf: 'URA',  name: 'Uranium/Energy'    },
+  { etf: 'IAU',  name: 'Precious Metals'   },
+  { etf: 'MAGS', name: 'Magnificent 7'     },
+];
+
 function shToggle() {
   const body = document.getElementById('sh-body');
   const btn  = document.getElementById('sh-toggle-btn');
@@ -2410,67 +2420,80 @@ async function fetchSectorHeatmap() {
   if (!grid) return;
   grid.innerHTML = '<div style="grid-column:1/-1;text-align:center;padding:18px 0;font-size:12px;color:var(--text3)">Loading sector data…</div>';
 
-  // Build set of canonical sector names from active ETF holdings (any country)
-  const investedSectors = new Set(
-    (typeof ALL !== 'undefined' ? ALL : [])
-      .filter(f => !f.isWatch && (f.type || '').toUpperCase() === 'ETF')
-      .map(f => _shNormSector(f.sector))
-      .filter(Boolean)
-  );
+  // Build invested lookups from active ETF holdings
+  const activeETFs = (typeof ALL !== 'undefined' ? ALL : [])
+    .filter(f => !f.isWatch && (f.type || '').toUpperCase() === 'ETF');
+  const investedSectors = new Set(activeETFs.map(f => _shNormSector(f.sector)).filter(Boolean));
+  const investedTickers = new Set(activeETFs.map(f => (f.ticker || '').toUpperCase()));
 
-  const proxy   = s => 'https://corsproxy.io/?url=' + encodeURIComponent(s);
-  const cutoff  = Date.now() - 90 * 24 * 60 * 60 * 1000;  // 90 days ago in ms
+  const proxy  = s => 'https://corsproxy.io/?url=' + encodeURIComponent(s);
+  const cutoff = Date.now() - 90 * 24 * 60 * 60 * 1000;
 
-  const results = await Promise.all(SH_SECTORS.map(async ({ etf, name }) => {
+  const allTiles = [
+    ...SH_SECTORS.map(t => ({ ...t, isThematic: false })),
+    ...SH_THEMATICS.map(t => ({ ...t, isThematic: true })),
+  ];
+
+  const allResults = await Promise.all(allTiles.map(async ({ etf, name, isThematic }) => {
+    const invested = isThematic ? investedTickers.has(etf.toUpperCase()) : investedSectors.has(name);
     try {
       const url  = 'https://query2.finance.yahoo.com/v8/finance/chart/' + etf + '?interval=1d&range=6mo';
       const resp = await fetch(proxy(url));
       const json = await resp.json();
       const res  = json.chart?.result?.[0];
-      if (!res) return { etf, name, pct: null, invested: investedSectors.has(name) };
+      if (!res) return { etf, name, pct: null, invested, isThematic };
 
       const ts     = res.timestamp || [];
       const closes = (res.indicators?.adjclose?.[0]?.adjclose || res.indicators?.quote?.[0]?.close || []);
 
-      // Find the index closest to 90 days ago (first timestamp >= cutoff)
       let baseIdx = 0;
       for (let i = 0; i < ts.length; i++) {
         if (ts[i] * 1000 >= cutoff) { baseIdx = i; break; }
       }
       const base = closes[baseIdx];
       const last = closes.filter(v => v != null).slice(-1)[0];
-      if (!base || !last) return { etf, name, pct: null, invested: investedSectors.has(name) };
+      if (!base || !last) return { etf, name, pct: null, invested, isThematic };
 
       const pct = (last - base) / base * 100;
-      return { etf, name, pct, invested: investedSectors.has(name) };
+      return { etf, name, pct, invested, isThematic };
     } catch(e) {
-      return { etf, name, pct: null, invested: investedSectors.has(name) };
+      return { etf, name, pct: null, invested, isThematic };
     }
   }));
 
-  // Sort best → worst
-  results.sort((a, b) => {
+  const sortFn = (a, b) => {
     if (a.pct == null && b.pct == null) return 0;
     if (a.pct == null) return 1;
     if (b.pct == null) return -1;
     return b.pct - a.pct;
-  });
+  };
 
-  grid.innerHTML = results.map(({ etf, name, pct, invested }) => {
-    const cls     = pct != null ? _shColorClass(pct) : 'n0';
-    const color   = pct != null ? _shPctColor(pct) : '#8aaccc';
-    const sign    = pct != null && pct > 0 ? '+' : '';
-    const pctStr  = pct != null ? sign + pct.toFixed(2) + '%' : '—';
-    const badge   = invested
+  const sectorResults   = allResults.filter(r => !r.isThematic).sort(sortFn);
+  const thematicResults = allResults.filter(r =>  r.isThematic).sort(sortFn);
+
+  const renderTile = ({ etf, name, pct, invested }, isThematic) => {
+    const cls    = pct != null ? _shColorClass(pct) : 'n0';
+    const color  = pct != null ? _shPctColor(pct) : '#8aaccc';
+    const sign   = pct != null && pct > 0 ? '+' : '';
+    const pctStr = pct != null ? sign + pct.toFixed(2) + '%' : '—';
+    const badge  = invested
       ? `<div style="font-size:9px;font-weight:600;color:#58a6ff;letter-spacing:.3px;margin-top:4px">● Invested</div>`
       : '';
-    return `<div class="sh-tile ${cls}">
+    const themeClass = isThematic ? ' thematic' : '';
+    return `<div class="sh-tile${themeClass} ${cls}">
       <div class="sh-sname">${name}</div>
       <div class="sh-pct" style="color:${color}">${pctStr}</div>
       <div class="sh-etf">${etf}</div>
       ${badge}
     </div>`;
-  }).join('');
+  };
+
+  const divider = `<div style="grid-column:1/-1;text-align:center;padding:10px 0 6px;font-size:10px;color:var(--text3);letter-spacing:1.2px;border-top:1px solid rgba(255,255,255,.06);margin-top:4px">─── THEMATIC &amp; SUB-SECTOR ───</div>`;
+
+  grid.innerHTML =
+    sectorResults.map(r => renderTile(r, false)).join('') +
+    divider +
+    thematicResults.map(r => renderTile(r, true)).join('');
 }
 
 // ═══════════════════════════════════════════════
