@@ -1434,6 +1434,65 @@ table.div-ht tfoot td{padding:10px 14px;font-size:13px;font-weight:700;backgroun
     </div>
   </div>
 
+  <!-- TOP WINNERS & LOSERS -->
+  <style>
+    .wl-perf-header:hover {
+      background: rgba(255, 255, 255, .03);
+    }
+    .wl-perf-tab-btn:hover {
+      background: rgba(61, 159, 255, .15) !important;
+      color: #3d9fff !important;
+    }
+    @media(max-width:960px){
+      #wl-perf-grid { grid-template-columns: repeat(2,1fr) !important; }
+    }
+    @media(max-width:520px){
+      #wl-perf-grid { grid-template-columns: 1fr !important; }
+    }
+  </style>
+  <div class="wl-perf-wrap" style="background:var(--surface);border:1px solid var(--border);border-radius:10px;margin-bottom:14px;overflow:hidden">
+    <div class="wl-perf-header" onclick="wlPerfToggle()" style="display:flex;align-items:center;gap:10px;padding:10px 16px;cursor:pointer;user-select:none">
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#4a6a8a" stroke-width="2" style="flex-shrink:0">
+        <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/>
+      </svg>
+      <span style="font-size:10px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.8px">Top Winners & Losers</span>
+      <div style="display:flex;gap:6px;margin-left:12px;" onclick="event.stopPropagation()">
+        <button class="wl-perf-tab-btn" id="wl-perf-tab-pl" onclick="setWlPerfMetric('pl', event)" style="font-size:9px;font-weight:700;color:#3d9fff;background:rgba(61,159,255,.1);border:1px solid rgba(61,159,255,.3);padding:2px 8px;border-radius:3px;letter-spacing:.4px;cursor:pointer;outline:none;transition:all .15s">Total P/L %</button>
+        <button class="wl-perf-tab-btn" id="wl-perf-tab-1d" onclick="setWlPerfMetric('1d', event)" style="font-size:9px;font-weight:700;color:var(--text3);background:rgba(74,106,138,.15);border:1px solid rgba(74,106,138,.3);padding:2px 8px;border-radius:3px;letter-spacing:.4px;cursor:pointer;outline:none;transition:all .15s">1-Day Return</button>
+      </div>
+      <button class="sh-toggle" id="wl-perf-toggle-btn" style="margin-left:auto;font-size:11px;font-weight:600;color:#4a6a8a;background:none;border:none;cursor:pointer;padding:2px 6px;border-radius:4px;transition:color .15s">▼ Expand</button>
+    </div>
+    <div class="wl-perf-body" id="wl-perf-body" style="padding:16px;display:none;border-top:1px solid var(--border)">
+      <div id="wl-perf-grid" style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px">
+        
+        <!-- Top Stocks (Win) -->
+        <div style="background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:12px;display:flex;flex-direction:column;gap:8px">
+          <div style="font-size:10px;font-weight:700;color:#10d07a;text-transform:uppercase;letter-spacing:.5px;border-bottom:1px solid rgba(16,208,122,.2);padding-bottom:6px">📈 Top Stocks (Win)</div>
+          <div id="wl-perf-stock-win" style="display:flex;flex-direction:column;gap:6px"></div>
+        </div>
+
+        <!-- Top ETFs (Win) -->
+        <div style="background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:12px;display:flex;flex-direction:column;gap:8px">
+          <div style="font-size:10px;font-weight:700;color:#10d07a;text-transform:uppercase;letter-spacing:.5px;border-bottom:1px solid rgba(16,208,122,.2);padding-bottom:6px">📈 Top ETFs (Win)</div>
+          <div id="wl-perf-etf-win" style="display:flex;flex-direction:column;gap:6px"></div>
+        </div>
+
+        <!-- Top Stocks (Loss) -->
+        <div style="background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:12px;display:flex;flex-direction:column;gap:8px">
+          <div style="font-size:10px;font-weight:700;color:#f04f6e;text-transform:uppercase;letter-spacing:.5px;border-bottom:1px solid rgba(240,79,110,.2);padding-bottom:6px">📉 Top Stocks (Loss)</div>
+          <div id="wl-perf-stock-loss" style="display:flex;flex-direction:column;gap:6px"></div>
+        </div>
+
+        <!-- Top ETFs (Loss) -->
+        <div style="background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:12px;display:flex;flex-direction:column;gap:8px">
+          <div style="font-size:10px;font-weight:700;color:#f04f6e;text-transform:uppercase;letter-spacing:.5px;border-bottom:1px solid rgba(240,79,110,.2);padding-bottom:6px">📉 Top ETFs (Loss)</div>
+          <div id="wl-perf-etf-loss" style="display:flex;flex-direction:column;gap:6px"></div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+
   <!-- CONTROLS -->
   <div class="controls">
     <!-- Search -->
@@ -2414,6 +2473,104 @@ async function fetchSectorHeatmap() {
   }).join('');
 }
 
+// ═══════════════════════════════════════════════
+//  TOP WINNERS & LOSERS PANEL LOGIC
+// ═══════════════════════════════════════════════
+let activeWlPerfMetric = 'pl'; // 'pl' = Total P/L %, '1d' = 1-Day Return
+
+function wlPerfToggle() {
+  const body = document.getElementById('wl-perf-body');
+  const btn = document.getElementById('wl-perf-toggle-btn');
+  const visible = body.style.display !== 'none';
+  if (visible) {
+    body.style.display = 'none';
+    btn.textContent = '▼ Expand';
+  } else {
+    body.style.display = 'block';
+    btn.textContent = '▲ Minimize';
+    renderWlPerf(); // refresh list elements on expand
+  }
+}
+
+function setWlPerfMetric(metric, event) {
+  activeWlPerfMetric = metric;
+  
+  // Highlight active button
+  const plBtn = document.getElementById('wl-perf-tab-pl');
+  const d1Btn = document.getElementById('wl-perf-tab-1d');
+  
+  if (metric === 'pl') {
+    plBtn.style.color = '#3d9fff';
+    plBtn.style.background = 'rgba(61,159,255,.1)';
+    plBtn.style.borderColor = 'rgba(61,159,255,.3)';
+    
+    d1Btn.style.color = 'var(--text3)';
+    d1Btn.style.background = 'rgba(74,106,138,.15)';
+    d1Btn.style.borderColor = 'rgba(74,106,138,.3)';
+  } else {
+    d1Btn.style.color = '#3d9fff';
+    d1Btn.style.background = 'rgba(61,159,255,.1)';
+    d1Btn.style.borderColor = 'rgba(61,159,255,.3)';
+    
+    plBtn.style.color = 'var(--text3)';
+    plBtn.style.background = 'rgba(74,106,138,.15)';
+    plBtn.style.borderColor = 'rgba(74,106,138,.3)';
+  }
+  
+  renderWlPerf();
+}
+
+function renderWlPerf() {
+  const body = document.getElementById('wl-perf-body');
+  if (body.style.display === 'none') return; // only render if expanded
+  
+  // Filter active core portfolio assets (exclude watchlists)
+  const core = (typeof ALL !== 'undefined' ? ALL : []).filter(d => !d.isWatch);
+  
+  const stocks = core.filter(d => (d.type || '').toLowerCase() === 'stock');
+  const etfs   = core.filter(d => (d.type || '').toLowerCase() === 'etf');
+  
+  const field = activeWlPerfMetric === 'pl' ? 'plP' : 's1d';
+  
+  // Helper to extract top 3 sorted items
+  function getSorted(arr, dir) {
+    return [...arr]
+      .filter(d => d[field] !== null && d[field] !== undefined && !isNaN(d[field]))
+      .sort((a, b) => (a[field] - b[field]) * dir)
+      .slice(0, 3);
+  }
+  
+  const sWin  = getSorted(stocks, -1);
+  const sLoss = getSorted(stocks, 1);
+  const eWin  = getSorted(etfs, -1);
+  const eLoss = getSorted(etfs, 1);
+  
+  function buildListHTML(list) {
+    if (list.length === 0) {
+      return `<div style="font-size:11px;color:var(--text3);text-align:center;padding:10px 0">No active assets</div>`;
+    }
+    return list.map((item, i) => {
+      const val = item[field];
+      const valStr = (val >= 0 ? '+' : '') + val.toFixed(2) + '%';
+      const color = val > 0 ? 'var(--green)' : val < 0 ? 'var(--red)' : 'var(--text2)';
+      return `
+        <div style="display:flex;align-items:center;justify-content:space-between;font-size:12px;padding:5px 0;border-bottom:1px solid rgba(255,255,255,0.02)">
+          <div style="display:flex;align-items:baseline;gap:6px;min-width:0;flex:1">
+            <span style="font-size:10px;font-weight:700;color:var(--text3)">#${i+1}</span>
+            <span class="td-fund" style="font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${item.name}">${item.ticker}</span>
+          </div>
+          <span style="font-family:monospace;font-weight:600;color:${color}">${valStr}</span>
+        </div>
+      `;
+    }).join('');
+  }
+  
+  document.getElementById('wl-perf-stock-win').innerHTML = buildListHTML(sWin);
+  document.getElementById('wl-perf-etf-win').innerHTML   = buildListHTML(eWin);
+  document.getElementById('wl-perf-stock-loss').innerHTML = buildListHTML(sLoss);
+  document.getElementById('wl-perf-etf-loss').innerHTML   = buildListHTML(eLoss);
+}
+
 async function fetchAll() {
   try {
     const [fundsG, pnlG, cryptoG] = await Promise.all([
@@ -2511,6 +2668,7 @@ function parseFunds(g) {
   buildColsUI(); // rebuild checkboxes with current state
   renderSummary();
   renderTable();
+  renderWlPerf();
 }
 
 // ═══════════════════════════════════════════════
