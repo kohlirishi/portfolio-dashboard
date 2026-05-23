@@ -81,6 +81,12 @@ header{background:var(--surface);border-bottom:1px solid var(--border);padding:1
 .crypto-date{font-size:10px;color:var(--text3)}
 .crypto-pnl{font-size:16px;font-weight:700;margin-top:4px}
 
+/* ── ALERT BANNER ── */
+.alert-banner{background:rgba(240,79,110,.12);border:1px solid rgba(240,79,110,.35);border-radius:10px;padding:12px 18px;margin-bottom:14px;font-size:13px;color:var(--red);display:flex;align-items:center;gap:10px}
+.alert-banner svg{flex-shrink:0;width:18px;height:18px}
+.alert-banner a{color:var(--blue);text-decoration:underline;margin-left:4px;cursor:pointer}
+.alert-banner-dismiss{background:none;border:none;color:var(--text3);cursor:pointer;margin-left:auto;font-size:16px;padding:0 4px}
+
 /* ── SECTOR HEATMAP ── */
 .sh-wrap{background:var(--surface);border:1px solid var(--border);border-radius:10px;margin-bottom:14px;overflow:hidden}
 .sh-header{display:flex;align-items:center;gap:10px;padding:10px 16px;cursor:pointer;user-select:none}
@@ -1320,6 +1326,8 @@ table.div-ht tfoot td{padding:10px 14px;font-size:13px;font-weight:700;backgroun
 <div class="wrap">
 
   <div class="err-banner" id="err">⚠ Unable to fetch data. Make sure you have internet access and the sheet is published to web.</div>
+
+  <div class="alert-banner" id="alert-14d" style="display:none"></div>
 
   <!-- PORTFOLIO SUMMARY -->
   <div class="summary-panel">
@@ -2824,6 +2832,22 @@ function renderSummary() {
   setText('c-30dp',  data.filter(d => d.s30d !== null && d.s30d > 0).length);
   setText('c-ytdp',  data.filter(d => d.ytd  !== null && d.ytd  > 0).length);
   setText('c-split', `${stks} / ${etcs}`);
+
+  // 14-day drop alert banner
+  const droppers = ALL.filter(d => d.s14d !== null && !d.isWatch && d.s14d <= -10);
+  const bannerEl = document.getElementById('alert-14d');
+  if (droppers.length > 0 && !localStorage.getItem('dismissAlert14d')) {
+    bannerEl.style.display = 'flex';
+    bannerEl.innerHTML =
+      '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>'
+      + '<span><strong>' + droppers.length + ' holding' + (droppers.length>1?'s':'') + ' dropped ≥10% in 14 days</strong>'
+      + droppers.slice(0,5).map(d => ' <a onclick="setFilter(\'14d\')" title="Click to filter table">' + d.ticker + '</a>').join(',')
+      + (droppers.length>5 ? ' and ' + (droppers.length-5) + ' more' : '')
+      + '</span>'
+      + '<button class="alert-banner-dismiss" onclick="localStorage.setItem(\'dismissAlert14d\',\'1\');document.getElementById(\'alert-14d\').style.display=\'none\'">&times;</button>';
+  } else {
+    bannerEl.style.display = 'none';
+  }
 }
 
 // ═══════════════════════════════════════════════
@@ -3063,6 +3087,7 @@ function applyFilter(data) {
     case 'tech_view': filtered = data; break; // all funds, columns change
     case 'bullish':   filtered = data.filter(d => isAllBullish(d)); break;
     case 'strong':    filtered = data.filter(d => { const s=(d.strength||'').toLowerCase(); return s.includes('very strong')||s.includes('strong'); }); break;
+    case '14d':       filtered = data.filter(d => d.s14d!==null && d.s14d<=-10); break;
     default: filtered = data;
   }
   return activeCountryFilter ? filtered.filter(d => d.country === activeCountryFilter) : filtered;
