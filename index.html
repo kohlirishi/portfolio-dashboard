@@ -81,6 +81,31 @@ header{background:var(--surface);border-bottom:1px solid var(--border);padding:1
 .crypto-date{font-size:10px;color:var(--text3)}
 .crypto-pnl{font-size:16px;font-weight:700;margin-top:4px}
 
+/* ── SECTOR HEATMAP ── */
+.sh-wrap{background:var(--surface);border:1px solid var(--border);border-radius:10px;margin-bottom:14px;overflow:hidden}
+.sh-header{display:flex;align-items:center;gap:10px;padding:10px 16px;cursor:pointer;user-select:none}
+.sh-header:hover{background:rgba(255,255,255,.03)}
+.sh-title{font-size:10px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.8px}
+.sh-badge{font-size:9px;font-weight:700;color:#4a6a8a;background:rgba(74,106,138,.15);border:1px solid rgba(74,106,138,.3);padding:1px 6px;border-radius:3px;letter-spacing:.4px}
+.sh-toggle{margin-left:auto;font-size:11px;font-weight:600;color:#4a6a8a;background:none;border:none;cursor:pointer;padding:2px 6px;border-radius:4px;transition:color .15s}
+.sh-toggle:hover{color:var(--text)}
+.sh-body{padding:12px 14px 14px;display:none}
+.sh-body.open{display:block}
+.sh-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+@media(max-width:700px){.sh-grid{grid-template-columns:repeat(2,1fr)}}
+.sh-tile{border-radius:8px;padding:12px 14px;border:1px solid;text-align:center;transition:transform .1s}
+.sh-tile:hover{transform:translateY(-1px)}
+.sh-tile.g3{background:rgba(14,68,32,.55);border-color:rgba(63,185,80,.45)}
+.sh-tile.g2{background:rgba(14,68,32,.3);border-color:rgba(63,185,80,.25)}
+.sh-tile.g1{background:rgba(14,68,32,.15);border-color:rgba(63,185,80,.15)}
+.sh-tile.n0{background:rgba(30,50,80,.25);border-color:rgba(30,50,80,.5)}
+.sh-tile.r1{background:rgba(80,14,14,.15);border-color:rgba(248,81,73,.15)}
+.sh-tile.r2{background:rgba(80,14,14,.3);border-color:rgba(248,81,73,.25)}
+.sh-tile.r3{background:rgba(80,14,14,.55);border-color:rgba(248,81,73,.45)}
+.sh-sname{font-size:12px;font-weight:700;color:var(--text);margin-bottom:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.sh-pct{font-size:18px;font-weight:700;margin-bottom:2px}
+.sh-etf{font-size:10px;color:var(--text3);letter-spacing:.4px}
+
 /* ── WRAP ── */
 .wrap{max-width:1700px;margin:0 auto;padding:18px 24px 48px}
 
@@ -1394,6 +1419,21 @@ table.div-ht tfoot td{padding:10px 14px;font-size:13px;font-weight:700;backgroun
     <span style="font-size:15px;font-weight:700;margin-left:4px" id="c-pnl">—</span>
   </div>
 
+  <!-- SECTOR HEATMAP -->
+  <div class="sh-wrap">
+    <div class="sh-header" onclick="shToggle()">
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#4a6a8a" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>
+      <span class="sh-title">US Sector Heatmap</span>
+      <span class="sh-badge">90D</span>
+      <button class="sh-toggle" id="sh-toggle-btn">▼ Expand</button>
+    </div>
+    <div class="sh-body" id="sh-body">
+      <div id="sh-grid" class="sh-grid">
+        <div style="grid-column:1/-1;text-align:center;padding:18px 0;font-size:12px;color:var(--text3)">Loading sector data…</div>
+      </div>
+    </div>
+  </div>
+
   <!-- CONTROLS -->
   <div class="controls">
     <!-- Search -->
@@ -2224,6 +2264,101 @@ function parsePct(s) {
 // ═══════════════════════════════════════════════
 //  FETCH ALL DATA
 // ═══════════════════════════════════════════════
+// ═══════════════════════════════════════════════
+//  SECTOR HEATMAP
+// ═══════════════════════════════════════════════
+const SH_SECTORS = [
+  { etf: 'XLK',  name: 'Technology' },
+  { etf: 'XLC',  name: 'Comm. Services' },
+  { etf: 'XLF',  name: 'Financials' },
+  { etf: 'XLV',  name: 'Healthcare' },
+  { etf: 'XLY',  name: 'Consumer Disc.' },
+  { etf: 'XLP',  name: 'Consumer Staples' },
+  { etf: 'XLI',  name: 'Industrials' },
+  { etf: 'XLE',  name: 'Energy' },
+  { etf: 'XLB',  name: 'Materials' },
+  { etf: 'XLRE', name: 'Real Estate' },
+  { etf: 'XLU',  name: 'Utilities' },
+];
+
+function shToggle() {
+  const body = document.getElementById('sh-body');
+  const btn  = document.getElementById('sh-toggle-btn');
+  const open = body.classList.toggle('open');
+  btn.textContent = open ? '▲ Minimize' : '▼ Expand';
+}
+
+function _shColorClass(pct) {
+  if (pct >=  5) return 'g3';
+  if (pct >=  2) return 'g2';
+  if (pct >   0) return 'g1';
+  if (pct >  -2) return 'r1';
+  if (pct >  -5) return 'r2';
+  return 'r3';
+}
+
+function _shPctColor(pct) {
+  if (pct > 0) return '#3fb950';
+  if (pct < 0) return '#f85149';
+  return '#8aaccc';
+}
+
+async function fetchSectorHeatmap() {
+  const grid = document.getElementById('sh-grid');
+  if (!grid) return;
+  grid.innerHTML = '<div style="grid-column:1/-1;text-align:center;padding:18px 0;font-size:12px;color:var(--text3)">Loading sector data…</div>';
+
+  const proxy   = s => 'https://corsproxy.io/?url=' + encodeURIComponent(s);
+  const cutoff  = Date.now() - 90 * 24 * 60 * 60 * 1000;  // 90 days ago in ms
+
+  const results = await Promise.all(SH_SECTORS.map(async ({ etf, name }) => {
+    try {
+      const url  = 'https://query2.finance.yahoo.com/v8/finance/chart/' + etf + '?interval=1d&range=6mo';
+      const resp = await fetch(proxy(url));
+      const json = await resp.json();
+      const res  = json.chart?.result?.[0];
+      if (!res) return { etf, name, pct: null };
+
+      const ts     = res.timestamp || [];
+      const closes = (res.indicators?.adjclose?.[0]?.adjclose || res.indicators?.quote?.[0]?.close || []);
+
+      // Find the index closest to 90 days ago (first timestamp >= cutoff)
+      let baseIdx = 0;
+      for (let i = 0; i < ts.length; i++) {
+        if (ts[i] * 1000 >= cutoff) { baseIdx = i; break; }
+      }
+      const base = closes[baseIdx];
+      const last = closes.filter(v => v != null).slice(-1)[0];
+      if (!base || !last) return { etf, name, pct: null };
+
+      const pct = (last - base) / base * 100;
+      return { etf, name, pct };
+    } catch(e) {
+      return { etf, name, pct: null };
+    }
+  }));
+
+  // Sort best → worst
+  results.sort((a, b) => {
+    if (a.pct == null && b.pct == null) return 0;
+    if (a.pct == null) return 1;
+    if (b.pct == null) return -1;
+    return b.pct - a.pct;
+  });
+
+  grid.innerHTML = results.map(({ etf, name, pct }) => {
+    const cls     = pct != null ? _shColorClass(pct) : 'n0';
+    const color   = pct != null ? _shPctColor(pct) : '#8aaccc';
+    const sign    = pct != null && pct > 0 ? '+' : '';
+    const pctStr  = pct != null ? sign + pct.toFixed(2) + '%' : '—';
+    return `<div class="sh-tile ${cls}">
+      <div class="sh-sname">${name}</div>
+      <div class="sh-pct" style="color:${color}">${pctStr}</div>
+      <div class="sh-etf">${etf}</div>
+    </div>`;
+  }).join('');
+}
+
 async function fetchAll() {
   try {
     const [fundsG, pnlG, cryptoG] = await Promise.all([
@@ -2234,6 +2369,7 @@ async function fetchAll() {
     parseFunds(fundsG);
     parsePnL(pnlG);
     parseCrypto(cryptoG);
+    fetchSectorHeatmap();  // non-blocking — runs in parallel after sheet data loads
     document.getElementById('err').classList.remove('show');
     document.getElementById('c-upd').textContent =
       new Date().toLocaleTimeString('en-CA',{hour:'2-digit',minute:'2-digit',second:'2-digit'});
