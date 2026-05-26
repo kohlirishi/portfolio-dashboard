@@ -10256,11 +10256,18 @@ function updateClock() {
     if (el) el.textContent = `${hh}:${mm}:${ss} EST`;
     const badge = document.getElementById('marketStatus');
     if (!badge) return;
-    const dow  = et.getDay();
-    const mins = et.getHours() * 60 + et.getMinutes();
-    const isOpen = dow >= 1 && dow <= 5 && mins >= 570 && mins < 960;
-    badge.textContent = isOpen ? '● Market Open' : '○ Market Closed';
-    badge.className   = 'market-badge ' + (isOpen ? 'open' : 'closed');
+    const usOpen  = isUSMarketOpen();
+    const nseOpen = isNSEMarketOpen();
+    if (usOpen) {
+      badge.textContent = '● Market Open';
+      badge.className   = 'market-badge open';
+    } else if (nseOpen) {
+      badge.textContent = '🇮🇳 India Market Open';
+      badge.className   = 'market-badge open';
+    } else {
+      badge.textContent = '○ Market Closed';
+      badge.className   = 'market-badge closed';
+    }
   } catch {}
 }
 
