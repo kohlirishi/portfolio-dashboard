@@ -684,6 +684,47 @@ table.div-ht tfoot td{padding:10px 14px;font-size:13px;font-weight:700;backgroun
 #pg-short { display:none }
 #pg-screener { display:none }
 #pg-longterm { display:none }
+#pg-propicks { display:none }
+/* ── PROPICKS AI TRACKER ── */
+.pp-wrap{max-width:1200px;margin:0 auto;padding:24px 20px}
+.pp-cards{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-bottom:20px}
+.pp-card{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:20px 22px;cursor:pointer;transition:all .15s;position:relative}
+.pp-card:hover{border-color:var(--blue);background:var(--surface2)}
+.pp-card.active{border-color:var(--blue);background:rgba(61,159,255,.06)}
+.pp-card-name{font-size:14px;font-weight:700;color:var(--text);margin-bottom:2px}
+.pp-card-badge{display:inline-block;font-size:9px;font-weight:700;color:var(--text3);background:var(--surface2);border:1px solid var(--border);border-radius:4px;padding:1px 6px;letter-spacing:.4px;margin-bottom:10px}
+.pp-card-ret{font-size:28px;font-weight:800;letter-spacing:-.5px}
+.pp-card-sub{font-size:11px;color:var(--text3);margin-top:4px}
+.pp-filters{display:flex;align-items:center;gap:10px;margin-bottom:16px;flex-wrap:wrap}
+.pp-dlbl{font-size:12px;color:var(--text3)}
+.pp-din{background:var(--surface2);border:1px solid var(--border);color:var(--text);font-size:12px;padding:5px 10px;border-radius:6px;font-family:inherit}
+.pp-pre{background:var(--surface2);border:1px solid var(--border);color:var(--text3);font-size:11px;font-weight:600;padding:5px 11px;border-radius:6px;cursor:pointer;transition:all .15s}
+.pp-pre:hover,.pp-pre.act{border-color:var(--blue);color:var(--blue);background:rgba(61,159,255,.08)}
+.pp-banner{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:14px 22px;margin-bottom:16px;display:flex;align-items:center;gap:22px;flex-wrap:wrap}
+.pp-bi-lbl{font-size:10px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.6px;margin-bottom:2px}
+.pp-bi-val{font-size:22px;font-weight:800}
+.pp-bi-sep{width:1px;height:38px;background:var(--border);flex-shrink:0}
+.pp-twrap{background:var(--surface);border:1px solid var(--border);border-radius:12px;overflow:hidden}
+.pp-thdr{display:flex;align-items:center;justify-content:space-between;padding:14px 18px;border-bottom:1px solid var(--border)}
+.pp-ttl{font-size:13px;font-weight:700;color:var(--text)}
+.pp-tbl{width:100%;border-collapse:collapse}
+.pp-tbl thead th{padding:9px 14px;text-align:left;font-size:11px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.5px;background:var(--bg2);border-bottom:1px solid var(--border);white-space:nowrap;cursor:pointer;user-select:none;transition:color .1s}
+.pp-tbl thead th:hover{color:var(--text)}
+.pp-tbl tbody tr{border-bottom:1px solid rgba(30,50,80,.5);transition:background .1s}
+.pp-tbl tbody tr:hover{background:var(--surface2)}
+.pp-tbl tbody tr:last-child{border-bottom:none}
+.pp-tbl tbody td{padding:11px 14px;font-size:13px;vertical-align:middle}
+.pp-pill{display:inline-block;font-size:10px;font-weight:700;padding:2px 8px;border-radius:4px;letter-spacing:.3px}
+.pp-pill.ok{background:rgba(16,208,122,.12);color:var(--green);border:1px solid rgba(16,208,122,.25)}
+.pp-pill.rm{background:rgba(240,79,110,.12);color:var(--red);border:1px solid rgba(240,79,110,.25)}
+.pp-pos{color:var(--green);font-weight:700}
+.pp-neg{color:var(--red);font-weight:700}
+.pp-neu{color:var(--text2);font-weight:600}
+.pp-ld{text-align:center;padding:48px;color:var(--text3);font-size:14px}
+.pp-nd{text-align:center;padding:48px;color:var(--text3);line-height:1.8}
+.pp-rfbtn{display:flex;align-items:center;gap:6px;background:none;border:1px solid var(--border);color:var(--text3);font-size:11px;font-weight:600;padding:5px 12px;border-radius:6px;cursor:pointer;transition:all .15s}
+.pp-rfbtn:hover{border-color:var(--blue);color:var(--blue)}
+@media(max-width:800px){.pp-cards{grid-template-columns:1fr}.pp-banner{gap:14px}.pp-bi-sep{display:none}}
 /* ── SHORT TERM TRACKER SCOPED STYLES ── */
 #pg-short, #pg-short, #pg-short { box-sizing: border-box; margin: 0; padding: 0; }
 #pg-short { background: #0d1520; color: #e2ecf7; font-family: 'Inter', sans-serif; font-size: 15px; min-height: 100vh; }
@@ -1285,6 +1326,10 @@ table.div-ht tfoot td{padding:10px 14px;font-size:13px;font-weight:700;backgroun
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><path d="M3 6h18M3 12h18M3 18h18"/><path d="M8 3v6M16 15v6"/></svg>
           Portfolio Rebalance
         </button>
+        <button class="h-more-item" id="btn-propicks-nav" onclick="showProPicks(); closeMoreMenu()">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M4.22 4.22l2.12 2.12M17.66 17.66l2.12 2.12M2 12h3M19 12h3M4.22 19.78l2.12-2.12M17.66 6.34l2.12-2.12"/></svg>
+          ProPicks AI Tracker
+        </button>
       </div>
     </div>
 
@@ -1317,6 +1362,10 @@ table.div-ht tfoot td{padding:10px 14px;font-size:13px;font-weight:700;backgroun
     <div class="mob-nav-item" id="mob-btn-rebalance" onclick="showRebalance();closeMobNav()">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M3 12h18M3 18h18"/><path d="M8 3v6M16 15v6"/></svg>
       Portfolio Rebalance
+    </div>
+    <div class="mob-nav-item" id="mob-btn-propicks" onclick="showProPicks();closeMobNav()">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M4.22 4.22l2.12 2.12M17.66 17.66l2.12 2.12M2 12h3M19 12h3M4.22 19.78l2.12-2.12M17.66 6.34l2.12-2.12"/></svg>
+      ProPicks AI Tracker
     </div>
   </div>
 </div>
@@ -1970,6 +2019,61 @@ table.div-ht tfoot td{padding:10px 14px;font-size:13px;font-weight:700;backgroun
 
 </div><!-- /rb-wrap -->
 </div><!-- /pg-rebalance -->
+
+<!-- PROPICKS AI TRACKER PAGE -->
+<div id="pg-propicks">
+<div class="pp-wrap">
+
+  <!-- Header -->
+  <div style="display:flex;align-items:center;gap:16px;margin-bottom:24px;flex-wrap:wrap">
+    <button onclick="showMain()" style="display:inline-flex;align-items:center;gap:6px;padding:7px 16px;background:transparent;border:1px solid var(--border);color:var(--text2);font-size:13px;font-weight:600;border-radius:6px;cursor:pointer;font-family:inherit;transition:all .15s" onmouseover="this.style.borderColor='var(--blue)';this.style.color='var(--text)'" onmouseout="this.style.borderColor='var(--border)';this.style.color='var(--text2)'">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m15 18-6-6 6-6"/></svg>
+      Back
+    </button>
+    <div style="flex:1;min-width:200px">
+      <div style="font-size:20px;font-weight:800;color:var(--text);letter-spacing:-.5px">🤖 ProPicks AI Tracker</div>
+      <div style="font-size:12px;color:var(--text3);margin-top:2px">Performance since baseline · Equal-weight returns · InvestingPro ProPicks AI</div>
+    </div>
+    <button class="pp-rfbtn" id="pp-rfbtn" onclick="ppRefresh()">
+      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
+      Refresh Prices
+    </button>
+  </div>
+
+  <!-- Portfolio cards -->
+  <div class="pp-cards" id="pp-cards">
+    <div class="pp-card active"><div style="font-size:20px;margin-bottom:6px">🇺🇸</div><div class="pp-card-name">Top Value Stocks</div><span class="pp-card-badge">US25</span><div class="pp-card-ret pp-neu">—</div><div class="pp-card-sub">Loading…</div></div>
+    <div class="pp-card"><div style="font-size:20px;margin-bottom:6px">🇺🇸</div><div class="pp-card-name">Tech Titans</div><span class="pp-card-badge">IT18</span><div class="pp-card-ret pp-neu">—</div><div class="pp-card-sub">Loading…</div></div>
+    <div class="pp-card"><div style="font-size:20px;margin-bottom:6px">🇨🇦</div><div class="pp-card-name">Beat the TSX</div><span class="pp-card-badge">TSX20</span><div class="pp-card-ret pp-neu">—</div><div class="pp-card-sub">Loading…</div></div>
+  </div>
+
+  <!-- Stats banner -->
+  <div class="pp-banner" id="pp-banner" style="display:none"></div>
+
+  <!-- Date filters -->
+  <div class="pp-filters">
+    <span class="pp-dlbl">From:</span>
+    <input type="date" class="pp-din" id="pp-from" value="2026-05-26" onchange="ppApplyDates()">
+    <span class="pp-dlbl">To:</span>
+    <input type="date" class="pp-din" id="pp-to" onchange="ppApplyDates()">
+    <button class="pp-pre act" id="pp-pre-all" onclick="ppPreset('all')">Since Start</button>
+    <button class="pp-pre" id="pp-pre-30d" onclick="ppPreset('30d')">Last 30d</button>
+    <button class="pp-pre" id="pp-pre-3m"  onclick="ppPreset('3m')">Last 3M</button>
+    <button class="pp-pre" id="pp-pre-6m"  onclick="ppPreset('6m')">Last 6M</button>
+    <span id="pp-ts" style="margin-left:auto;font-size:11px;color:var(--text3)"></span>
+  </div>
+
+  <!-- Stock table -->
+  <div class="pp-twrap">
+    <div class="pp-thdr">
+      <span class="pp-ttl" id="pp-ttl">Portfolio</span>
+      <span style="font-size:11px;color:var(--text3)">Live prices · Yahoo Finance</span>
+    </div>
+    <div id="pp-tbody"><div class="pp-ld">⏳ Loading…</div></div>
+  </div>
+
+</div>
+</div><!-- /pg-propicks -->
 
 <!-- STOCK ANALYSER PAGE -->
 <div id="pg-analyser" style="display:none">
@@ -5489,11 +5593,11 @@ document.addEventListener('click', function(e) {
 
 // ── Sub-page navigation ───────────────────────────────────────────────────────
 function _hideSubPages() {
-  ['pg-short','pg-screener','pg-longterm','pg-rebalance'].forEach(id => {
+  ['pg-short','pg-screener','pg-longterm','pg-rebalance','pg-propicks'].forEach(id => {
     const el = document.getElementById(id);
     if(el) el.style.display = 'none';
   });
-  ['btn-short-nav','btn-screener-nav','btn-longterm-nav','btn-div-nav','btn-rebalance-nav'].forEach(id => {
+  ['btn-short-nav','btn-screener-nav','btn-longterm-nav','btn-div-nav','btn-rebalance-nav','btn-propicks-nav'].forEach(id => {
     const el = document.getElementById(id);
     if(el) el.classList.remove('active');
   });
@@ -5791,6 +5895,297 @@ function showRebalance() {
   rbLoadReports();
   _rbRefreshCacheBadge();
 }
+
+// ═══════════════════════════════════════════════════════════════
+//  PROPICKS AI TRACKER
+// ═══════════════════════════════════════════════════════════════
+const PP_PFLIST = [
+  { name:'Top Value Stocks', flag:'🇺🇸', badge:'US25' },
+  { name:'Tech Titans',      flag:'🇺🇸', badge:'IT18' },
+  { name:'Beat the TSX',     flag:'🇨🇦', badge:'TSX20' }
+];
+let _ppRows   = [];
+let _ppPrices = {};
+let _ppLoaded = false;
+let _ppBusy   = false;
+let _ppPort   = 'Top Value Stocks';
+let _ppFrom   = '2026-05-26';
+let _ppTo     = '';
+let _ppSortC  = 'chgPct';
+let _ppSortD  = -1;
+let _ppTs     = null;
+
+function showProPicks() {
+  destroyDivCharts();
+  _hideSubPages();
+  document.getElementById('pg-main').classList.add('hide');
+  document.getElementById('pg-div').classList.remove('show');
+  document.getElementById('pg-analyser').style.display = 'none';
+  ['btn-dashboard-nav','btn-sa-nav'].forEach(id => document.getElementById(id)?.classList.remove('active'));
+  document.getElementById('pg-propicks').style.display = 'block';
+  document.getElementById('btn-propicks-nav').classList.add('active');
+  document.getElementById('btn-more-nav')?.classList.add('active');
+  window.scrollTo(0,0);
+  ppInit();
+}
+
+async function ppInit() {
+  if (_ppLoaded && _ppRows.length) { ppRenderCards(); ppRenderTable(); return; }
+  if (_ppBusy) return;
+  _ppBusy = true;
+  document.getElementById('pp-tbody').innerHTML = '<div class="pp-ld">⏳ Loading ProPicks data from Google Sheets…</div>';
+  document.getElementById('pp-banner').style.display = 'none';
+  try {
+    const url = `https://docs.google.com/spreadsheets/d/${SID}/gviz/tq?tqx=out:json&sheet=ProPicks`;
+    const res = await fetch(url);
+    const txt = await res.text();
+    const j   = JSON.parse(txt.replace(/^[^\(]+\(/, '').replace(/\);\s*$/, ''));
+    _ppRows   = ppParse(j);
+    _ppLoaded = true;
+    ppRenderCards();
+    ppRenderTable();
+    // Fetch live prices async then re-render
+    ppFetchAllPrices().then(() => {
+      ppRenderCards();
+      ppRenderTable();
+      _ppTs = new Date();
+      ppSetTs();
+    });
+  } catch(e) {
+    document.getElementById('pp-tbody').innerHTML =
+      `<div class="pp-nd">⚠ Could not load ProPicks data.<br><small style="color:var(--text3)">${e.message}</small><br><br>Ensure the <b>ProPicks</b> sheet tab exists and is published in Google Sheets.</div>`;
+  } finally { _ppBusy = false; }
+}
+
+function ppParse(j) {
+  const rows = j?.table?.rows || [];
+  return rows.slice(1).map(r => ({
+    portfolio:    ((r.c?.[0]?.v) ?? '').toString().trim(),
+    ticker:       ((r.c?.[1]?.v) ?? '').toString().trim(),
+    company:      ((r.c?.[2]?.v) ?? '').toString().trim(),
+    exchange:     ((r.c?.[3]?.v) ?? '').toString().trim(),
+    currency:     ((r.c?.[4]?.v) ?? '').toString().trim(),
+    addedDate:    ((r.c?.[5]?.v) ?? '').toString().trim(),
+    baseline:     parseFloat(r.c?.[6]?.v) || 0,
+    active:       ((r.c?.[7]?.v) ?? '').toString().toLowerCase() === 'true',
+    removedDate:  ((r.c?.[8]?.v) ?? '').toString().trim(),
+    removedPrice: parseFloat(r.c?.[9]?.v) || 0
+  })).filter(r => r.ticker && r.portfolio);
+}
+
+function ppYSym(ticker, exchange) {
+  return exchange === 'TSX' ? ticker.replace(/\./g, '-') + '.TO' : ticker;
+}
+
+async function ppFetchPrice(ticker, exchange) {
+  try {
+    const sym = ppYSym(ticker, exchange);
+    const r = await fetch(`https://query1.finance.yahoo.com/v8/finance/chart/${sym}?interval=1d&range=1d`);
+    if (!r.ok) return null;
+    const j = await r.json();
+    return j?.chart?.result?.[0]?.meta?.regularMarketPrice ?? null;
+  } catch(_) { return null; }
+}
+
+async function ppFetchAllPrices() {
+  const keys = [...new Set(
+    _ppRows.filter(r => r.active).map(r => `${r.ticker}||${r.exchange}`)
+  )];
+  for (let i = 0; i < keys.length; i += 5) {
+    await Promise.all(keys.slice(i, i+5).map(async k => {
+      const [t, e] = k.split('||');
+      const p = await ppFetchPrice(t, e);
+      if (p != null) _ppPrices[k] = p;
+    }));
+  }
+}
+
+function ppCurP(row) {
+  if (!row.active && row.removedPrice) return row.removedPrice;
+  return _ppPrices[`${row.ticker}||${row.exchange}`] ?? null;
+}
+
+function ppChg(row) {
+  const cur = ppCurP(row);
+  if (cur == null || !row.baseline) return null;
+  const amt = cur - row.baseline;
+  return { cur, amt, pct: (amt / row.baseline) * 100 };
+}
+
+function ppFilterRows(pName) {
+  const from = _ppFrom ? new Date(_ppFrom) : null;
+  const to   = _ppTo   ? new Date(_ppTo)   : new Date();
+  return _ppRows.filter(r => {
+    if (r.portfolio !== pName) return false;
+    const added = new Date(r.addedDate);
+    if (from && added > to) return false;
+    if (!r.active && r.removedDate) {
+      const rem = new Date(r.removedDate);
+      if (from && rem < from) return false;
+    }
+    return true;
+  });
+}
+
+function ppPortRet(pName) {
+  const pcts = ppFilterRows(pName).map(r => ppChg(r)?.pct).filter(v => v != null);
+  return pcts.length ? pcts.reduce((a,b) => a+b, 0) / pcts.length : null;
+}
+
+function ppRenderCards() {
+  const el = document.getElementById('pp-cards');
+  if (!el) return;
+  el.innerHTML = PP_PFLIST.map(pf => {
+    const ret = ppPortRet(pf.name);
+    const isAct = pf.name === _ppPort;
+    const cls = ret == null ? 'pp-neu' : ret >= 0 ? 'pp-pos' : 'pp-neg';
+    const retStr = ret == null ? '—' : (ret >= 0 ? '+' : '') + ret.toFixed(2) + '%';
+    const cnt = _ppRows.filter(r => r.portfolio === pf.name && r.active).length;
+    return `<div class="pp-card${isAct?' active':''}" onclick="ppSetPort('${pf.name.replace(/'/g,"\\'")}')">
+      <div style="font-size:20px;margin-bottom:6px">${pf.flag}</div>
+      <div class="pp-card-name">${pf.name}</div>
+      <span class="pp-card-badge">${pf.badge}</span>
+      <div class="pp-card-ret ${cls}">${retStr}</div>
+      <div class="pp-card-sub">${cnt ? cnt+' active stocks' : 'No data'} · equal-weight avg</div>
+    </div>`;
+  }).join('');
+}
+
+function ppRenderTable() {
+  const rows   = ppFilterRows(_ppPort);
+  const body   = document.getElementById('pp-tbody');
+  const ttl    = document.getElementById('pp-ttl');
+  const banner = document.getElementById('pp-banner');
+  const pf     = PP_PFLIST.find(p => p.name === _ppPort) || PP_PFLIST[0];
+  if (ttl) ttl.textContent = `${pf.flag} ${_ppPort} — ${rows.length} stock${rows.length!==1?'s':''}`;
+  if (!rows.length) {
+    body.innerHTML = '<div class="pp-nd">No stocks found. Add data to the <b>ProPicks</b> tab in Google Sheets.</div>';
+    if (banner) banner.style.display = 'none';
+    return;
+  }
+  // Sort
+  const sorted = [...rows].sort((a,b) => {
+    const ca = ppChg(a), cb = ppChg(b);
+    const fb = (x,y) => ((x??-Infinity)-(y??-Infinity));
+    if (_ppSortC==='chgPct') return fb(ca?.pct,cb?.pct) * _ppSortD;
+    if (_ppSortC==='chgAmt') return fb(ca?.amt,cb?.amt) * _ppSortD;
+    if (_ppSortC==='cur')    return fb(ppCurP(a),ppCurP(b)) * _ppSortD;
+    if (_ppSortC==='base')   return (a.baseline-b.baseline) * _ppSortD;
+    if (_ppSortC==='ticker') return a.ticker.localeCompare(b.ticker) * _ppSortD;
+    if (_ppSortC==='co')     return a.company.localeCompare(b.company) * _ppSortD;
+    return 0;
+  });
+  // Banner stats
+  const chgs = sorted.map(r => ppChg(r)).filter(Boolean);
+  const avg  = chgs.length ? chgs.reduce((s,c)=>s+c.pct,0)/chgs.length : null;
+  if (banner && avg != null) {
+    const best  = Math.max(...chgs.map(c=>c.pct));
+    const worst = Math.min(...chgs.map(c=>c.pct));
+    const wins  = chgs.filter(c=>c.pct>0).length;
+    const loss  = chgs.filter(c=>c.pct<0).length;
+    banner.style.display = 'flex';
+    const bv = (v,cls) => `<div class="pp-bi-val ${cls}">${v>=0?'+':''}${v.toFixed(2)}%</div>`;
+    banner.innerHTML = `
+      <div><div class="pp-bi-lbl">Portfolio Return</div>${bv(avg,avg>=0?'pp-pos':'pp-neg')}</div>
+      <div class="pp-bi-sep"></div>
+      <div><div class="pp-bi-lbl">Best Stock</div>${bv(best,'pp-pos')}</div>
+      <div class="pp-bi-sep"></div>
+      <div><div class="pp-bi-lbl">Worst Stock</div>${bv(worst,'pp-neg')}</div>
+      <div class="pp-bi-sep"></div>
+      <div><div class="pp-bi-lbl">Winners / Losers</div><div class="pp-bi-val pp-neu">${wins} / ${loss}</div></div>
+      <div style="margin-left:auto;font-size:11px;color:var(--text3)">${chgs.length} priced · equal-weight avg</div>`;
+  } else if (banner) banner.style.display = 'none';
+  // Format helpers
+  const fp = (p,cur) => {
+    if (p==null) return '<span style="color:var(--text3)">—</span>';
+    const s = cur==='CAD'?'C$':'$';
+    return s+p.toLocaleString('en',{minimumFractionDigits:2,maximumFractionDigits:2});
+  };
+  const fc = (v,isMoney,cur) => {
+    if (v==null) return '<span style="color:var(--text3)">—</span>';
+    const cls = v>=0?'pp-pos':'pp-neg';
+    const sgn = v>=0?'+':'';
+    if (isMoney) {
+      const s = cur==='CAD'?'C$':'$';
+      return `<span class="${cls}">${sgn}${s}${Math.abs(v).toLocaleString('en',{minimumFractionDigits:2,maximumFractionDigits:2})}</span>`;
+    }
+    return `<span class="${cls}" style="font-size:14px">${sgn}${v.toFixed(2)}%</span>`;
+  };
+  const th = (col,lbl) => {
+    const cur = _ppSortC===col;
+    const arr = cur?(_ppSortD===1?' ↑':' ↓'):'';
+    return `<th style="${cur?'color:var(--blue)':''}" onclick="ppSort('${col}')">${lbl}${arr}</th>`;
+  };
+  body.innerHTML = `<table class="pp-tbl"><thead><tr>
+    ${th('ticker','Ticker')}${th('co','Company')}
+    <th>Added</th>${th('base','Baseline')}${th('cur','Current')}
+    ${th('chgAmt','Chg ($)')}${th('chgPct','Chg %')}<th>Status</th>
+  </tr></thead><tbody>${sorted.map(r => {
+    const chg=ppChg(r), cur=ppCurP(r);
+    const pill=r.active?'<span class="pp-pill ok">Active</span>':'<span class="pp-pill rm">Removed</span>';
+    return `<tr>
+      <td style="font-weight:700;font-size:14px">${r.ticker}</td>
+      <td style="color:var(--text2);font-size:12px">${r.company}</td>
+      <td style="color:var(--text3);font-size:11px">${r.addedDate}</td>
+      <td>${fp(r.baseline,r.currency)}</td>
+      <td>${fp(cur,r.currency)}</td>
+      <td>${fc(chg?.amt,true,r.currency)}</td>
+      <td>${fc(chg?.pct,false,r.currency)}</td>
+      <td>${pill}</td>
+    </tr>`;
+  }).join('')}</tbody></table>`;
+}
+
+function ppSort(col) {
+  if (_ppSortC===col) _ppSortD*=-1; else { _ppSortC=col; _ppSortD=-1; }
+  ppRenderTable();
+}
+
+function ppSetPort(name) {
+  _ppPort = name;
+  ppRenderCards();
+  ppRenderTable();
+}
+
+function ppApplyDates() {
+  _ppFrom = document.getElementById('pp-from').value;
+  _ppTo   = document.getElementById('pp-to').value;
+  document.querySelectorAll('.pp-pre').forEach(b => b.classList.remove('act'));
+  ppRenderCards(); ppRenderTable();
+}
+
+function ppPreset(p) {
+  const t   = new Date();
+  const fmt = d => d.toISOString().split('T')[0];
+  const subD = n => { const d=new Date(t); d.setDate(d.getDate()-n); return fmt(d); };
+  const subM = n => { const d=new Date(t); d.setMonth(d.getMonth()-n); return fmt(d); };
+  document.querySelectorAll('.pp-pre').forEach(b => b.classList.remove('act'));
+  document.getElementById(`pp-pre-${p}`)?.classList.add('act');
+  if      (p==='all') { _ppFrom='2026-05-26'; _ppTo=''; }
+  else if (p==='30d') { _ppFrom=subD(30);     _ppTo=''; }
+  else if (p==='3m')  { _ppFrom=subM(3);      _ppTo=''; }
+  else if (p==='6m')  { _ppFrom=subM(6);      _ppTo=''; }
+  document.getElementById('pp-from').value = _ppFrom;
+  document.getElementById('pp-to').value   = _ppTo;
+  ppRenderCards(); ppRenderTable();
+}
+
+async function ppRefresh() {
+  const btn = document.getElementById('pp-rfbtn');
+  if (btn) btn.textContent = '⏳ Refreshing…';
+  _ppPrices = {};
+  await ppFetchAllPrices();
+  ppRenderCards(); ppRenderTable();
+  _ppTs = new Date(); ppSetTs();
+  if (btn) btn.innerHTML = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg> Refresh Prices';
+}
+
+function ppSetTs() {
+  const el = document.getElementById('pp-ts');
+  if (el && _ppTs) el.textContent = 'Updated ' + _ppTs.toLocaleTimeString();
+}
+
+// ── END PROPICKS ─────────────────────────────────────────────
 
 async function _rbRefreshCacheBadge() {
   try {
