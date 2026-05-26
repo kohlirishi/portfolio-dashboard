@@ -2274,8 +2274,16 @@ function updateMarketClock() {
     badge.textContent = '● Market Open';
     badge.className = 'market-badge open';
   } else {
-    badge.textContent = '○ Market Closed';
-    badge.className = 'market-badge closed';
+    // Check India (NSE) market — NSE_HOLIDAYS defined later in file, guard with try-catch
+    let nseOpen = false;
+    try { nseOpen = typeof isNSEMarketOpen === 'function' && isNSEMarketOpen(); } catch(e) {}
+    if (nseOpen) {
+      badge.textContent = '🇮🇳 India Market Open';
+      badge.className = 'market-badge open';
+    } else {
+      badge.textContent = '○ Market Closed';
+      badge.className = 'market-badge closed';
+    }
   }
 }
 updateMarketClock();
