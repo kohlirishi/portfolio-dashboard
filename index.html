@@ -5935,10 +5935,24 @@ const PP_PFLIST = [
   { name:'Beat the TSX',     label:'TSX Stocks',               flag:'🇨🇦', badge:'TSX20', idx:2 }
 ];
 const PF_COLORS = ['#3d9fff','#9b6dff','#10d07a'];
+// Benchmark indices per portfolio (fetched once, since baseline = launch date May 26 2026)
+const PP_BENCH = {
+  'Top Value Stocks': [
+    { sym:'SPY',      label:'S&P 500' },
+    { sym:'IVE',      label:'S&P Value' }
+  ],
+  'Tech Titans': [
+    { sym:'QQQ',      label:'NASDAQ 100' }
+  ],
+  'Beat the TSX': [
+    { sym:'^GSPTSE',  label:'TSX Comp' }
+  ]
+};
 let _ppRows   = [];
 let _ppPrices = {};
 let _pp30d    = {};
 let _pp90d    = {};
+let _ppBench  = {}; // { 'SPY': { cur, baseline, pct } }
 let _ppLoaded = false;
 let _ppBusy   = false;
 let _ppPort   = 'Top Value Stocks';
@@ -5977,8 +5991,10 @@ async function ppInit() {
     _ppLoaded = true;
     ppRenderCards();
     ppRenderTable();
-    // Fetch live prices, then re-render
-    ppFetchAllPrices().then(() => { ppRenderCards(); ppRenderTable(); _ppTs = new Date(); ppSetTs(); });
+    // Fetch live prices + benchmarks in parallel, then re-render
+    Promise.all([ppFetchAllPrices(), ppFetchAllBenchmarks()]).then(() => {
+      ppRenderCards(); ppRenderTable(); _ppTs = new Date(); ppSetTs();
+    });
   } catch(e) {
     document.getElementById('pp-tbody').innerHTML =
       `<div class="pp-nd">⚠ Could not load ProPicks data.<br><small style="color:var(--text3)">${e.message}</small><br><br>Make sure the <b>ProPicks</b> tab is published in Google Sheets.</div>`;
@@ -6060,6 +6076,38 @@ async function ppFetchAllPrices() {
       if (p?.old90 != null) _pp90d[k]   = p.old90;
     }));
   }
+}
+
+// ── BENCHMARK FETCH ──────────────────────────────────────────────
+// Fetches index return from ProPicks launch date (May 26 2026) to today
+async function ppFetchBenchmark(symbol) {
+  try {
+    const period1 = Math.floor(new Date('2026-05-26T14:00:00Z').getTime() / 1000);
+    const period2 = Math.floor(Date.now() / 1000);
+    const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?interval=1d&period1=${period1}&period2=${period2}`;
+    const r = await fetch('https://corsproxy.io/?url=' + encodeURIComponent(url));
+    if (!r.ok) return null;
+    const j = await r.json();
+    const res = j?.chart?.result?.[0];
+    if (!res) return null;
+    const cur = res.meta?.regularMarketPrice ?? null;
+    const closes = res.indicators?.quote?.[0]?.close ?? [];
+    // First valid close = baseline price on/after May 26
+    let baseline = null;
+    for (let i = 0; i < closes.length; i++) {
+      if (closes[i] != null) { baseline = closes[i]; break; }
+    }
+    if (cur == null || baseline == null) return null;
+    return { cur, baseline, pct: ((cur - baseline) / baseline) * 100 };
+  } catch(_) { return null; }
+}
+
+async function ppFetchAllBenchmarks() {
+  const syms = [...new Set(Object.values(PP_BENCH).flat().map(b => b.sym))];
+  await Promise.all(syms.map(async sym => {
+    const data = await ppFetchBenchmark(sym);
+    if (data) _ppBench[sym] = data;
+  }));
 }
 
 function ppCurPrice(row) {
@@ -6153,15 +6201,28 @@ function ppRenderOverall() {
   const winners = allChgs.filter(c => c.pct > 0).length;
   const losers  = allChgs.filter(c => c.pct <= 0).length;
 
+  const benchReady = Object.keys(_ppBench).length > 0;
   const badges = rets.map(({pf, val}) => {
     const s = val == null ? '<span style="color:var(--text3)">—</span>'
             : val >= 0   ? `<span style="color:var(--green);font-weight:700">+${val.toFixed(2)}%</span>`
                          : `<span style="color:var(--red);font-weight:700">${val.toFixed(2)}%</span>`;
     const col = PF_COLORS[pf.idx];
-    return `<span style="display:inline-flex;align-items:center;gap:7px;background:var(--surface1);border:1px solid var(--border);border-radius:8px;padding:6px 14px;font-size:12px">
-      <span style="width:6px;height:6px;border-radius:50%;background:${col};flex-shrink:0;box-shadow:0 0 6px ${col}88"></span>
-      <span style="color:var(--text2)">${pf.label}</span>${s}
-    </span>`;
+    // Benchmark comparison line
+    const benchmarks = PP_BENCH[pf.name] || [];
+    const benchLine = benchReady && benchmarks.length ? benchmarks.map(b => {
+      const bd = _ppBench[b.sym];
+      if (!bd) return `<span style="color:var(--text3)">${b.label}: —</span>`;
+      const bStr = (bd.pct >= 0 ? '+' : '') + bd.pct.toFixed(2) + '%';
+      const bCol = bd.pct >= 0 ? 'var(--green)' : 'var(--red)';
+      return `<span style="color:var(--text3)">${b.label}: <span style="color:${bCol};font-weight:600">${bStr}</span></span>`;
+    }).join('<span style="color:var(--text3);margin:0 4px">·</span>') : '';
+    return `<div style="display:inline-flex;flex-direction:column;background:var(--surface1);border:1px solid var(--border);border-radius:8px;padding:7px 14px;font-size:12px">
+      <div style="display:flex;align-items:center;gap:7px">
+        <span style="width:6px;height:6px;border-radius:50%;background:${col};flex-shrink:0;box-shadow:0 0 6px ${col}88"></span>
+        <span style="color:var(--text2)">${pf.label}</span>${s}
+      </div>
+      ${benchLine ? `<div style="font-size:10px;margin-top:5px;padding-left:13px">vs ${benchLine}</div>` : ''}
+    </div>`;
   }).join('');
 
   el.innerHTML = `
@@ -6339,8 +6400,8 @@ function ppPreset(p) {
 async function ppRefresh() {
   const btn = document.getElementById('pp-rfbtn');
   if (btn) btn.innerHTML = '⏳ Refreshing…';
-  _ppPrices = {}; _pp30d = {}; _pp90d = {};
-  await ppFetchAllPrices();
+  _ppPrices = {}; _pp30d = {}; _pp90d = {}; _ppBench = {};
+  await Promise.all([ppFetchAllPrices(), ppFetchAllBenchmarks()]);
   ppRenderCards();
   ppRenderTable();
   _ppTs = new Date();
@@ -6356,8 +6417,8 @@ function ppSetTs() {
 // ── AUTO-REFRESH every 60s (silent — no button flash) ────────────
 setInterval(async () => {
   if (_ppBusy || !_ppLoaded) return;
-  _ppPrices = {}; _pp30d = {}; _pp90d = {};
-  await ppFetchAllPrices();
+  _ppPrices = {}; _pp30d = {}; _pp90d = {}; _ppBench = {};
+  await Promise.all([ppFetchAllPrices(), ppFetchAllBenchmarks()]);
   ppRenderCards(); ppRenderTable();
   _ppTs = new Date(); ppSetTs();
 }, 60000);
