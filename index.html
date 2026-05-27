@@ -6162,8 +6162,10 @@ function ppRenderTable() {
     const worst = Math.min(...chgs.map(c => c.pct));
     const wins  = chgs.filter(c => c.pct > 0).length;
     const loss  = chgs.filter(c => c.pct <= 0).length;
-    const bestTicker  = rows.find(r => { const c=ppChg(r); return c && Math.abs(c.pct-best)<0.001; })?.ticker || '';
-    const worstTicker = rows.find(r => { const c=ppChg(r); return c && Math.abs(c.pct-worst)<0.001; })?.ticker || '';
+    const bestRow  = rows.find(r => { const c=ppChg(r); return c && Math.abs(c.pct-best)<0.001; });
+    const worstRow = rows.find(r => { const c=ppChg(r); return c && Math.abs(c.pct-worst)<0.001; });
+    const bestTicker  = bestRow  ? `${bestRow.ticker} · ${bestRow.company}`  : '';
+    const worstTicker = worstRow ? `${worstRow.ticker} · ${worstRow.company}` : '';
     banner.style.display = 'flex';
     const bv = (v,lbl,sub) => `<div><div class="pp-bi-lbl">${lbl}</div><div class="pp-bi-val ${v>=0?'pp-pos':'pp-neg'}">${v>=0?'+':''}${v.toFixed(2)}%</div>${sub?`<div style="font-size:10px;color:var(--text3);margin-top:2px">${sub}</div>`:''}</div>`;
     banner.innerHTML = `
