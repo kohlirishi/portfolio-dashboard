@@ -6095,7 +6095,7 @@ function ppRenderOverall() {
             : val >= 0   ? `<span style="color:var(--green);font-weight:700">+${val.toFixed(2)}%</span>`
                          : `<span style="color:var(--red);font-weight:700">${val.toFixed(2)}%</span>`;
     return `<span style="display:inline-flex;align-items:center;gap:6px;background:var(--surface1);border:1px solid var(--border);border-radius:6px;padding:4px 10px;font-size:12px">
-      <span>${pf.flag}</span><span style="color:var(--text2)">${pf.badge}</span>${s}
+      <span>${pf.flag}</span><span style="color:var(--text2)">${pf.name}</span>${s}
     </span>`;
   }).join('');
   el.innerHTML = `
