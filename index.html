@@ -2075,6 +2075,61 @@ table.div-ht tfoot td{padding:10px 14px;font-size:13px;font-weight:700;backgroun
 </div>
 </div><!-- /pg-propicks -->
 
+<!-- PROPICKS AI TRACKER PAGE -->
+<div id="pg-propicks">
+<div class="pp-wrap">
+
+  <!-- Header -->
+  <div style="display:flex;align-items:center;gap:16px;margin-bottom:24px">
+    <button onclick="showMain()" style="display:inline-flex;align-items:center;gap:6px;padding:7px 16px;background:transparent;border:1px solid var(--border);color:var(--text2);font-size:13px;font-weight:600;border-radius:6px;cursor:pointer;font-family:inherit;transition:all .15s" onmouseover="this.style.borderColor='#3d9fff';this.style.color='#e2ecf7'" onmouseout="this.style.borderColor='var(--border)';this.style.color='var(--text2)'">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m15 18-6-6 6-6"/></svg>
+      Back
+    </button>
+    <div style="flex:1">
+      <div style="font-size:20px;font-weight:800;color:var(--text);letter-spacing:-.5px">🤖 ProPicks AI Tracker</div>
+      <div style="font-size:12px;color:var(--text3);margin-top:2px">Performance since baseline · Equal-weight returns · InvestingPro ProPicks AI</div>
+    </div>
+    <button class="pp-rfbtn" onclick="ppRefresh()" id="pp-rfbtn">
+      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
+      Refresh Prices
+    </button>
+  </div>
+
+  <!-- Portfolio cards -->
+  <div class="pp-cards" id="pp-cards">
+    <div class="pp-card" style="opacity:.4"><div style="font-size:20px;margin-bottom:8px">🇺🇸</div><div class="pp-card-name">Top Value Stocks</div><span class="pp-card-badge">US25</span><div class="pp-card-ret pp-neu">—</div><div class="pp-card-sub">Loading…</div></div>
+    <div class="pp-card" style="opacity:.4"><div style="font-size:20px;margin-bottom:8px">🇺🇸</div><div class="pp-card-name">Tech Titans</div><span class="pp-card-badge">IT18</span><div class="pp-card-ret pp-neu">—</div><div class="pp-card-sub">Loading…</div></div>
+    <div class="pp-card" style="opacity:.4"><div style="font-size:20px;margin-bottom:8px">🇨🇦</div><div class="pp-card-name">Beat the TSX</div><span class="pp-card-badge">TSX20</span><div class="pp-card-ret pp-neu">—</div><div class="pp-card-sub">Loading…</div></div>
+  </div>
+
+  <!-- Stats banner -->
+  <div class="pp-banner" id="pp-banner" style="display:none"></div>
+
+  <!-- Filters -->
+  <div class="pp-filters">
+    <span class="pp-dlbl">From:</span>
+    <input type="date" class="pp-din" id="pp-from" value="2026-05-26" onchange="ppApplyDates()">
+    <span class="pp-dlbl">To:</span>
+    <input type="date" class="pp-din" id="pp-to" onchange="ppApplyDates()">
+    <button class="pp-pre act" id="pp-pre-all" onclick="ppPreset('all')">Since Start</button>
+    <button class="pp-pre" id="pp-pre-30d" onclick="ppPreset('30d')">Last 30d</button>
+    <button class="pp-pre" id="pp-pre-3m"  onclick="ppPreset('3m')">Last 3M</button>
+    <button class="pp-pre" id="pp-pre-6m"  onclick="ppPreset('6m')">Last 6M</button>
+    <span id="pp-ts" style="margin-left:auto;font-size:11px;color:var(--text3)"></span>
+  </div>
+
+  <!-- Table -->
+  <div class="pp-twrap">
+    <div class="pp-thdr">
+      <span class="pp-ttl" id="pp-ttl">Portfolio</span>
+      <span style="font-size:11px;color:var(--text3)">Live prices · Yahoo Finance</span>
+    </div>
+    <div id="pp-tbody"><div class="pp-ld">Click a portfolio card above to view stocks</div></div>
+  </div>
+
+</div>
+</div><!-- /pg-propicks -->
+
 <!-- STOCK ANALYSER PAGE -->
 <div id="pg-analyser" style="display:none">
 <div class="sa-page">
@@ -5895,6 +5950,320 @@ function showRebalance() {
   rbLoadReports();
   _rbRefreshCacheBadge();
 }
+
+// ═══════════════════════════════════════════════════════════════
+//  PROPICKS AI TRACKER
+// ═══════════════════════════════════════════════════════════════
+const PP_PFLIST = [
+  { name:'Top Value Stocks', flag:'🇺🇸', badge:'US25' },
+  { name:'Tech Titans',      flag:'🇺🇸', badge:'IT18' },
+  { name:'Beat the TSX',     flag:'🇨🇦', badge:'TSX20' }
+];
+let _ppRows   = [];
+let _ppPrices = {};
+let _ppLoaded = false;
+let _ppBusy   = false;
+let _ppPort   = 'Top Value Stocks';
+let _ppFrom   = '2026-05-26';
+let _ppTo     = '';
+let _ppSortCol= 'chgPct';
+let _ppSortDir= -1;
+let _ppTs     = null;
+
+function showProPicks() {
+  destroyDivCharts();
+  _hideSubPages();
+  document.getElementById('pg-main').classList.add('hide');
+  document.getElementById('pg-div').classList.remove('show');
+  document.getElementById('pg-analyser').style.display = 'none';
+  ['btn-dashboard-nav','btn-sa-nav'].forEach(id => document.getElementById(id)?.classList.remove('active'));
+  document.getElementById('pg-propicks').style.display = 'block';
+  document.getElementById('btn-propicks-nav').classList.add('active');
+  document.getElementById('btn-more-nav')?.classList.add('active');
+  window.scrollTo(0,0);
+  ppInit();
+}
+
+async function ppInit() {
+  if (_ppLoaded && _ppRows.length) { ppRenderCards(); ppRenderTable(); return; }
+  if (_ppBusy) return;
+  _ppBusy = true;
+  document.getElementById('pp-tbody').innerHTML = '<div class="pp-ld">⏳ Loading ProPicks data from Google Sheets…</div>';
+  document.getElementById('pp-banner').style.display = 'none';
+  try {
+    const url = `https://docs.google.com/spreadsheets/d/${SID}/gviz/tq?tqx=out:json&sheet=ProPicks`;
+    const res = await fetch(url);
+    const txt = await res.text();
+    const j   = JSON.parse(txt.replace(/^[^\(]+\(/, '').replace(/\);\s*$/, ''));
+    _ppRows   = ppParse(j);
+    _ppLoaded = true;
+    ppRenderCards();
+    ppRenderTable();
+    // Fetch live prices, then re-render
+    ppFetchAllPrices().then(() => { ppRenderCards(); ppRenderTable(); _ppTs = new Date(); ppSetTs(); });
+  } catch(e) {
+    document.getElementById('pp-tbody').innerHTML =
+      `<div class="pp-nd">⚠ Could not load ProPicks data.<br><small style="color:var(--text3)">${e.message}</small><br><br>Make sure the <b>ProPicks</b> tab is published in Google Sheets.</div>`;
+  } finally { _ppBusy = false; }
+}
+
+function ppParse(j) {
+  const rows = j?.table?.rows || [];
+  return rows.slice(1).map(r => ({
+    portfolio:    (r.c?.[0]?.v ?? '').toString().trim(),
+    ticker:       (r.c?.[1]?.v ?? '').toString().trim(),
+    company:      (r.c?.[2]?.v ?? '').toString().trim(),
+    exchange:     (r.c?.[3]?.v ?? '').toString().trim(),
+    currency:     (r.c?.[4]?.v ?? '').toString().trim(),
+    addedDate:    (r.c?.[5]?.v ?? '').toString().trim(),
+    baseline:     parseFloat(r.c?.[6]?.v) || 0,
+    active:       (r.c?.[7]?.v ?? '').toString().toLowerCase() === 'true',
+    removedDate:  (r.c?.[8]?.v ?? '').toString().trim(),
+    removedPrice: parseFloat(r.c?.[9]?.v) || 0
+  })).filter(r => r.ticker && r.portfolio);
+}
+
+function ppYSym(ticker, exchange) {
+  return exchange === 'TSX' ? ticker.replace(/\./g, '-') + '.TO' : ticker;
+}
+
+async function ppFetchPrice(ticker, exchange) {
+  try {
+    const sym = ppYSym(ticker, exchange);
+    const r = await fetch(`https://query1.finance.yahoo.com/v8/finance/chart/${sym}?interval=1d&range=1d`);
+    if (!r.ok) return null;
+    const j = await r.json();
+    return j?.chart?.result?.[0]?.meta?.regularMarketPrice ?? null;
+  } catch(_) { return null; }
+}
+
+async function ppFetchAllPrices() {
+  const keys = [...new Set(_ppRows.filter(r => r.active).map(r => `${r.ticker}||${r.exchange}`))];
+  for (let i = 0; i < keys.length; i += 5) {
+    await Promise.all(keys.slice(i, i+5).map(async k => {
+      const [t, e] = k.split('||');
+      const p = await ppFetchPrice(t, e);
+      if (p != null) _ppPrices[k] = p;
+    }));
+  }
+}
+
+function ppCurPrice(row) {
+  if (!row.active && row.removedPrice) return row.removedPrice;
+  return _ppPrices[`${row.ticker}||${row.exchange}`] ?? null;
+}
+
+function ppChg(row) {
+  const cur = ppCurPrice(row);
+  if (cur == null || !row.baseline) return null;
+  const amt = cur - row.baseline;
+  return { cur, amt, pct: (amt / row.baseline) * 100 };
+}
+
+function ppFilteredRows(pName) {
+  const from = _ppFrom ? new Date(_ppFrom) : null;
+  const to   = _ppTo   ? new Date(_ppTo)   : new Date();
+  return _ppRows.filter(r => {
+    if (r.portfolio !== pName) return false;
+    const added = new Date(r.addedDate);
+    if (from && added > to) return false;
+    if (!r.active && r.removedDate) {
+      const rem = new Date(r.removedDate);
+      if (from && rem < from) return false;
+    }
+    return true;
+  });
+}
+
+function ppPortReturn(pName) {
+  const pcts = ppFilteredRows(pName).map(r => ppChg(r)?.pct).filter(v => v != null);
+  return pcts.length ? pcts.reduce((a,b) => a+b, 0) / pcts.length : null;
+}
+
+function ppRenderCards() {
+  const el = document.getElementById('pp-cards');
+  if (!el) return;
+  el.innerHTML = PP_PFLIST.map(pf => {
+    const ret = ppPortReturn(pf.name);
+    const isAct = pf.name === _ppPort;
+    const cls = ret == null ? 'pp-neu' : ret >= 0 ? 'pp-pos' : 'pp-neg';
+    const retStr = ret == null ? (Object.keys(_ppPrices).length ? '—' : '…') : (ret >= 0 ? '+' : '') + ret.toFixed(2) + '%';
+    const cnt = _ppRows.filter(r => r.portfolio === pf.name && r.active).length;
+    const tot = _ppRows.filter(r => r.portfolio === pf.name).length;
+    return `<div class="pp-card${isAct ? ' active' : ''}" onclick="ppSetPort('${pf.name.replace(/'/g,"\\'")}')">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start">
+        <div>
+          <div style="font-size:20px;margin-bottom:6px">${pf.flag}</div>
+          <div class="pp-card-name">${pf.name}</div>
+          <span class="pp-card-badge">${pf.badge}</span>
+        </div>
+        ${isAct ? '<div style="width:8px;height:8px;border-radius:50%;background:var(--blue);margin-top:4px;flex-shrink:0"></div>' : ''}
+      </div>
+      <div class="pp-card-ret ${cls}">${retStr}</div>
+      <div class="pp-card-sub">${cnt} active · ${tot} total · equal-weight</div>
+    </div>`;
+  }).join('');
+}
+
+function ppRenderTable() {
+  const rows  = ppFilteredRows(_ppPort);
+  const body  = document.getElementById('pp-tbody');
+  const title = document.getElementById('pp-ttl');
+  const banner= document.getElementById('pp-banner');
+  const pf    = PP_PFLIST.find(p => p.name === _ppPort) || PP_PFLIST[0];
+  const activeRows = rows.filter(r => r.active);
+  const removedRows = rows.filter(r => !r.active);
+  if (title) title.textContent = `${pf.flag} ${_ppPort} — ${activeRows.length} active · ${removedRows.length} removed`;
+
+  if (!rows.length) {
+    body.innerHTML = '<div class="pp-nd">No stocks found.<br><small>Add data to the ProPicks sheet tab.</small></div>';
+    if (banner) banner.style.display = 'none';
+    return;
+  }
+
+  // Sort
+  const sorted = [...rows].sort((a, b) => {
+    const ca = ppChg(a), cb = ppChg(b);
+    const fb = (x,y) => ((x??-Infinity) - (y??-Infinity)) * _ppSortDir;
+    if (_ppSortCol === 'chgPct') return fb(ca?.pct, cb?.pct);
+    if (_ppSortCol === 'chgAmt') return fb(ca?.amt, cb?.amt);
+    if (_ppSortCol === 'cur')    return fb(ppCurPrice(a), ppCurPrice(b));
+    if (_ppSortCol === 'base')   return (a.baseline - b.baseline) * _ppSortDir;
+    if (_ppSortCol === 'ticker') return a.ticker.localeCompare(b.ticker) * _ppSortDir;
+    if (_ppSortCol === 'co')     return a.company.localeCompare(b.company) * _ppSortDir;
+    return 0;
+  });
+
+  // Banner stats
+  const chgs = rows.map(r => ppChg(r)).filter(Boolean);
+  const avg  = chgs.length ? chgs.reduce((s,c) => s+c.pct, 0) / chgs.length : null;
+  if (banner && avg != null) {
+    const best  = Math.max(...chgs.map(c => c.pct));
+    const worst = Math.min(...chgs.map(c => c.pct));
+    const wins  = chgs.filter(c => c.pct > 0).length;
+    const loss  = chgs.filter(c => c.pct <= 0).length;
+    const bestTicker  = rows.find(r => { const c=ppChg(r); return c && Math.abs(c.pct-best)<0.001; })?.ticker || '';
+    const worstTicker = rows.find(r => { const c=ppChg(r); return c && Math.abs(c.pct-worst)<0.001; })?.ticker || '';
+    banner.style.display = 'flex';
+    const bv = (v,lbl,sub) => `<div><div class="pp-bi-lbl">${lbl}</div><div class="pp-bi-val ${v>=0?'pp-pos':'pp-neg'}">${v>=0?'+':''}${v.toFixed(2)}%</div>${sub?`<div style="font-size:10px;color:var(--text3);margin-top:2px">${sub}</div>`:''}</div>`;
+    banner.innerHTML = `
+      ${bv(avg,'Portfolio Return')}
+      <div class="pp-bi-sep"></div>
+      ${bv(best,'Best Stock',bestTicker)}
+      <div class="pp-bi-sep"></div>
+      ${bv(worst,'Worst Stock',worstTicker)}
+      <div class="pp-bi-sep"></div>
+      <div><div class="pp-bi-lbl">Winners / Losers</div><div class="pp-bi-val pp-neu">${wins} / ${loss}</div><div style="font-size:10px;color:var(--text3);margin-top:2px">${chgs.length} priced</div></div>
+      <div style="margin-left:auto;font-size:11px;color:var(--text3);text-align:right">Equal-weight avg<br>Since ${_ppFrom||'start'}</div>`;
+  } else if (banner) banner.style.display = 'none';
+
+  // Format helpers
+  const fmtP = (p, cur) => {
+    if (p == null) return '<span style="color:var(--text3)">—</span>';
+    const s = cur === 'CAD' ? 'C$' : '$';
+    return s + p.toLocaleString('en', { minimumFractionDigits:2, maximumFractionDigits:2 });
+  };
+  const fmtC = (v, isMoney, cur) => {
+    if (v == null) return '<span style="color:var(--text3)">—</span>';
+    const cls = v >= 0 ? 'pp-pos' : 'pp-neg';
+    const sign = v >= 0 ? '+' : '';
+    if (isMoney) {
+      const s = cur === 'CAD' ? 'C$' : '$';
+      return `<span class="${cls}">${sign}${s}${Math.abs(v).toLocaleString('en',{minimumFractionDigits:2,maximumFractionDigits:2})}</span>`;
+    }
+    return `<span class="${cls}" style="font-size:14px;font-weight:800">${sign}${v.toFixed(2)}%</span>`;
+  };
+  const th = (col, lbl) => {
+    const isCur = _ppSortCol === col;
+    return `<th style="${isCur?'color:var(--blue)':''}" onclick="ppSort('${col}')">${lbl}${isCur?(_ppSortDir===1?' ↑':' ↓'):''}</th>`;
+  };
+
+  body.innerHTML = `<table class="pp-tbl">
+    <thead><tr>
+      ${th('ticker','Ticker')}
+      ${th('co','Company')}
+      <th>Added</th>
+      ${th('base','Baseline')}
+      ${th('cur','Current')}
+      ${th('chgAmt','Chg $')}
+      ${th('chgPct','Chg %')}
+      <th>Status</th>
+    </tr></thead>
+    <tbody>
+      ${sorted.map(r => {
+        const chg = ppChg(r);
+        const cur = ppCurPrice(r);
+        const pill = r.active
+          ? '<span class="pp-pill ok">Active</span>'
+          : `<span class="pp-pill rm">Removed${r.removedDate?' '+r.removedDate:''}</span>`;
+        return `<tr>
+          <td style="font-weight:700;color:var(--text);letter-spacing:.3px">${r.ticker}</td>
+          <td style="color:var(--text2);font-size:12px">${r.company}</td>
+          <td style="color:var(--text3);font-size:11px">${r.addedDate}</td>
+          <td style="color:var(--text2)">${fmtP(r.baseline, r.currency)}</td>
+          <td style="font-weight:600">${fmtP(cur, r.currency)}</td>
+          <td>${fmtC(chg?.amt, true, r.currency)}</td>
+          <td>${fmtC(chg?.pct, false, r.currency)}</td>
+          <td>${pill}</td>
+        </tr>`;
+      }).join('')}
+    </tbody>
+  </table>`;
+}
+
+function ppSort(col) {
+  if (_ppSortCol === col) _ppSortDir *= -1; else { _ppSortCol = col; _ppSortDir = -1; }
+  ppRenderTable();
+}
+
+function ppSetPort(name) {
+  _ppPort = name;
+  ppRenderCards();
+  ppRenderTable();
+}
+
+function ppApplyDates() {
+  _ppFrom = document.getElementById('pp-from').value;
+  _ppTo   = document.getElementById('pp-to').value;
+  document.querySelectorAll('.pp-pre').forEach(b => b.classList.remove('act'));
+  ppRenderCards();
+  ppRenderTable();
+}
+
+function ppPreset(p) {
+  const t = new Date();
+  const fmt  = d => d.toISOString().split('T')[0];
+  const subD = n => { const d=new Date(t); d.setDate(d.getDate()-n); return fmt(d); };
+  const subM = n => { const d=new Date(t); d.setMonth(d.getMonth()-n); return fmt(d); };
+  document.querySelectorAll('.pp-pre').forEach(b => b.classList.remove('act'));
+  document.getElementById('pp-pre-'+p)?.classList.add('act');
+  if      (p==='all') { _ppFrom='2026-05-26'; _ppTo=''; }
+  else if (p==='30d') { _ppFrom=subD(30); _ppTo=''; }
+  else if (p==='3m')  { _ppFrom=subM(3);  _ppTo=''; }
+  else if (p==='6m')  { _ppFrom=subM(6);  _ppTo=''; }
+  document.getElementById('pp-from').value = _ppFrom;
+  document.getElementById('pp-to').value   = _ppTo;
+  ppRenderCards();
+  ppRenderTable();
+}
+
+async function ppRefresh() {
+  const btn = document.getElementById('pp-rfbtn');
+  if (btn) btn.innerHTML = '⏳ Refreshing…';
+  _ppPrices = {};
+  await ppFetchAllPrices();
+  ppRenderCards();
+  ppRenderTable();
+  _ppTs = new Date();
+  ppSetTs();
+  if (btn) btn.innerHTML = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg> Refresh Prices`;
+}
+
+function ppSetTs() {
+  const el = document.getElementById('pp-ts');
+  if (el && _ppTs) el.textContent = 'Updated ' + _ppTs.toLocaleTimeString();
+}
+// ═══════════════════════════════════════════════════════════════
 
 // ═══════════════════════════════════════════════════════════════
 //  PROPICKS AI TRACKER
