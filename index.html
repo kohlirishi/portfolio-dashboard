@@ -2040,6 +2040,11 @@ table.div-ht tfoot td{padding:10px 14px;font-size:13px;font-weight:700;backgroun
     </button>
   </div>
 
+  <!-- Overall return bar -->
+  <div id="pp-overall" style="background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:16px 24px;margin-bottom:16px;display:flex;align-items:center;gap:24px;flex-wrap:wrap">
+    <div style="color:var(--text3);font-size:13px">⏳ Loading overall return…</div>
+  </div>
+
   <!-- Portfolio cards -->
   <div class="pp-cards" id="pp-cards">
     <div class="pp-card active"><div style="font-size:20px;margin-bottom:6px">🇺🇸</div><div class="pp-card-name">Top Value Stocks</div><span class="pp-card-badge">US25</span><div class="pp-card-ret pp-neu">—</div><div class="pp-card-sub">Loading…</div></div>
@@ -2075,60 +2080,6 @@ table.div-ht tfoot td{padding:10px 14px;font-size:13px;font-weight:700;backgroun
 </div>
 </div><!-- /pg-propicks -->
 
-<!-- PROPICKS AI TRACKER PAGE -->
-<div id="pg-propicks">
-<div class="pp-wrap">
-
-  <!-- Header -->
-  <div style="display:flex;align-items:center;gap:16px;margin-bottom:24px">
-    <button onclick="showMain()" style="display:inline-flex;align-items:center;gap:6px;padding:7px 16px;background:transparent;border:1px solid var(--border);color:var(--text2);font-size:13px;font-weight:600;border-radius:6px;cursor:pointer;font-family:inherit;transition:all .15s" onmouseover="this.style.borderColor='#3d9fff';this.style.color='#e2ecf7'" onmouseout="this.style.borderColor='var(--border)';this.style.color='var(--text2)'">
-      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m15 18-6-6 6-6"/></svg>
-      Back
-    </button>
-    <div style="flex:1">
-      <div style="font-size:20px;font-weight:800;color:var(--text);letter-spacing:-.5px">🤖 ProPicks AI Tracker</div>
-      <div style="font-size:12px;color:var(--text3);margin-top:2px">Performance since baseline · Equal-weight returns · InvestingPro ProPicks AI</div>
-    </div>
-    <button class="pp-rfbtn" onclick="ppRefresh()" id="pp-rfbtn">
-      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
-      Refresh Prices
-    </button>
-  </div>
-
-  <!-- Portfolio cards -->
-  <div class="pp-cards" id="pp-cards">
-    <div class="pp-card" style="opacity:.4"><div style="font-size:20px;margin-bottom:8px">🇺🇸</div><div class="pp-card-name">Top Value Stocks</div><span class="pp-card-badge">US25</span><div class="pp-card-ret pp-neu">—</div><div class="pp-card-sub">Loading…</div></div>
-    <div class="pp-card" style="opacity:.4"><div style="font-size:20px;margin-bottom:8px">🇺🇸</div><div class="pp-card-name">Tech Titans</div><span class="pp-card-badge">IT18</span><div class="pp-card-ret pp-neu">—</div><div class="pp-card-sub">Loading…</div></div>
-    <div class="pp-card" style="opacity:.4"><div style="font-size:20px;margin-bottom:8px">🇨🇦</div><div class="pp-card-name">Beat the TSX</div><span class="pp-card-badge">TSX20</span><div class="pp-card-ret pp-neu">—</div><div class="pp-card-sub">Loading…</div></div>
-  </div>
-
-  <!-- Stats banner -->
-  <div class="pp-banner" id="pp-banner" style="display:none"></div>
-
-  <!-- Filters -->
-  <div class="pp-filters">
-    <span class="pp-dlbl">From:</span>
-    <input type="date" class="pp-din" id="pp-from" value="2026-05-26" onchange="ppApplyDates()">
-    <span class="pp-dlbl">To:</span>
-    <input type="date" class="pp-din" id="pp-to" onchange="ppApplyDates()">
-    <button class="pp-pre act" id="pp-pre-all" onclick="ppPreset('all')">Since Start</button>
-    <button class="pp-pre" id="pp-pre-30d" onclick="ppPreset('30d')">Last 30d</button>
-    <button class="pp-pre" id="pp-pre-3m"  onclick="ppPreset('3m')">Last 3M</button>
-    <button class="pp-pre" id="pp-pre-6m"  onclick="ppPreset('6m')">Last 6M</button>
-    <span id="pp-ts" style="margin-left:auto;font-size:11px;color:var(--text3)"></span>
-  </div>
-
-  <!-- Table -->
-  <div class="pp-twrap">
-    <div class="pp-thdr">
-      <span class="pp-ttl" id="pp-ttl">Portfolio</span>
-      <span style="font-size:11px;color:var(--text3)">Live prices · Yahoo Finance</span>
-    </div>
-    <div id="pp-tbody"><div class="pp-ld">Click a portfolio card above to view stocks</div></div>
-  </div>
-
-</div>
-</div><!-- /pg-propicks -->
 
 <!-- STOCK ANALYSER PAGE -->
 <div id="pg-analyser" style="display:none">
@@ -6123,6 +6074,41 @@ function ppRenderCards() {
       <div class="pp-card-sub">${cnt} active · ${tot} total · equal-weight</div>
     </div>`;
   }).join('');
+  ppRenderOverall();
+}
+
+function ppRenderOverall() {
+  const el = document.getElementById('pp-overall');
+  if (!el) return;
+  const pricesReady = Object.keys(_ppPrices).length > 0;
+  const rets = PP_PFLIST.map(pf => ({ pf, val: ppPortReturn(pf.name) }));
+  const known = rets.filter(x => x.val != null);
+  if (!pricesReady) {
+    el.innerHTML = '<div style="color:var(--text3);font-size:13px">⏳ Loading overall return…</div>';
+    return;
+  }
+  const overall = known.length ? known.reduce((s,x) => s + x.val, 0) / known.length : null;
+  const ovCls   = overall == null ? 'color:var(--text3)' : overall >= 0 ? 'color:var(--green)' : 'color:var(--red)';
+  const ovStr   = overall == null ? '—' : (overall >= 0 ? '+' : '') + overall.toFixed(2) + '%';
+  const breakdownHTML = rets.map(({pf, val}) => {
+    const s = val == null ? '<span style="color:var(--text3)">—</span>'
+            : val >= 0   ? `<span style="color:var(--green);font-weight:700">+${val.toFixed(2)}%</span>`
+                         : `<span style="color:var(--red);font-weight:700">${val.toFixed(2)}%</span>`;
+    return `<span style="display:inline-flex;align-items:center;gap:6px;background:var(--surface1);border:1px solid var(--border);border-radius:6px;padding:4px 10px;font-size:12px">
+      <span>${pf.flag}</span><span style="color:var(--text2)">${pf.badge}</span>${s}
+    </span>`;
+  }).join('');
+  el.innerHTML = `
+    <div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap;width:100%">
+      <div>
+        <div style="font-size:11px;font-weight:600;letter-spacing:.07em;text-transform:uppercase;color:var(--text3);margin-bottom:2px">Overall Return</div>
+        <div style="font-size:32px;font-weight:800;letter-spacing:-.5px;line-height:1;${ovCls}">${ovStr}</div>
+        <div style="font-size:11px;color:var(--text3);margin-top:3px">avg of all 3 portfolios · since 26 May 2026</div>
+      </div>
+      <div style="flex:1;min-width:200px;display:flex;flex-wrap:wrap;gap:8px;justify-content:flex-end">
+        ${breakdownHTML}
+      </div>
+    </div>`;
 }
 
 function ppRenderTable() {
