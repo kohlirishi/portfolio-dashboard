@@ -2074,9 +2074,9 @@ table.div-ht tfoot td{padding:10px 14px;font-size:13px;font-weight:700;backgroun
 
   <!-- Portfolio cards -->
   <div class="pp-cards" id="pp-cards">
-    <div class="pp-card active" data-pf="0"><div style="font-size:22px;margin-bottom:8px">🇺🇸</div><div class="pp-card-name">US Stocks</div><div class="pp-card-ret pp-neu">—</div><div class="pp-card-sub">Loading…</div></div>
-    <div class="pp-card" data-pf="1"><div style="font-size:22px;margin-bottom:8px">🇺🇸</div><div class="pp-card-name">US Tech Stocks (Mid Cap)</div><div class="pp-card-ret pp-neu">—</div><div class="pp-card-sub">Loading…</div></div>
-    <div class="pp-card" data-pf="2"><div style="font-size:22px;margin-bottom:8px">🇨🇦</div><div class="pp-card-name">TSX Stocks</div><div class="pp-card-ret pp-neu">—</div><div class="pp-card-sub">Loading…</div></div>
+    <div class="pp-card active" data-pf="0"><div style="font-size:9px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;color:#3d9fff;opacity:.9;margin-bottom:5px">Portfolio 1</div><div style="font-size:22px;margin-bottom:8px">🇺🇸</div><div class="pp-card-name">US Stocks</div><div class="pp-card-ret pp-neu">—</div><div class="pp-card-sub">Loading…</div></div>
+    <div class="pp-card" data-pf="1"><div style="font-size:9px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;color:#9b6dff;opacity:.9;margin-bottom:5px">Portfolio 2</div><div style="font-size:22px;margin-bottom:8px">🇺🇸</div><div class="pp-card-name">US Tech Stocks (Mid Cap)</div><div class="pp-card-ret pp-neu">—</div><div class="pp-card-sub">Loading…</div></div>
+    <div class="pp-card" data-pf="2"><div style="font-size:9px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;color:#10d07a;opacity:.9;margin-bottom:5px">Portfolio 3</div><div style="font-size:22px;margin-bottom:8px">🇨🇦</div><div class="pp-card-name">TSX Stocks</div><div class="pp-card-ret pp-neu">—</div><div class="pp-card-sub">Loading…</div></div>
   </div>
 
   <!-- Stats banner -->
@@ -6174,6 +6174,7 @@ function ppRenderCards() {
     return `<div class="pp-card${isAct ? ' active' : ''}" data-pf="${pf.idx}" onclick="ppSetPort('${pf.name.replace(/'/g,"\\'")}')">
       <div style="display:flex;justify-content:space-between;align-items:flex-start">
         <div>
+          <div style="font-size:9px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;color:${col};opacity:.9;margin-bottom:5px">Portfolio ${pf.idx + 1}</div>
           <div style="font-size:22px;margin-bottom:8px">${pf.flag}</div>
           <div class="pp-card-name">${pf.label}</div>
         </div>
@@ -6354,6 +6355,7 @@ function ppRenderTable() {
   };
 
   const COL_COUNT = 10; // total columns in the table
+  const pfHdrRow = `<tr style="pointer-events:none"><td colspan="${COL_COUNT + 1}" style="padding:7px 16px;background:linear-gradient(90deg,${col}12,transparent 60%);border-bottom:1px solid var(--border)"><span style="font-size:10px;font-weight:700;color:${col};letter-spacing:.6px;text-transform:uppercase">Portfolio ${pf.idx + 1}</span><span style="font-size:10px;color:var(--text3);margin-left:10px">${pf.flag} ${pf.label} · ${pf.badge}</span></td></tr>`;
   body.innerHTML = `<table class="pp-tbl">
     <thead><tr>
       <th style="width:28px"></th>
@@ -6361,6 +6363,7 @@ function ppRenderTable() {
       ${th('base','Baseline')}${th('cur','Current')}${th('chgAmt','Chg $')}${th('chgPct','Chg %')}${th('30d','30d %')}${th('90d','90d %')}<th>Status</th>
     </tr></thead>
     <tbody>
+      ${pfHdrRow}
       ${sorted.map((r, i) => {
         const chg = ppChg(r);
         const cur = ppCurPrice(r);
