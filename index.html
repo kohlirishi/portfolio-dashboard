@@ -738,6 +738,9 @@ table.div-ht tfoot td{padding:10px 14px;font-size:13px;font-weight:700;backgroun
 .pp-tbl tbody tr:hover{background:var(--surface2)}
 .pp-tbl tbody tr:last-child{border-bottom:none}
 .pp-tbl tbody td{padding:11px 14px;font-size:13px;vertical-align:middle}
+/* rationale expand row — no extra hover, no double border */
+.pp-tbl tbody tr.pp-rat-row{background:transparent!important}
+.pp-tbl tbody tr.pp-rat-row:hover{background:transparent!important}
 .pp-pill{display:inline-block;font-size:10px;font-weight:700;padding:2px 8px;border-radius:4px;letter-spacing:.3px}
 .pp-pill.ok{background:rgba(16,208,122,.12);color:var(--green);border:1px solid rgba(16,208,122,.25)}
 .pp-pill.rm{background:rgba(240,79,110,.12);color:var(--red);border:1px solid rgba(240,79,110,.25)}
@@ -6022,16 +6025,19 @@ function ppFmtDate(s) {
 function ppParse(j) {
   const rows = j?.table?.rows || [];
   return rows.slice(1).map(r => ({
-    portfolio:    (r.c?.[0]?.v ?? '').toString().trim(),
-    ticker:       (r.c?.[1]?.v ?? '').toString().trim(),
-    company:      (r.c?.[2]?.v ?? '').toString().trim(),
-    exchange:     (r.c?.[3]?.v ?? '').toString().trim(),
-    currency:     (r.c?.[4]?.v ?? '').toString().trim(),
-    addedDate:    ppParseDate(r.c?.[5]?.v),
-    baseline:     parseFloat(r.c?.[6]?.v) || 0,
-    active:       (r.c?.[7]?.v ?? '').toString().toLowerCase() === 'true',
-    removedDate:  ppParseDate(r.c?.[8]?.v),
-    removedPrice: parseFloat(r.c?.[9]?.v) || 0
+    portfolio:      (r.c?.[0]?.v ?? '').toString().trim(),
+    ticker:         (r.c?.[1]?.v ?? '').toString().trim(),
+    company:        (r.c?.[2]?.v ?? '').toString().trim(),
+    exchange:       (r.c?.[3]?.v ?? '').toString().trim(),
+    currency:       (r.c?.[4]?.v ?? '').toString().trim(),
+    addedDate:      ppParseDate(r.c?.[5]?.v),
+    baseline:       parseFloat(r.c?.[6]?.v) || 0,
+    active:         (r.c?.[7]?.v ?? '').toString().toLowerCase() === 'true',
+    removedDate:    ppParseDate(r.c?.[8]?.v),
+    removedPrice:   parseFloat(r.c?.[9]?.v) || 0,
+    // Columns K & L — rationale (optional, added during rebalancing)
+    rationaleTitle: (r.c?.[10]?.v ?? '').toString().trim(),
+    rationaleBody:  (r.c?.[11]?.v ?? '').toString().trim()
   })).filter(r => r.ticker && r.portfolio);
 }
 
@@ -6347,19 +6353,35 @@ function ppRenderTable() {
     return `<th style="${isCur ? `color:${col}` : ''}" onclick="ppSort('${c}')">${lbl}${isCur?(_ppSortDir===1?' ↑':' ↓'):''}</th>`;
   };
 
+  const COL_COUNT = 10; // total columns in the table
   body.innerHTML = `<table class="pp-tbl">
     <thead><tr>
+      <th style="width:28px"></th>
       ${th('ticker','Ticker')}${th('co','Company')}<th>Added</th>
       ${th('base','Baseline')}${th('cur','Current')}${th('chgAmt','Chg $')}${th('chgPct','Chg %')}${th('30d','30d %')}${th('90d','90d %')}<th>Status</th>
     </tr></thead>
     <tbody>
-      ${sorted.map(r => {
+      ${sorted.map((r, i) => {
         const chg = ppChg(r);
         const cur = ppCurPrice(r);
         const pill = r.active
           ? '<span class="pp-pill ok">Active</span>'
           : `<span class="pp-pill rm">Removed${r.removedDate?' '+ppFmtDate(r.removedDate):''}</span>`;
-        return `<tr>
+        const hasRat = !!(r.rationaleTitle || r.rationaleBody);
+        const rid = `${r.ticker}_${i}`.replace(/[^a-z0-9_]/gi,'_');
+        const expandBtn = hasRat
+          ? `<span id="pp-rat-btn-${rid}" onclick="ppToggleRationale('${rid}')" style="cursor:pointer;color:var(--text3);font-size:9px;user-select:none;padding:2px 4px;border-radius:3px;transition:color .15s" title="Show rationale">▶</span>`
+          : `<span style="display:inline-block;width:18px"></span>`;
+        const rationaleRow = hasRat ? `<tr id="pp-rat-${rid}" style="display:none">
+          <td colspan="${COL_COUNT + 1}" style="padding:0;border-bottom:1px solid var(--border)">
+            <div style="border-left:3px solid ${col};background:var(--surface2);padding:16px 22px 16px 20px;animation:fadeIn .2s ease">
+              ${r.rationaleTitle ? `<div style="font-size:13px;font-weight:700;color:var(--text);margin-bottom:8px">${r.rationaleTitle}</div>` : ''}
+              ${r.rationaleBody  ? `<div style="font-size:12px;color:var(--text2);line-height:1.75;white-space:pre-wrap">${r.rationaleBody}</div>` : ''}
+            </div>
+          </td>
+        </tr>` : '';
+        return `<tr style="cursor:${hasRat?'pointer':'default'}" ${hasRat?`onclick="ppToggleRationale('${rid}')"`:''}>
+          <td style="padding:11px 4px 11px 14px;text-align:center">${expandBtn}</td>
           <td style="font-weight:700;color:var(--text);letter-spacing:.3px">${r.ticker}</td>
           <td style="color:var(--text2);font-size:12px">${r.company}</td>
           <td style="color:var(--text3);font-size:11px">${ppFmtDate(r.addedDate)}</td>
@@ -6370,7 +6392,7 @@ function ppRenderTable() {
           <td>${fmtC(pp30dPct(r), false, r.currency)}</td>
           <td>${fmtC(pp90dPct(r), false, r.currency)}</td>
           <td>${pill}</td>
-        </tr>`;
+        </tr>${rationaleRow}`;
       }).join('')}
     </tbody>
   </table>`;
@@ -6427,6 +6449,15 @@ async function ppRefresh() {
 function ppSetTs() {
   const el = document.getElementById('pp-ts');
   if (el && _ppTs) el.textContent = 'Updated ' + _ppTs.toLocaleTimeString();
+}
+
+function ppToggleRationale(id) {
+  const row = document.getElementById('pp-rat-' + id);
+  const btn = document.getElementById('pp-rat-btn-' + id);
+  if (!row) return;
+  const isOpen = row.style.display !== 'none';
+  row.style.display = isOpen ? 'none' : 'table-row';
+  if (btn) btn.textContent = isOpen ? '▶' : '▼';
 }
 
 // ── AUTO-REFRESH every 60s (silent — no button flash) ────────────
