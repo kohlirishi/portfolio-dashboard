@@ -11919,21 +11919,19 @@ function _renderLive() {
                        :                       '#8aaccc';  // muted — comfortable
 
     // ATR stop badge: read stored stopPct/stopType from cols 50-51
+    // stopType is written at entry: 'ATR' | 'floor' | 'cap'
+    // Legacy rows (no col 50-51) show grey "floor" — crash-tighten is a monitor-time override
+    // and cannot be reliably inferred from trade data, so no crash badge heuristic here.
     const _storedStopPct  = parseFloat(t.stopPct)  || 0;
     const _storedStopType = (t.stopType || '').trim().toUpperCase();
     const _stopPctDisp    = _storedStopPct > 0
       ? (_storedStopPct * 100).toFixed(2) + '%'
-      : '2.00%';   // legacy rows without col 50 show flat floor
-    // Crash mode: cushion < 1.5% AND trail very close to buy price suggests 1% crash stop
-    const _isCrashMode    = _storedStopType === '' && cushionPct !== null && cushionPct < 1.5 && trail > 0 &&
-                            cp > 0 && ((cp - trail) / cp) < 0.015;
-    const _stopBadge = _isCrashMode
-      ? `<span style="display:inline-block;font-size:9px;font-weight:700;padding:1px 5px;border-radius:3px;background:#3d0000;color:#f85149;border:1px solid #f8514966;margin-left:3px">🔴 crash</span>`
-      : _storedStopType === 'ATR'
-        ? `<span style="display:inline-block;font-size:9px;font-weight:700;padding:1px 5px;border-radius:3px;background:#003d2e;color:#2ea87e;border:1px solid #2ea87e66;margin-left:3px">ATR</span>`
-        : _storedStopType === 'CAP'
-          ? `<span style="display:inline-block;font-size:9px;font-weight:700;padding:1px 5px;border-radius:3px;background:#3d2a00;color:#e3b341;border:1px solid #e3b34166;margin-left:3px">cap</span>`
-          : `<span style="display:inline-block;font-size:9px;font-weight:700;padding:1px 5px;border-radius:3px;background:#1a2a3a;color:#8aaccc;border:1px solid #4a6a8a66;margin-left:3px">floor</span>`;
+      : '2.00%';   // legacy rows without col 50 fall back to flat floor display
+    const _stopBadge = _storedStopType === 'ATR'
+      ? `<span style="display:inline-block;font-size:9px;font-weight:700;padding:1px 5px;border-radius:3px;background:#003d2e;color:#2ea87e;border:1px solid #2ea87e66;margin-left:3px">ATR</span>`
+      : _storedStopType === 'CAP'
+        ? `<span style="display:inline-block;font-size:9px;font-weight:700;padding:1px 5px;border-radius:3px;background:#3d2a00;color:#e3b341;border:1px solid #e3b34166;margin-left:3px">cap</span>`
+        : `<span style="display:inline-block;font-size:9px;font-weight:700;padding:1px 5px;border-radius:3px;background:#1a2a3a;color:#8aaccc;border:1px solid #4a6a8a66;margin-left:3px">floor</span>`;
 
     const _stageWord = partial3 ? 'S3 done' : partial2 ? 'S2 done' : partial ? 'S1 done' : 'No stage';
     const stageLabel = _stageWord + ' · ' + _stopPctDisp + ' trail';
