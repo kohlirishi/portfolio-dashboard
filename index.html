@@ -741,6 +741,11 @@ table.div-ht tfoot td{padding:10px 14px;font-size:13px;font-weight:700;backgroun
 /* rationale expand row — no extra hover, no double border */
 .pp-tbl tbody tr.pp-rat-row{background:transparent!important}
 .pp-tbl tbody tr.pp-rat-row:hover{background:transparent!important}
+/* sticky first 3 columns (▶ expand btn + Ticker + Company) — horizontal scroll on mobile */
+.pp-tbl .pp-cs{position:sticky;z-index:3;background:var(--bg2)}
+.pp-tbl thead .pp-cs{z-index:6}
+.pp-tbl tbody tr:hover .pp-cs{background:var(--surface2)}
+.pp-tbl .pp-cs-r{box-shadow:3px 0 8px -2px rgba(0,0,0,.5)}
 .pp-pill{display:inline-block;font-size:10px;font-weight:700;padding:2px 8px;border-radius:4px;letter-spacing:.3px}
 .pp-pill.ok{background:rgba(16,208,122,.12);color:var(--green);border:1px solid rgba(16,208,122,.25)}
 .pp-pill.rm{background:rgba(240,79,110,.12);color:var(--red);border:1px solid rgba(240,79,110,.25)}
@@ -6352,17 +6357,17 @@ function ppRenderTable() {
     return `<span class="${cls}" style="font-size:14px;font-weight:800">${sign}${v.toFixed(2)}%</span>`;
   };
   const col = PF_COLORS[pf.idx];
-  const th = (c, lbl) => {
+  const th = (c, lbl, cls='') => {
     const isCur = _ppSortCol === c;
-    return `<th style="${isCur ? `color:${col}` : ''}" onclick="ppSort('${c}')">${lbl}${isCur?(_ppSortDir===1?' ↑':' ↓'):''}</th>`;
+    return `<th${cls ? ` class="${cls}"` : ''} style="${isCur ? `color:${col}` : ''}" onclick="ppSort('${c}')">${lbl}${isCur?(_ppSortDir===1?' ↑':' ↓'):''}</th>`;
   };
 
   const COL_COUNT = 10; // total columns in the table
-  const pfHdrRow = `<tr style="pointer-events:none"><td colspan="${COL_COUNT + 1}" style="padding:7px 16px;background:linear-gradient(90deg,${col}12,transparent 60%);border-bottom:1px solid var(--border)"><span style="font-size:10px;font-weight:700;color:${col};letter-spacing:.6px;text-transform:uppercase">Portfolio ${pf.idx + 1}</span><span style="font-size:10px;color:var(--text3);margin-left:10px">${pf.flag} ${pf.label} · ${pf.badge}</span></td></tr>`;
+  const pfHdrRow = `<tr data-hdr="1" style="pointer-events:none"><td colspan="${COL_COUNT + 1}" style="padding:7px 16px;background:linear-gradient(90deg,${col}12,transparent 60%);border-bottom:1px solid var(--border)"><span style="font-size:10px;font-weight:700;color:${col};letter-spacing:.6px;text-transform:uppercase">Portfolio ${pf.idx + 1}</span><span style="font-size:10px;color:var(--text3);margin-left:10px">${pf.flag} ${pf.label} · ${pf.badge}</span></td></tr>`;
   body.innerHTML = `<table class="pp-tbl">
     <thead><tr>
-      <th style="width:28px"></th>
-      ${th('ticker','Ticker')}${th('co','Company')}<th>Added</th>
+      <th class="pp-cs" style="width:28px;min-width:28px"></th>
+      ${th('ticker','Ticker','pp-cs')}${th('co','Company','pp-cs pp-cs-r')}<th>Added</th>
       ${th('base','Baseline')}${th('cur','Current')}${th('chgAmt','Chg $')}${th('chgPct','Chg %')}${th('30d','30d %')}${th('90d','90d %')}<th>Status</th>
     </tr></thead>
     <tbody>
@@ -6394,9 +6399,9 @@ function ppRenderTable() {
           </td>
         </tr>` : '';
         return `<tr style="cursor:${hasRat?'pointer':'default'}" ${hasRat?`onclick="ppToggleRationale('${rid}')"`:''}>
-          <td style="padding:11px 4px 11px 14px;text-align:center">${expandBtn}</td>
-          <td style="font-weight:700;color:var(--text);letter-spacing:.3px">${r.ticker}</td>
-          <td style="color:var(--text2);font-size:12px">${r.company}</td>
+          <td class="pp-cs" style="padding:11px 4px 11px 14px;text-align:center;min-width:28px">${expandBtn}</td>
+          <td class="pp-cs" style="font-weight:700;color:var(--text);letter-spacing:.3px;min-width:64px">${r.ticker}</td>
+          <td class="pp-cs pp-cs-r" style="color:var(--text2);font-size:12px;min-width:110px;max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${r.company}</td>
           <td style="color:var(--text3);font-size:11px">${ppFmtDate(r.addedDate)}</td>
           <td style="color:var(--text2)">${fmtP(r.baseline, r.currency)}</td>
           <td style="font-weight:600">${fmtP(cur, r.currency)}</td>
@@ -6409,6 +6414,27 @@ function ppRenderTable() {
       }).join('')}
     </tbody>
   </table>`;
+  // Measure actual rendered widths and set left offsets for sticky columns
+  requestAnimationFrame(_ppFixStickyLeft);
+}
+
+// Dynamically set left: values on sticky columns after layout is complete.
+// This avoids hardcoding pixel offsets that would break across screen sizes.
+function _ppFixStickyLeft() {
+  const tbl = document.querySelector('#pp-tbody .pp-tbl');
+  if (!tbl) return;
+  // Skip pfHdrRow (data-hdr="1") and rationale rows — find first actual data row
+  const firstDataRow = tbl.querySelector('tbody tr:not([data-hdr])');
+  if (!firstDataRow) return;
+  const stickyCells = Array.from(firstDataRow.querySelectorAll('td.pp-cs'));
+  let left = 0;
+  stickyCells.forEach(td => {
+    const ci = td.cellIndex + 1; // 1-based for nth-child
+    tbl.querySelectorAll(`thead th:nth-child(${ci}), tbody td:nth-child(${ci})`).forEach(c => {
+      c.style.left = left + 'px';
+    });
+    left += td.offsetWidth;
+  });
 }
 
 function ppSort(col) {
