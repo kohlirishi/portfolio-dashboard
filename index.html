@@ -6363,9 +6363,10 @@ function ppRenderTable() {
   };
 
   const COL_COUNT = 10; // total columns in the table
-  // pfHdrRow: sticky in both axes — top (below thead) set by _ppFixStickyLeft; left:0 keeps label
-  // visible when scrolling right. Opaque background prevents rows showing through when pinned.
-  const pfHdrRow = `<tr data-hdr="1" style="pointer-events:none"><td class="pp-pfhdr" colspan="${COL_COUNT + 1}" style="padding:7px 16px;background:linear-gradient(90deg,${col}22,var(--bg2) 60%);border-bottom:1px solid var(--border);position:sticky;left:0;z-index:5;width:100%"><span style="font-size:10px;font-weight:700;color:${col};letter-spacing:.6px;text-transform:uppercase">Portfolio ${pf.idx + 1}</span><span style="font-size:10px;color:var(--text3);margin-left:10px">${pf.flag} ${pf.label} · ${pf.badge}</span></td></tr>`;
+  // pfHdrRow: sticky vertically (top set by _ppFixStickyLeft after layout).
+  // Horizontal lock is handled by JS scroll listener (_initPpHdrScrollLock) which applies
+  // translateX to cancel out horizontal scroll — CSS sticky;left:0 is unreliable on iOS Safari for <td>.
+  const pfHdrRow = `<tr data-hdr="1" style="pointer-events:none"><td class="pp-pfhdr" colspan="${COL_COUNT + 1}" style="padding:7px 16px;background:linear-gradient(90deg,${col}22,var(--bg2) 60%);border-bottom:1px solid var(--border);z-index:5;will-change:transform"><span style="font-size:10px;font-weight:700;color:${col};letter-spacing:.6px;text-transform:uppercase">Portfolio ${pf.idx + 1}</span><span style="font-size:10px;color:var(--text3);margin-left:10px">${pf.flag} ${pf.label} · ${pf.badge}</span></td></tr>`;
   body.innerHTML = `<table class="pp-tbl">
     <thead><tr>
       <th class="pp-cs" style="width:28px;min-width:28px"></th>
@@ -6439,14 +6440,34 @@ function _ppFixStickyLeft() {
     });
   }
 
-  // ── 2. Portfolio header row: sticky vertically (top = thead height) ──────────
-  // Already has position:sticky;left:0 set inline. JS sets the top offset so it
-  // pins just below the column header row, not at the very top of the container.
+  // ── 2. Portfolio header row: sticky vertically below thead ───────────────────
+  // Horizontal lock is done via scroll listener (translateX) — CSS sticky;left unreliable on iOS.
   const thead = tbl.querySelector('thead');
   const theadH = thead ? thead.offsetHeight : 38;
   tbl.querySelectorAll('tbody tr[data-hdr] td.pp-pfhdr').forEach(td => {
-    td.style.top = theadH + 'px';
+    td.style.position = 'sticky';
+    td.style.top      = theadH + 'px';
   });
+
+  // ── 3. Wire up horizontal scroll lock for portfolio header rows (once only) ──
+  _initPpHdrScrollLock();
+}
+
+// Locks the portfolio section header row horizontally using translateX so it
+// never scrolls off-screen on mobile — CSS sticky;left:0 is not reliable on
+// iOS Safari for table <td> elements.
+let _ppHdrScrollActive = false;
+function _initPpHdrScrollLock() {
+  if (_ppHdrScrollActive) return;
+  const cont = document.getElementById('pp-tbody');
+  if (!cont) return;
+  cont.addEventListener('scroll', function() {
+    const sl = this.scrollLeft;
+    this.querySelectorAll('tr[data-hdr] td.pp-pfhdr').forEach(td => {
+      td.style.transform = 'translateX(' + sl + 'px)';
+    });
+  }, { passive: true });
+  _ppHdrScrollActive = true;
 }
 
 function ppSort(col) {
