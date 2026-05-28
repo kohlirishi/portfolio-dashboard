@@ -6036,8 +6036,10 @@ function ppParse(j) {
     removedDate:    ppParseDate(r.c?.[8]?.v),
     removedPrice:   parseFloat(r.c?.[9]?.v) || 0,
     // Columns K & L — rationale (optional, added during rebalancing)
-    rationaleTitle: (r.c?.[10]?.v ?? '').toString().trim(),
-    rationaleBody:  (r.c?.[11]?.v ?? '').toString().trim()
+    rationaleTitle:        (r.c?.[10]?.v ?? '').toString().trim(),
+    rationaleBody:         (r.c?.[11]?.v ?? '').toString().trim(),
+    removedRationaleTitle: (r.c?.[12]?.v ?? '').toString().trim(),
+    removedRationaleBody:  (r.c?.[13]?.v ?? '').toString().trim()
   })).filter(r => r.ticker && r.portfolio);
 }
 
@@ -6370,17 +6372,24 @@ function ppRenderTable() {
         const pill = r.active
           ? '<span class="pp-pill ok">Active</span>'
           : `<span class="pp-pill rm">Removed${r.removedDate?' '+ppFmtDate(r.removedDate):''}</span>`;
-        const hasRat = !!(r.rationaleTitle || r.rationaleBody);
+        const hasRat = !!(r.rationaleTitle || r.rationaleBody || r.removedRationaleTitle || r.removedRationaleBody);
+        const hasRemRat = !r.active && !!(r.removedRationaleTitle || r.removedRationaleBody);
         const rid = `${r.ticker}_${i}`.replace(/[^a-z0-9_]/gi,'_');
         const expandBtn = hasRat
           ? `<span id="pp-rat-btn-${rid}" onclick="ppToggleRationale('${rid}')" style="cursor:pointer;color:var(--text3);font-size:9px;user-select:none;padding:2px 4px;border-radius:3px;transition:color .15s" title="Show rationale">▶</span>`
           : `<span style="display:inline-block;width:18px"></span>`;
         const rationaleRow = hasRat ? `<tr id="pp-rat-${rid}" style="display:none">
           <td colspan="${COL_COUNT + 1}" style="padding:0;border-bottom:1px solid var(--border)">
-            <div style="border-left:3px solid ${col};background:var(--surface2);padding:16px 22px 16px 20px;animation:fadeIn .2s ease">
+            ${hasRemRat ? `<div style="border-left:3px solid var(--red);background:var(--surface2);padding:16px 22px 16px 20px;animation:fadeIn .2s ease">
+              <div style="font-size:10px;font-weight:700;color:var(--red);letter-spacing:.5px;text-transform:uppercase;margin-bottom:10px">❌ Why Removed</div>
+              ${r.removedRationaleTitle ? `<div style="font-size:13px;font-weight:700;color:var(--text);margin-bottom:8px">${r.removedRationaleTitle}</div>` : ''}
+              ${r.removedRationaleBody  ? `<div style="font-size:12px;color:var(--text2);line-height:1.75;white-space:pre-wrap">${r.removedRationaleBody}</div>` : ''}
+            </div>` : ''}
+            ${(r.rationaleTitle || r.rationaleBody) ? `<div style="border-left:3px solid ${hasRemRat ? 'var(--border)' : col};background:var(--surface2);padding:16px 22px 16px 20px;${hasRemRat ? 'border-top:1px solid var(--border)' : 'animation:fadeIn .2s ease'}">
+              ${hasRemRat ? `<div style="font-size:10px;font-weight:700;color:var(--text3);letter-spacing:.5px;text-transform:uppercase;margin-bottom:10px">✅ Originally Added Because</div>` : ''}
               ${r.rationaleTitle ? `<div style="font-size:13px;font-weight:700;color:var(--text);margin-bottom:8px">${r.rationaleTitle}</div>` : ''}
               ${r.rationaleBody  ? `<div style="font-size:12px;color:var(--text2);line-height:1.75;white-space:pre-wrap">${r.rationaleBody}</div>` : ''}
-            </div>
+            </div>` : ''}
           </td>
         </tr>` : '';
         return `<tr style="cursor:${hasRat?'pointer':'default'}" ${hasRat?`onclick="ppToggleRationale('${rid}')"`:''}>
