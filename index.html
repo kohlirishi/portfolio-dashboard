@@ -6363,11 +6363,13 @@ function ppRenderTable() {
   };
 
   const COL_COUNT = 10; // total columns in the table
-  const pfHdrRow = `<tr data-hdr="1" style="pointer-events:none"><td colspan="${COL_COUNT + 1}" style="padding:7px 16px;background:linear-gradient(90deg,${col}12,transparent 60%);border-bottom:1px solid var(--border)"><span style="font-size:10px;font-weight:700;color:${col};letter-spacing:.6px;text-transform:uppercase">Portfolio ${pf.idx + 1}</span><span style="font-size:10px;color:var(--text3);margin-left:10px">${pf.flag} ${pf.label} · ${pf.badge}</span></td></tr>`;
+  // pfHdrRow: sticky in both axes — top (below thead) set by _ppFixStickyLeft; left:0 keeps label
+  // visible when scrolling right. Opaque background prevents rows showing through when pinned.
+  const pfHdrRow = `<tr data-hdr="1" style="pointer-events:none"><td class="pp-pfhdr" colspan="${COL_COUNT + 1}" style="padding:7px 16px;background:linear-gradient(90deg,${col}22,var(--bg2) 60%);border-bottom:1px solid var(--border);position:sticky;left:0;z-index:5;width:100%"><span style="font-size:10px;font-weight:700;color:${col};letter-spacing:.6px;text-transform:uppercase">Portfolio ${pf.idx + 1}</span><span style="font-size:10px;color:var(--text3);margin-left:10px">${pf.flag} ${pf.label} · ${pf.badge}</span></td></tr>`;
   body.innerHTML = `<table class="pp-tbl">
     <thead><tr>
       <th class="pp-cs" style="width:28px;min-width:28px"></th>
-      ${th('ticker','Ticker','pp-cs')}${th('co','Company','pp-cs pp-cs-r')}<th>Added</th>
+      ${th('ticker','Ticker','pp-cs pp-cs-r')}<th>Company</th><th>Added</th>
       ${th('base','Baseline')}${th('cur','Current')}${th('chgAmt','Chg $')}${th('chgPct','Chg %')}${th('30d','30d %')}${th('90d','90d %')}<th>Status</th>
     </tr></thead>
     <tbody>
@@ -6400,8 +6402,8 @@ function ppRenderTable() {
         </tr>` : '';
         return `<tr style="cursor:${hasRat?'pointer':'default'}" ${hasRat?`onclick="ppToggleRationale('${rid}')"`:''}>
           <td class="pp-cs" style="padding:11px 4px 11px 14px;text-align:center;min-width:28px">${expandBtn}</td>
-          <td class="pp-cs" style="font-weight:700;color:var(--text);letter-spacing:.3px;min-width:64px">${r.ticker}</td>
-          <td class="pp-cs pp-cs-r" style="color:var(--text2);font-size:12px;min-width:110px;max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${r.company}</td>
+          <td class="pp-cs pp-cs-r" style="font-weight:700;color:var(--text);letter-spacing:.3px;min-width:64px">${r.ticker}</td>
+          <td style="color:var(--text2);font-size:12px">${r.company}</td>
           <td style="color:var(--text3);font-size:11px">${ppFmtDate(r.addedDate)}</td>
           <td style="color:var(--text2)">${fmtP(r.baseline, r.currency)}</td>
           <td style="font-weight:600">${fmtP(cur, r.currency)}</td>
@@ -6418,22 +6420,32 @@ function ppRenderTable() {
   requestAnimationFrame(_ppFixStickyLeft);
 }
 
-// Dynamically set left: values on sticky columns after layout is complete.
-// This avoids hardcoding pixel offsets that would break across screen sizes.
+// Dynamically set left/top values on sticky columns + portfolio header row after layout.
 function _ppFixStickyLeft() {
   const tbl = document.querySelector('#pp-tbody .pp-tbl');
   if (!tbl) return;
-  // Skip pfHdrRow (data-hdr="1") and rationale rows — find first actual data row
+
+  // ── 1. Sticky column left offsets (expand btn + ticker) ──────────────────────
   const firstDataRow = tbl.querySelector('tbody tr:not([data-hdr])');
-  if (!firstDataRow) return;
-  const stickyCells = Array.from(firstDataRow.querySelectorAll('td.pp-cs'));
-  let left = 0;
-  stickyCells.forEach(td => {
-    const ci = td.cellIndex + 1; // 1-based for nth-child
-    tbl.querySelectorAll(`thead th:nth-child(${ci}), tbody td:nth-child(${ci})`).forEach(c => {
-      c.style.left = left + 'px';
+  if (firstDataRow) {
+    const stickyCells = Array.from(firstDataRow.querySelectorAll('td.pp-cs'));
+    let left = 0;
+    stickyCells.forEach(td => {
+      const ci = td.cellIndex + 1;
+      tbl.querySelectorAll(`thead th:nth-child(${ci}), tbody td:nth-child(${ci})`).forEach(c => {
+        c.style.left = left + 'px';
+      });
+      left += td.offsetWidth;
     });
-    left += td.offsetWidth;
+  }
+
+  // ── 2. Portfolio header row: sticky vertically (top = thead height) ──────────
+  // Already has position:sticky;left:0 set inline. JS sets the top offset so it
+  // pins just below the column header row, not at the very top of the container.
+  const thead = tbl.querySelector('thead');
+  const theadH = thead ? thead.offsetHeight : 38;
+  tbl.querySelectorAll('tbody tr[data-hdr] td.pp-pfhdr').forEach(td => {
+    td.style.top = theadH + 'px';
   });
 }
 
