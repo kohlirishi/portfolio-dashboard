@@ -11917,10 +11917,26 @@ function _renderLive() {
                        : cushionPct < 1.0    ? '#f85149'   // red  — very close
                        : cushionPct < 2.5    ? '#e3b341'   // amber — getting close
                        :                       '#8aaccc';  // muted — comfortable
-    const stageLabel   = partial3 ? 'S3 done · 2% trail'
-                       : partial2 ? 'S2 done · 2% trail'
-                       : partial  ? 'S1 done · 2% trail'
-                       :            'No stage yet';
+
+    // ATR stop badge: read stored stopPct/stopType from cols 50-51
+    const _storedStopPct  = parseFloat(t.stopPct)  || 0;
+    const _storedStopType = (t.stopType || '').trim().toUpperCase();
+    const _stopPctDisp    = _storedStopPct > 0
+      ? (_storedStopPct * 100).toFixed(2) + '%'
+      : '2.00%';   // legacy rows without col 50 show flat floor
+    // Crash mode: cushion < 1.5% AND trail very close to buy price suggests 1% crash stop
+    const _isCrashMode    = _storedStopType === '' && cushionPct !== null && cushionPct < 1.5 && trail > 0 &&
+                            cp > 0 && ((cp - trail) / cp) < 0.015;
+    const _stopBadge = _isCrashMode
+      ? `<span style="display:inline-block;font-size:9px;font-weight:700;padding:1px 5px;border-radius:3px;background:#3d0000;color:#f85149;border:1px solid #f8514966;margin-left:3px">🔴 crash</span>`
+      : _storedStopType === 'ATR'
+        ? `<span style="display:inline-block;font-size:9px;font-weight:700;padding:1px 5px;border-radius:3px;background:#003d2e;color:#2ea87e;border:1px solid #2ea87e66;margin-left:3px">ATR</span>`
+        : _storedStopType === 'CAP'
+          ? `<span style="display:inline-block;font-size:9px;font-weight:700;padding:1px 5px;border-radius:3px;background:#3d2a00;color:#e3b341;border:1px solid #e3b34166;margin-left:3px">cap</span>`
+          : `<span style="display:inline-block;font-size:9px;font-weight:700;padding:1px 5px;border-radius:3px;background:#1a2a3a;color:#8aaccc;border:1px solid #4a6a8a66;margin-left:3px">floor</span>`;
+
+    const _stageWord = partial3 ? 'S3 done' : partial2 ? 'S2 done' : partial ? 'S1 done' : 'No stage';
+    const stageLabel = _stageWord + ' · ' + _stopPctDisp + ' trail';
 
     const cur   = isNSE ? '₹' : '$';
 
@@ -11956,7 +11972,7 @@ function _renderLive() {
       <td class="${cls}">${chg>=0?'+':''}${chg.toFixed(2)}%</td>
       <td style="font-size:12px">${targets}</td>
       <td style="color:#f85149">
-        ${cur}${trail.toFixed(2)}
+        ${cur}${trail.toFixed(2)}${_stopBadge}
         <br><small style="color:${cushionColor};font-weight:600">${cushionPct !== null ? '−' + cushionPct.toFixed(1) + '% cushion' : '—'}</small>
         <br><small style="color:#4a6a8a;font-size:10px">${stageLabel}</small>
       </td>
