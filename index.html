@@ -16550,8 +16550,9 @@ async function alLoad() {
 
 function alRenderBadges() {
   document.querySelectorAll('.al-bell').forEach(btn => {
-    const t = (btn.id || '').replace('al-bell-', '') || btn.closest('tr')?.getAttribute('data-sym');
-    if (!t) return;
+    const raw = (btn.id || '').replace('al-bell-', '') || btn.closest('tr')?.getAttribute('data-sym');
+    if (!raw) return;
+    const t = raw.includes(':') ? raw.split(':').pop() : raw;  // strip exchange prefix
     const has = _alCache.some(a => a.ticker === t && a.status === 'active');
     btn.classList.toggle('has-alert', has);
     btn.title = has ? 'Alert active — click to manage' : 'Set price alert';
@@ -16570,7 +16571,9 @@ async function alOpenModal(e, ticker, exchange, source) {
 
   // Fetch live weekly + daily data
   try {
-    const avSym = exchange === 'TSX' ? ticker.replace(/\.$/, '') + '.TRT' : ticker;
+    // Strip exchange prefix if present (e.g. "NASDAQ:LITE" → "LITE", "TSE:SHOP" → "SHOP")
+    const cleanTicker = ticker.includes(':') ? ticker.split(':').pop() : ticker;
+    const avSym = exchange === 'TSX' ? cleanTicker.replace(/\.$/, '') + '.TRT' : cleanTicker;
     const [wkly, daily] = await Promise.all([avWeekly(avSym), avDaily(avSym)]);
     const wC  = wkly.map(d => d.close);
     const dC  = daily.map(d => d.close);
@@ -16640,17 +16643,19 @@ function alCloseModal() {
 
 async function alSave(alertType, snapshotPrice) {
   if (!_alTicker) return;
-  const dup = _alCache.find(a => a.ticker === _alTicker && a.alertType === alertType && a.status === 'active');
-  if (dup) { notify('Alert already active for ' + _alTicker + ' — ' + (AL_TYPE_LABELS[alertType] || alertType)); return; }
+  // Strip exchange prefix for storage (e.g. "NASDAQ:LITE" → "LITE")
+  const saveTicker = _alTicker.includes(':') ? _alTicker.split(':').pop() : _alTicker;
+  const dup = _alCache.find(a => a.ticker === saveTicker && a.alertType === alertType && a.status === 'active');
+  if (dup) { notify('Alert already active for ' + saveTicker + ' — ' + (AL_TYPE_LABELS[alertType] || alertType)); return; }
   try {
     await fetch(GS_SCRIPT_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'text/plain' },
-      body: JSON.stringify({ action: 'setAlert', ticker: _alTicker, exchange: _alExch,
+      body: JSON.stringify({ action: 'setAlert', ticker: saveTicker, exchange: _alExch,
         source: _alSource, alertType, snapshotPrice: snapshotPrice || null }),
       mode: 'no-cors'
     });
-    _alCache.push({ id: 'tmp_' + Date.now(), ticker: _alTicker, exchange: _alExch,
+    _alCache.push({ id: 'tmp_' + Date.now(), ticker: saveTicker, exchange: _alExch,
       source: _alSource, alertType, status: 'active', createdAt: new Date().toISOString(),
       firedAt: '', snapshotPrice: snapshotPrice || '' });
     alRefreshExisting();
