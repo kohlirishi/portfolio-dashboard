@@ -656,6 +656,30 @@ table.div-ht tfoot td{padding:10px 14px;font-size:13px;font-weight:700;backgroun
 .wl-rating.p{background:var(--surf);color:var(--txt-m)}
 .wl-chevron{color:var(--txt-m);transition:transform var(--tr);font-size:12px;margin-left:auto}
 .wl-chevron.open{transform:rotate(180deg)}
+/* ── PRICE ALERT BELL ── */
+.al-bell{background:none;border:none;cursor:pointer;font-size:13px;padding:2px 4px;border-radius:5px;color:var(--txt-m);transition:color .15s,background .15s;line-height:1}
+.al-bell:hover{background:rgba(255,255,255,.08);color:var(--text)}
+.al-bell.has-alert{color:#f59e0b}
+/* ── ALERT MODAL ── */
+#al-modal-bg{display:none;position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:9000;align-items:center;justify-content:center}
+#al-modal-bg.open{display:flex}
+#al-modal{background:var(--bg2,#1e293b);border:1px solid var(--border);border-radius:14px;width:min(420px,92vw);padding:24px;box-shadow:0 20px 60px rgba(0,0,0,.5)}
+.al-modal-title{font-size:15px;font-weight:800;margin-bottom:18px;display:flex;align-items:center;gap:8px}
+.al-type-list{display:flex;flex-direction:column;gap:8px;margin-bottom:20px}
+.al-type-btn{background:var(--surface,rgba(255,255,255,.04));border:1px solid var(--border);border-radius:9px;padding:11px 14px;cursor:pointer;text-align:left;font-size:13px;font-weight:600;color:var(--text);transition:border-color .15s,background .15s;font-family:inherit}
+.al-type-btn:hover{border-color:rgba(245,158,11,.5);background:rgba(245,158,11,.06)}
+.al-type-btn .al-type-sub{font-size:11px;font-weight:400;color:var(--txt-m,#8b96b0);margin-top:2px}
+.al-existing-title{font-size:11px;font-weight:700;color:var(--txt-m);letter-spacing:.5px;text-transform:uppercase;margin-bottom:8px}
+.al-existing-list{display:flex;flex-direction:column;gap:6px;max-height:160px;overflow-y:auto;margin-bottom:16px}
+.al-existing-item{display:flex;align-items:center;gap:8px;padding:8px 10px;border-radius:7px;background:var(--surface,rgba(255,255,255,.04));border:1px solid var(--border);font-size:12px}
+.al-existing-item .al-ei-type{font-weight:700;color:var(--text);flex:1}
+.al-existing-item .al-ei-status{padding:2px 7px;border-radius:10px;font-size:10px;font-weight:700}
+.al-ei-status.active{background:rgba(34,197,94,.15);color:#22c55e}
+.al-ei-status.fired{background:rgba(245,158,11,.15);color:#f59e0b}
+.al-ei-btn{background:none;border:none;cursor:pointer;font-size:14px;padding:2px 5px;border-radius:4px;color:var(--txt-m);font-family:inherit;transition:color .15s}
+.al-ei-btn:hover{color:var(--text)}
+.al-modal-close{background:none;border:none;cursor:pointer;font-size:16px;color:var(--txt-m);margin-left:auto;padding:0;font-family:inherit}
+.al-modal-close:hover{color:var(--text)}
 .wl-panel{display:none;background:var(--surface2);border:1px solid var(--border);border-radius:8px;margin-top:0;padding:16px 18px;animation:sa-fadeIn .2s ease}
 .wl-panel.open{display:block}
 .wl-panel-hdr{display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:12px;gap:12px}
@@ -4818,7 +4842,10 @@ async function loadSheetStocks() {
           <td style="text-align:center"><span class="wl-flag">${s.flag}</span></td>
           <td><div class="wl-ticker">${s.ticker}</div><div class="wl-name">${s.name}</div></td>
           <td><span class="wl-rating p" id="wlr-${s.ticker}">—</span></td>
-          <td><span class="wl-chevron" id="wlc-${s.ticker}">▼</span></td>
+          <td style="white-space:nowrap">
+            <button class="al-bell" title="Set price alert" onclick="alOpenModal(event,'${s.ticker}','${s.mkt}','watchlist')">🔕</button>
+            <span class="wl-chevron" id="wlc-${s.ticker}">▼</span>
+          </td>
         </tr>
         <tr class="wl-panel-row"><td colspan="4" style="padding:0 0 8px"><div class="wl-panel" id="wlp-${s.ticker}"></div></td></tr>
       `);
@@ -16442,6 +16469,167 @@ async function initLongTerm() {
 
   console.log(`[AutoReload] Scheduled. Next reload: ${nextTimeLabel()} (${Math.round(msUntilNext()/60000)} min away)`);
 })();
+</script>
+
+<!-- ── PRICE ALERT MODAL ── -->
+<div id="al-modal-bg" onclick="if(event.target===this)alCloseModal()">
+  <div id="al-modal">
+    <div class="al-modal-title">
+      <span>🔔</span><span id="al-modal-ticker">Alert</span>
+      <button class="al-modal-close" onclick="alCloseModal()">✕</button>
+    </div>
+    <div id="al-existing-section" style="display:none">
+      <div class="al-existing-title">Active &amp; Fired Alerts</div>
+      <div class="al-existing-list" id="al-existing-list"></div>
+    </div>
+    <div class="al-existing-title">Set New Alert — alert when price crosses:</div>
+    <div class="al-type-list">
+      <button class="al-type-btn" onclick="alSave('BELOW_50WMA')">
+        📉 Below SMA 50 Week
+        <div class="al-type-sub">50-week simple moving average — intermediate trend support</div>
+      </button>
+      <button class="al-type-btn" onclick="alSave('BELOW_200WMA')">
+        📉 Below SMA 200 Week
+        <div class="al-type-sub">200-week simple moving average — long-term bull market floor</div>
+      </button>
+      <button class="al-type-btn" onclick="alSave('BELOW_EMA50D')">
+        📉 Below EMA 50 Day
+        <div class="al-type-sub">50-day exponential moving average — short-term trend line</div>
+      </button>
+      <button class="al-type-btn" onclick="alSave('BELOW_EMA200D')">
+        📉 Below EMA 200 Day
+        <div class="al-type-sub">200-day exponential moving average — institutional trend line</div>
+      </button>
+    </div>
+  </div>
+</div>
+
+<script>
+// ── PRICE ALERTS ─────────────────────────────────────────────────────────────
+let _alCache   = [];    // all alerts loaded from sheet
+let _alTicker  = null;  // currently open ticker in modal
+let _alExch    = null;
+let _alSource  = null;
+
+const AL_TYPE_LABELS = {
+  BELOW_50WMA:  'Below SMA 50W',
+  BELOW_200WMA: 'Below SMA 200W',
+  BELOW_EMA50D: 'Below EMA 50D',
+  BELOW_EMA200D:'Below EMA 200D'
+};
+
+async function alLoad() {
+  try {
+    const resp = await fetch(GS_SCRIPT_URL + '?action=getAlerts&t=' + Date.now());
+    const json = await resp.json();
+    _alCache = (json.alerts || []);
+    alRenderBadges();
+  } catch(e) { console.warn('[Alerts] load failed:', e); }
+}
+
+function alRenderBadges() {
+  // Watchlist rows
+  document.querySelectorAll('#wlBody tr[data-sym]').forEach(row => {
+    const sym = row.getAttribute('data-sym');
+    const btn = row.querySelector('.al-bell');
+    if (!btn) return;
+    const has = _alCache.some(a => a.ticker === sym && a.status === 'active');
+    btn.classList.toggle('has-alert', has);
+    btn.title = has ? 'Alert active — click to manage' : 'Set price alert';
+    btn.textContent = has ? '🔔' : '🔕';
+  });
+}
+
+function alOpenModal(e, ticker, exchange, source) {
+  e.stopPropagation();
+  _alTicker = ticker; _alExch = exchange; _alSource = source;
+  document.getElementById('al-modal-ticker').textContent = 'Set Alert — ' + ticker;
+  alRefreshExisting();
+  document.getElementById('al-modal-bg').classList.add('open');
+}
+
+function alRefreshExisting() {
+  const mine = _alCache.filter(a => a.ticker === _alTicker);
+  const sec  = document.getElementById('al-existing-section');
+  const list = document.getElementById('al-existing-list');
+  if (!mine.length) { sec.style.display = 'none'; return; }
+  sec.style.display = '';
+  list.innerHTML = mine.map(a => {
+    const lbl    = AL_TYPE_LABELS[a.alertType] || a.alertType;
+    const isActive = a.status === 'active';
+    const snoozeBtn = !isActive
+      ? `<button class="al-ei-btn" title="Re-activate" onclick="alSnooze('${a.id}')">🔄</button>`
+      : '';
+    return `<div class="al-existing-item">
+      <div class="al-ei-type">${lbl}</div>
+      <span class="al-ei-status ${a.status}">${a.status}</span>
+      ${snoozeBtn}
+      <button class="al-ei-btn" title="Delete" onclick="alDelete('${a.id}')">🗑</button>
+    </div>`;
+  }).join('');
+}
+
+function alCloseModal() {
+  document.getElementById('al-modal-bg').classList.remove('open');
+}
+
+async function alSave(alertType) {
+  if (!_alTicker) return;
+  // Prevent duplicate active alert for same ticker+type
+  const dup = _alCache.find(a => a.ticker === _alTicker && a.alertType === alertType && a.status === 'active');
+  if (dup) { notify('Alert already active for ' + _alTicker + ' ' + AL_TYPE_LABELS[alertType]); return; }
+  try {
+    await fetch(GS_SCRIPT_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain' },
+      body: JSON.stringify({ action: 'setAlert', ticker: _alTicker, exchange: _alExch, source: _alSource, alertType }),
+      mode: 'no-cors'
+    });
+    // Optimistic update
+    _alCache.push({ id: 'tmp_' + Date.now(), ticker: _alTicker, exchange: _alExch,
+      source: _alSource, alertType, status: 'active', createdAt: new Date().toISOString(), firedAt: '' });
+    alRefreshExisting();
+    alRenderBadges();
+    notify('✅ Alert set — ' + _alTicker + ' ' + AL_TYPE_LABELS[alertType]);
+    setTimeout(alLoad, 3000);  // re-sync with real IDs from sheet
+  } catch(e) { notify('⚠ Failed to save alert'); }
+}
+
+async function alDelete(id) {
+  try {
+    await fetch(GS_SCRIPT_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain' },
+      body: JSON.stringify({ action: 'deleteAlert', id }),
+      mode: 'no-cors'
+    });
+    _alCache = _alCache.filter(a => a.id !== id);
+    alRefreshExisting();
+    alRenderBadges();
+    notify('🗑 Alert deleted');
+    setTimeout(alLoad, 3000);
+  } catch(e) { notify('⚠ Failed to delete alert'); }
+}
+
+async function alSnooze(id) {
+  try {
+    await fetch(GS_SCRIPT_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain' },
+      body: JSON.stringify({ action: 'snoozeAlert', id }),
+      mode: 'no-cors'
+    });
+    const a = _alCache.find(x => x.id === id);
+    if (a) { a.status = 'active'; a.firedAt = ''; }
+    alRefreshExisting();
+    alRenderBadges();
+    notify('🔄 Alert re-activated');
+    setTimeout(alLoad, 3000);
+  } catch(e) { notify('⚠ Failed to re-activate alert'); }
+}
+
+// Load alerts after page data loads
+document.addEventListener('DOMContentLoaded', () => { setTimeout(alLoad, 4000); });
 </script>
 
 </body>
