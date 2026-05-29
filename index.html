@@ -3138,11 +3138,20 @@ function renderTable() {
   tbody.innerHTML = data.map(d => {
     return '<tr>' + cols.map(c => renderCell(d, c.id)).join('') + '</tr>';
   }).join('');
+  // Refresh alert badges after table re-renders
+  if (typeof alRenderBadges === 'function') alRenderBadges();
 }
 
 function renderCell(d, id) {
   switch(id) {
-    case 'name': return `<td style="min-width:180px;max-width:220px"><div class="td-fund" style="white-space:normal;word-break:break-word">${d.shortName}</div><div class="td-fund-sub">${d.ticker_v||d.ticker} · ${d.sector}</div></td>`;
+    case 'name': {
+      const _bt = d.ticker_v || d.ticker;
+      const _bx = d.country === 'Canada' ? 'TSX' : 'US';
+      const _bb = d.isWatch
+        ? ` <button class="al-bell" id="al-bell-${_bt}" title="Set price alert" onclick="alOpenModal(event,'${_bt}','${_bx}','main')" style="vertical-align:middle">🔕</button>`
+        : '';
+      return `<td style="min-width:180px;max-width:220px"><div class="td-fund" style="white-space:normal;word-break:break-word">${d.shortName}${_bb}</div><div class="td-fund-sub">${d.ticker_v||d.ticker} · ${d.sector}</div></td>`;
+    }
     case 's1d':  return `<td style="white-space:nowrap">${pctTd(d.s1d)}</td>`;
     case 's14d': return `<td style="white-space:nowrap">${pctTd(d.s14d)}</td>`;
     case 's30d': return `<td style="white-space:nowrap">${pctTd(d.s30d, true)}</td>`;
@@ -16528,12 +16537,12 @@ async function alLoad() {
 }
 
 function alRenderBadges() {
-  // Watchlist rows
-  document.querySelectorAll('#wlBody tr[data-sym]').forEach(row => {
-    const sym = row.getAttribute('data-sym');
-    const btn = row.querySelector('.al-bell');
-    if (!btn) return;
-    const has = _alCache.some(a => a.ticker === sym && a.status === 'active');
+  // All bell buttons (wlBody detail rows + main table watchlist rows)
+  document.querySelectorAll('.al-bell').forEach(btn => {
+    // derive ticker from id="al-bell-TICKER" or parent row data-sym
+    const idTicker = (btn.id || '').replace('al-bell-', '') || btn.closest('tr')?.getAttribute('data-sym');
+    if (!idTicker) return;
+    const has = _alCache.some(a => a.ticker === idTicker && a.status === 'active');
     btn.classList.toggle('has-alert', has);
     btn.title = has ? 'Alert active — click to manage' : 'Set price alert';
     btn.textContent = has ? '🔔' : '🔕';
