@@ -663,12 +663,13 @@ table.div-ht tfoot td{padding:10px 14px;font-size:13px;font-weight:700;backgroun
 /* ── ALERT MODAL ── */
 #al-modal-bg{display:none;position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:9000;align-items:center;justify-content:center}
 #al-modal-bg.open{display:flex}
-#al-modal{background:var(--bg2,#1e293b);border:1px solid var(--border);border-radius:14px;width:min(420px,92vw);padding:24px;box-shadow:0 20px 60px rgba(0,0,0,.5)}
+#al-modal{background:var(--bg2,#1e293b);border:1px solid var(--border);border-radius:14px;width:min(680px,96vw);padding:24px;box-shadow:0 20px 60px rgba(0,0,0,.5)}
 .al-modal-title{font-size:15px;font-weight:800;margin-bottom:18px;display:flex;align-items:center;gap:8px}
-.al-type-list{display:flex;flex-direction:column;gap:8px;margin-bottom:20px}
-.al-type-btn{background:var(--surface,rgba(255,255,255,.04));border:1px solid var(--border);border-radius:9px;padding:11px 14px;cursor:pointer;text-align:left;font-size:13px;font-weight:600;color:var(--text);transition:border-color .15s,background .15s;font-family:inherit}
+.al-type-list{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:20px}
+.al-type-list .al-sec-hdr{grid-column:1/-1}
+.al-type-btn{background:var(--surface,rgba(255,255,255,.04));border:1px solid var(--border);border-radius:9px;padding:10px 12px;cursor:pointer;text-align:left;font-size:12px;font-weight:600;color:var(--text);transition:border-color .15s,background .15s;font-family:inherit}
 .al-type-btn:hover{border-color:rgba(245,158,11,.5);background:rgba(245,158,11,.06)}
-.al-type-btn .al-type-sub{font-size:11px;font-weight:400;color:var(--txt-m,#8b96b0);margin-top:2px}
+.al-type-btn .al-type-sub{font-size:10px;font-weight:400;color:var(--txt-m,#8b96b0);margin-top:2px}
 .al-existing-title{font-size:11px;font-weight:700;color:var(--txt-m);letter-spacing:.5px;text-transform:uppercase;margin-bottom:8px}
 .al-existing-list{display:flex;flex-direction:column;gap:6px;max-height:160px;overflow-y:auto;margin-bottom:16px}
 .al-existing-item{display:flex;align-items:center;gap:8px;padding:8px 10px;border-radius:7px;background:var(--surface,rgba(255,255,255,.04));border:1px solid var(--border);font-size:12px}
@@ -16618,28 +16619,29 @@ async function alOpenModal(e, ticker, exchange, source) {
 
     function maBtn(type, label, ma) {
       const pctHtml = _alPct(cur, ma);
-      return `<button class="al-type-btn" onclick="alSave('${type}',null)">
-        📉 ${label} — <b>${_alFmt(ma)}</b>
+      const maArg   = ma != null ? ma.toFixed(4) : 'null';
+      return `<button class="al-type-btn" onclick="alSave('${type}',null,${maArg})">
+        📉 ${label}${ma != null ? ' <b>$' + ma.toFixed(2) + '</b>' : ''}
         <div class="al-type-sub">${pctHtml}</div>
       </button>`;
     }
     function dropBtn(type, pct) {
       const target = cur * (1 - pct / 100);
-      return `<button class="al-type-btn" onclick="alSave('${type}',${cur})">
-        📉 Drop ${pct}% — fires below <b>$${target.toFixed(2)}</b>
-        <div class="al-type-sub">Snapshot: $${cur.toFixed(2)} → target $${target.toFixed(2)} (−${pct}%)</div>
+      return `<button class="al-type-btn" onclick="alSave('${type}',${cur.toFixed(4)},null)">
+        📉 Drop ${pct}% → <b>$${target.toFixed(2)}</b>
+        <div class="al-type-sub">fires if ≤ $${target.toFixed(2)}</div>
       </button>`;
     }
 
     document.getElementById('al-type-list').innerHTML = `
-      <div class="al-existing-title" style="margin-bottom:8px">Alert when price crosses below MA:</div>
-      ${maBtn('BELOW_50WMA',   'SMA 50 Week',   sma50w)}
-      ${maBtn('BELOW_200WMA',  'SMA 200 Week',  sma200w)}
-      ${maBtn('BELOW_EMA50W',  'EMA 50 Week',   ema50w)}
-      ${maBtn('BELOW_EMA200W', 'EMA 200 Week',  ema200w)}
-      ${maBtn('BELOW_EMA50D',  'EMA 50 Day',    ema50d)}
-      ${maBtn('BELOW_EMA200D', 'EMA 200 Day',   ema200d)}
-      <div class="al-existing-title" style="margin:14px 0 8px">Alert when price drops from today's price:</div>
+      <div class="al-existing-title al-sec-hdr">Alert when price crosses below MA:</div>
+      ${maBtn('BELOW_50WMA',   'SMA 50W',   sma50w)}
+      ${maBtn('BELOW_200WMA',  'SMA 200W',  sma200w)}
+      ${maBtn('BELOW_EMA50W',  'EMA 50W',   ema50w)}
+      ${maBtn('BELOW_EMA200W', 'EMA 200W',  ema200w)}
+      ${maBtn('BELOW_EMA50D',  'EMA 50D',   ema50d)}
+      ${maBtn('BELOW_EMA200D', 'EMA 200D',  ema200d)}
+      <div class="al-existing-title al-sec-hdr" style="margin-top:6px">Alert when price drops from today ($${cur.toFixed(2)}):</div>
       ${dropBtn('DROP_5PCT',  5)}
       ${dropBtn('DROP_10PCT', 10)}
       ${dropBtn('DROP_15PCT', 15)}
@@ -16660,12 +16662,21 @@ function alRefreshExisting() {
   if (!mine.length) { sec.style.display = 'none'; return; }
   sec.style.display = '';
   list.innerHTML = mine.map(a => {
-    const lbl = AL_TYPE_LABELS[a.alertType] || a.alertType;
-    const snap = a.snapshotPrice ? ` @ $${parseFloat(a.snapshotPrice).toFixed(2)}` : '';
+    const lbl  = AL_TYPE_LABELS[a.alertType] || a.alertType;
+    // Show trigger price: MA value for MA alerts, computed target for drop alerts
+    let priceHint = '';
+    if (a.maValue && parseFloat(a.maValue) > 0) {
+      priceHint = ` — fires below <b>$${parseFloat(a.maValue).toFixed(2)}</b>`;
+    } else if (a.snapshotPrice && parseFloat(a.snapshotPrice) > 0) {
+      const snap = parseFloat(a.snapshotPrice);
+      const pctMap = {DROP_5PCT:.05,DROP_10PCT:.10,DROP_15PCT:.15,DROP_20PCT:.20,DROP_50PCT:.50};
+      const pct = pctMap[a.alertType];
+      if (pct) priceHint = ` — fires below <b>$${(snap*(1-pct)).toFixed(2)}</b>`;
+    }
     const snoozeBtn = a.status !== 'active'
       ? `<button class="al-ei-btn" title="Re-activate" onclick="alSnooze('${a.id}')">🔄</button>` : '';
     return `<div class="al-existing-item">
-      <div class="al-ei-type">${lbl}${snap}</div>
+      <div class="al-ei-type">${lbl}${priceHint}</div>
       <span class="al-ei-status ${a.status}">${a.status}</span>
       ${snoozeBtn}
       <button class="al-ei-btn" title="Delete" onclick="alDelete('${a.id}')">🗑</button>
@@ -16677,33 +16688,35 @@ function alCloseModal() {
   document.getElementById('al-modal-bg').classList.remove('open');
 }
 
-async function alSave(alertType, snapshotPrice) {
+async function alSave(alertType, snapshotPrice, maValue) {
   if (!_alTicker) return;
   const saveTicker = _alTicker.includes(':') ? _alTicker.split(':').pop() : _alTicker;
   const dup = _alCache.find(a => a.ticker === saveTicker && a.alertType === alertType && a.status === 'active');
-  if (dup) { notify('Alert already active — ' + saveTicker + ' ' + (AL_TYPE_LABELS[alertType] || alertType)); return; }
+  if (dup) { notify('Already active — ' + saveTicker + ' ' + (AL_TYPE_LABELS[alertType] || alertType)); return; }
+
+  const snapStr = snapshotPrice != null ? String(snapshotPrice) : '';
+  const maStr   = maValue   != null ? String(maValue)   : '';
 
   // ── Optimistic update FIRST — immediate UI feedback ──────────────────────
-  const tmpId = 'tmp_' + Date.now();
-  _alCache.push({ id: tmpId, ticker: saveTicker, exchange: _alExch,
+  _alCache.push({ id: 'tmp_' + Date.now(), ticker: saveTicker, exchange: _alExch,
     source: _alSource, alertType, status: 'active', createdAt: new Date().toISOString(),
-    firedAt: '', snapshotPrice: snapshotPrice != null ? String(snapshotPrice) : '' });
+    firedAt: '', snapshotPrice: snapStr, maValue: maStr });
   alRefreshExisting();
   alRenderBadges();
   notify('✅ Alert set — ' + saveTicker + ' ' + (AL_TYPE_LABELS[alertType] || alertType));
 
-  // ── Fire-and-forget POST to sheet ─────────────────────────────────────────
-  try {
-    fetch(GS_SCRIPT_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'text/plain' },
-      body: JSON.stringify({ action: 'setAlert', ticker: saveTicker, exchange: _alExch,
-        source: _alSource, alertType, snapshotPrice: snapshotPrice != null ? snapshotPrice : null }),
-      mode: 'no-cors'
-    }).catch(e => console.warn('[alSave] POST failed:', e));
-  } catch(e) { console.warn('[alSave] fetch error:', e); }
+  // ── Fire-and-forget POST to sheet (includes Telegram confirmation) ────────
+  fetch(GS_SCRIPT_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'text/plain' },
+    body: JSON.stringify({ action: 'setAlert', ticker: saveTicker, exchange: _alExch,
+      source: _alSource, alertType,
+      snapshotPrice: snapshotPrice != null ? snapshotPrice : null,
+      maValue:       maValue       != null ? maValue       : null }),
+    mode: 'no-cors'
+  }).catch(e => console.warn('[alSave] POST failed:', e));
 
-  setTimeout(alLoad, 4000);  // re-sync real IDs from sheet
+  setTimeout(alLoad, 4000);
 }
 
 async function alDelete(id) {
