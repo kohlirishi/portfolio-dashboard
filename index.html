@@ -16653,7 +16653,8 @@ async function alOpenModal(e, ticker, exchange, source) {
 }
 
 function alRefreshExisting() {
-  const mine = _alCache.filter(a => a.ticker === _alTicker);
+  const cleanT = _alTicker && _alTicker.includes(':') ? _alTicker.split(':').pop() : _alTicker;
+  const mine = _alCache.filter(a => a.ticker === cleanT);
   const sec  = document.getElementById('al-existing-section');
   const list = document.getElementById('al-existing-list');
   if (!mine.length) { sec.style.display = 'none'; return; }
