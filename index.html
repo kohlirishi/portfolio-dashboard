@@ -16678,26 +16678,31 @@ function alCloseModal() {
 
 async function alSave(alertType, snapshotPrice) {
   if (!_alTicker) return;
-  // Strip exchange prefix for storage (e.g. "NASDAQ:LITE" → "LITE")
   const saveTicker = _alTicker.includes(':') ? _alTicker.split(':').pop() : _alTicker;
   const dup = _alCache.find(a => a.ticker === saveTicker && a.alertType === alertType && a.status === 'active');
-  if (dup) { notify('Alert already active for ' + saveTicker + ' — ' + (AL_TYPE_LABELS[alertType] || alertType)); return; }
+  if (dup) { notify('Alert already active — ' + saveTicker + ' ' + (AL_TYPE_LABELS[alertType] || alertType)); return; }
+
+  // ── Optimistic update FIRST — immediate UI feedback ──────────────────────
+  const tmpId = 'tmp_' + Date.now();
+  _alCache.push({ id: tmpId, ticker: saveTicker, exchange: _alExch,
+    source: _alSource, alertType, status: 'active', createdAt: new Date().toISOString(),
+    firedAt: '', snapshotPrice: snapshotPrice != null ? String(snapshotPrice) : '' });
+  alRefreshExisting();
+  alRenderBadges();
+  notify('✅ Alert set — ' + saveTicker + ' ' + (AL_TYPE_LABELS[alertType] || alertType));
+
+  // ── Fire-and-forget POST to sheet ─────────────────────────────────────────
   try {
-    await fetch(GS_SCRIPT_URL, {
+    fetch(GS_SCRIPT_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'text/plain' },
       body: JSON.stringify({ action: 'setAlert', ticker: saveTicker, exchange: _alExch,
-        source: _alSource, alertType, snapshotPrice: snapshotPrice || null }),
+        source: _alSource, alertType, snapshotPrice: snapshotPrice != null ? snapshotPrice : null }),
       mode: 'no-cors'
-    });
-    _alCache.push({ id: 'tmp_' + Date.now(), ticker: saveTicker, exchange: _alExch,
-      source: _alSource, alertType, status: 'active', createdAt: new Date().toISOString(),
-      firedAt: '', snapshotPrice: snapshotPrice || '' });
-    alRefreshExisting();
-    alRenderBadges();
-    notify('✅ Alert set — ' + _alTicker + ' ' + (AL_TYPE_LABELS[alertType] || alertType));
-    setTimeout(alLoad, 3000);
-  } catch(e) { notify('⚠ Failed to save alert'); }
+    }).catch(e => console.warn('[alSave] POST failed:', e));
+  } catch(e) { console.warn('[alSave] fetch error:', e); }
+
+  setTimeout(alLoad, 4000);  // re-sync real IDs from sheet
 }
 
 async function alDelete(id) {
