@@ -16573,22 +16573,37 @@ async function alOpenModal(e, ticker, exchange, source) {
   alRefreshExisting();
   document.getElementById('al-modal-bg').classList.add('open');
 
-  // Fetch live weekly + daily data
+  // Fetch live weekly + daily — TD primary (800 req/day × 4 keys), AV fallback
   try {
-    // Strip exchange prefix if present (e.g. "NASDAQ:LITE" → "LITE", "TSE:SHOP" → "SHOP")
+    // Strip exchange prefix e.g. "NASDAQ:LITE" → "LITE"
     const cleanTicker = ticker.includes(':') ? ticker.split(':').pop() : ticker;
     const avSym = exchange === 'TSX' ? cleanTicker.replace(/\.$/, '') + '.TRT' : cleanTicker;
-    // Use full daily output so EMA 200D has enough bars (compact only gives 100)
-    const avDailyFull = async (sym, attempt=0) => {
-      if (attempt >= AV_KEYS.length) throw new Error('AV keys exhausted');
-      const url = `${AVBASE}?function=TIME_SERIES_DAILY&symbol=${sym}&outputsize=full&apikey=${getAVKey()}`;
-      const r = await fetch(url); if (!r.ok) throw new Error('HTTP ' + r.status);
-      const j = await r.json();
-      if (j['Note'] || j['Information']) { rotateAVKey(); return avDailyFull(sym, attempt + 1); }
-      const raw = j['Time Series (Daily)']; if (!raw) throw new Error('No daily data');
-      return Object.entries(raw).sort((a,b) => a[0] > b[0] ? 1 : -1).map(([,v]) => ({ close: parseFloat(v['4. close']) }));
-    };
-    const [wkly, daily] = await Promise.all([avWeekly(avSym), avDailyFull(avSym)]);
+
+    let wkly, daily;
+    try {
+      // TD: US plain ticker; TSX also works with plain ticker
+      const [wR, dR] = await Promise.all([
+        tdSeries(cleanTicker, '1week', 300),
+        tdSeries(cleanTicker, '1day',  300)
+      ]);
+      wkly  = wR.map(d => ({ close: parseFloat(d.close) }));
+      daily = dR.map(d => ({ close: parseFloat(d.close) }));
+    } catch(_tdErr) {
+      // AV fallback — full outputsize for EMA 200D (compact only 100 bars)
+      const avDailyFull = async (sym, attempt=0) => {
+        if (attempt >= AV_KEYS.length) throw new Error('AV keys exhausted');
+        const url = `${AVBASE}?function=TIME_SERIES_DAILY&symbol=${sym}&outputsize=full&apikey=${getAVKey()}`;
+        const r = await fetch(url); if (!r.ok) throw new Error('HTTP ' + r.status);
+        const j = await r.json();
+        if (j['Note'] || j['Information']) { rotateAVKey(); return avDailyFull(sym, attempt + 1); }
+        const raw = j['Time Series (Daily)']; if (!raw) throw new Error('No daily data');
+        return Object.entries(raw).sort((a,b) => a[0] > b[0] ? 1 : -1).map(([,v]) => ({ close: parseFloat(v['4. close']) }));
+      };
+      const [avW, avD] = await Promise.all([avWeekly(avSym), avDailyFull(avSym)]);
+      wkly  = avW.map(d => ({ close: d.close }));
+      daily = avD;
+    }
+
     const wC  = wkly.map(d => d.close);
     const dC  = daily.map(d => d.close);
     const cur = dC[dC.length - 1];
