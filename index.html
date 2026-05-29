@@ -12034,8 +12034,8 @@ function _renderLive() {
           <div class="ticker-cell">${_flagIcon(t.exchange||'US')} ${t.ticker}${manualBadge}</div>
           <div class="ticker-name">${name}</div>
           <div style="margin-top:4px;display:flex;gap:5px">
-            <button onclick="mtOpenClose('${safeId}','${t.ticker}')" style="background:rgba(185,28,28,.15);border:1px solid rgba(185,28,28,.4);color:#f87171;padding:3px 9px;border-radius:5px;font-size:11px;font-weight:700;cursor:pointer;font-family:inherit">Close</button>
-            <button onclick="mtDelete('${safeId}','${t.ticker}')" style="background:rgba(100,100,100,.15);border:1px solid rgba(100,100,100,.4);color:#8b96b0;padding:3px 8px;border-radius:5px;font-size:11px;font-weight:700;cursor:pointer;font-family:inherit" title="Delete trade">🗑</button>
+            <button onclick="mtOpenClose('${safeId}','${t.ticker}')" style="background:rgba(34,197,94,.12);border:1px solid rgba(34,197,94,.35);color:#4ade80;padding:3px 9px;border-radius:5px;font-size:11px;font-weight:700;cursor:pointer;font-family:inherit" title="Close position — moves to Sold">📤 Sell</button>
+            <button onclick="mtDelete('${safeId}','${t.ticker}')" style="background:rgba(185,28,28,.12);border:1px solid rgba(185,28,28,.35);color:#f87171;padding:3px 8px;border-radius:5px;font-size:11px;font-weight:700;cursor:pointer;font-family:inherit" title="Delete record entirely — no closed entry">🗑 Delete</button>
           </div>
         </td>
         <td>${_typeBadge('swing')}</td>
