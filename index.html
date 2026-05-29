@@ -16485,6 +16485,7 @@ async function initLongTerm() {
 <!-- ── PRICE ALERT MODAL ── -->
 <div id="al-modal-bg" onclick="if(event.target===this)alCloseModal()">
   <div id="al-modal" style="max-height:90vh;overflow-y:auto">
+    <div id="al-toast" style="display:none;margin-bottom:12px;padding:10px 14px;border-radius:8px;font-size:13px;font-weight:600;text-align:center;transition:opacity .3s"></div>
     <div class="al-modal-title">
       <span>🔔</span><span id="al-modal-ticker">Alert</span>
       <button class="al-modal-close" onclick="alCloseModal()">✕</button>
@@ -16505,6 +16506,19 @@ let _alCache   = [];
 let _alTicker  = null;
 let _alExch    = null;
 let _alSource  = null;
+let _alToastTimer = null;
+
+function alToast(msg, isError) {
+  const el = document.getElementById('al-toast');
+  if (!el) return;
+  el.textContent = msg;
+  el.style.display = 'block';
+  el.style.background  = isError ? 'rgba(239,68,68,.18)'  : 'rgba(34,197,94,.18)';
+  el.style.border      = isError ? '1px solid #ef4444'    : '1px solid #22c55e';
+  el.style.color       = isError ? '#ef4444'              : '#22c55e';
+  clearTimeout(_alToastTimer);
+  _alToastTimer = setTimeout(() => { el.style.display = 'none'; }, 4000);
+}
 
 const AL_TYPE_LABELS = {
   BELOW_50WMA:   'Below SMA 50W',
@@ -16692,7 +16706,7 @@ async function alSave(alertType, snapshotPrice, maValue) {
   if (!_alTicker) return;
   const saveTicker = _alTicker.includes(':') ? _alTicker.split(':').pop() : _alTicker;
   const dup = _alCache.find(a => a.ticker === saveTicker && a.alertType === alertType && a.status === 'active');
-  if (dup) { notify('Already active — ' + saveTicker + ' ' + (AL_TYPE_LABELS[alertType] || alertType)); return; }
+  if (dup) { alToast('⚠ Already active — ' + (AL_TYPE_LABELS[alertType] || alertType), true); return; }
 
   const snapStr = snapshotPrice != null ? String(snapshotPrice) : '';
   const maStr   = maValue   != null ? String(maValue)   : '';
@@ -16703,7 +16717,7 @@ async function alSave(alertType, snapshotPrice, maValue) {
     firedAt: '', snapshotPrice: snapStr, maValue: maStr });
   alRefreshExisting();
   alRenderBadges();
-  notify('✅ Alert set — ' + saveTicker + ' ' + (AL_TYPE_LABELS[alertType] || alertType));
+  alToast('✅ Alert set — ' + (AL_TYPE_LABELS[alertType] || alertType));
 
   // ── Fire-and-forget POST to sheet (includes Telegram confirmation) ────────
   fetch(GS_SCRIPT_URL, {
@@ -16726,7 +16740,7 @@ async function alDelete(id) {
       body: JSON.stringify({ action: 'deleteAlert', id }), mode: 'no-cors'
     });
     _alCache = _alCache.filter(a => a.id !== id);
-    alRefreshExisting(); alRenderBadges(); notify('🗑 Alert deleted');
+    alRefreshExisting(); alRenderBadges(); alToast('🗑 Alert deleted');
     setTimeout(alLoad, 3000);
   } catch(e) { notify('⚠ Failed to delete alert'); }
 }
@@ -16739,7 +16753,7 @@ async function alSnooze(id) {
     });
     const a = _alCache.find(x => x.id === id);
     if (a) { a.status = 'active'; a.firedAt = ''; }
-    alRefreshExisting(); alRenderBadges(); notify('🔄 Alert re-activated');
+    alRefreshExisting(); alRenderBadges(); alToast('🔄 Alert re-activated');
     setTimeout(alLoad, 3000);
   } catch(e) { notify('⚠ Failed to re-activate alert'); }
 }
