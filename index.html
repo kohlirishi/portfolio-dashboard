@@ -16506,13 +16506,17 @@ let _alExch    = null;
 let _alSource  = null;
 
 const AL_TYPE_LABELS = {
-  BELOW_50WMA:  'Below SMA 50W',
-  BELOW_200WMA: 'Below SMA 200W',
-  BELOW_EMA50D: 'Below EMA 50D',
-  BELOW_EMA200D:'Below EMA 200D',
-  DROP_5PCT:    'Drop 5% from snapshot',
-  DROP_10PCT:   'Drop 10% from snapshot',
-  DROP_15PCT:   'Drop 15% from snapshot'
+  BELOW_50WMA:   'Below SMA 50W',
+  BELOW_200WMA:  'Below SMA 200W',
+  BELOW_EMA50W:  'Below EMA 50W',
+  BELOW_EMA200W: 'Below EMA 200W',
+  BELOW_EMA50D:  'Below EMA 50D',
+  BELOW_EMA200D: 'Below EMA 200D',
+  DROP_5PCT:     'Drop 5% from snapshot',
+  DROP_10PCT:    'Drop 10% from snapshot',
+  DROP_15PCT:    'Drop 15% from snapshot',
+  DROP_20PCT:    'Drop 20% from snapshot',
+  DROP_50PCT:    'Drop 50% from snapshot'
 };
 
 function _alSMA(arr, period) {
@@ -16574,12 +16578,24 @@ async function alOpenModal(e, ticker, exchange, source) {
     // Strip exchange prefix if present (e.g. "NASDAQ:LITE" → "LITE", "TSE:SHOP" → "SHOP")
     const cleanTicker = ticker.includes(':') ? ticker.split(':').pop() : ticker;
     const avSym = exchange === 'TSX' ? cleanTicker.replace(/\.$/, '') + '.TRT' : cleanTicker;
-    const [wkly, daily] = await Promise.all([avWeekly(avSym), avDaily(avSym)]);
+    // Use full daily output so EMA 200D has enough bars (compact only gives 100)
+    const avDailyFull = async (sym, attempt=0) => {
+      if (attempt >= AV_KEYS.length) throw new Error('AV keys exhausted');
+      const url = `${AVBASE}?function=TIME_SERIES_DAILY&symbol=${sym}&outputsize=full&apikey=${getAVKey()}`;
+      const r = await fetch(url); if (!r.ok) throw new Error('HTTP ' + r.status);
+      const j = await r.json();
+      if (j['Note'] || j['Information']) { rotateAVKey(); return avDailyFull(sym, attempt + 1); }
+      const raw = j['Time Series (Daily)']; if (!raw) throw new Error('No daily data');
+      return Object.entries(raw).sort((a,b) => a[0] > b[0] ? 1 : -1).map(([,v]) => ({ close: parseFloat(v['4. close']) }));
+    };
+    const [wkly, daily] = await Promise.all([avWeekly(avSym), avDailyFull(avSym)]);
     const wC  = wkly.map(d => d.close);
     const dC  = daily.map(d => d.close);
     const cur = dC[dC.length - 1];
     const sma50w  = _alSMA(wC, 50);
     const sma200w = _alSMA(wC, 200);
+    const ema50w  = _alEMA(wC, 50);
+    const ema200w = _alEMA(wC, 200);
     const ema50d  = _alEMA(dC, 50);
     const ema200d = _alEMA(dC, 200);
 
@@ -16602,14 +16618,18 @@ async function alOpenModal(e, ticker, exchange, source) {
 
     document.getElementById('al-type-list').innerHTML = `
       <div class="al-existing-title" style="margin-bottom:8px">Alert when price crosses below MA:</div>
-      ${maBtn('BELOW_50WMA',  'SMA 50 Week',  sma50w)}
-      ${maBtn('BELOW_200WMA', 'SMA 200 Week', sma200w)}
-      ${maBtn('BELOW_EMA50D', 'EMA 50 Day',   ema50d)}
-      ${maBtn('BELOW_EMA200D','EMA 200 Day',  ema200d)}
+      ${maBtn('BELOW_50WMA',   'SMA 50 Week',   sma50w)}
+      ${maBtn('BELOW_200WMA',  'SMA 200 Week',  sma200w)}
+      ${maBtn('BELOW_EMA50W',  'EMA 50 Week',   ema50w)}
+      ${maBtn('BELOW_EMA200W', 'EMA 200 Week',  ema200w)}
+      ${maBtn('BELOW_EMA50D',  'EMA 50 Day',    ema50d)}
+      ${maBtn('BELOW_EMA200D', 'EMA 200 Day',   ema200d)}
       <div class="al-existing-title" style="margin:14px 0 8px">Alert when price drops from today's price:</div>
       ${dropBtn('DROP_5PCT',  5)}
       ${dropBtn('DROP_10PCT', 10)}
       ${dropBtn('DROP_15PCT', 15)}
+      ${dropBtn('DROP_20PCT', 20)}
+      ${dropBtn('DROP_50PCT', 50)}
     `;
   } catch(err) {
     document.getElementById('al-type-list').innerHTML =
