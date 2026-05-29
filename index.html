@@ -12033,8 +12033,9 @@ function _renderLive() {
         <td>
           <div class="ticker-cell">${_flagIcon(t.exchange||'US')} ${t.ticker}${manualBadge}</div>
           <div class="ticker-name">${name}</div>
-          <div style="margin-top:4px">
-            <button onclick="mtOpenClose('${safeId}','${t.ticker}')" style="background:rgba(185,28,28,.15);border:1px solid rgba(185,28,28,.4);color:#f87171;padding:3px 9px;border-radius:5px;font-size:11px;font-weight:700;cursor:pointer;font-family:inherit">Close Position</button>
+          <div style="margin-top:4px;display:flex;gap:5px">
+            <button onclick="mtOpenClose('${safeId}','${t.ticker}')" style="background:rgba(185,28,28,.15);border:1px solid rgba(185,28,28,.4);color:#f87171;padding:3px 9px;border-radius:5px;font-size:11px;font-weight:700;cursor:pointer;font-family:inherit">Close</button>
+            <button onclick="mtDelete('${safeId}','${t.ticker}')" style="background:rgba(100,100,100,.15);border:1px solid rgba(100,100,100,.4);color:#8b96b0;padding:3px 8px;border-radius:5px;font-size:11px;font-weight:700;cursor:pointer;font-family:inherit" title="Delete trade">🗑</button>
           </div>
         </td>
         <td>${_typeBadge('swing')}</td>
@@ -16816,8 +16817,8 @@ document.addEventListener('DOMContentLoaded', () => { setTimeout(alLoad, 4000); 
           <input id="mt-price" type="number" step="0.01" min="0" placeholder="e.g. 185.50" style="width:100%;background:#0f172a;border:1px solid #334155;color:#f0f4ff;padding:9px 12px;border-radius:8px;font-size:13px;font-family:inherit;outline:none;box-sizing:border-box" />
         </div>
         <div>
-          <label style="font-size:11px;font-weight:700;color:#8b96b0;letter-spacing:.5px;text-transform:uppercase;display:block;margin-bottom:5px">Position % of Capital</label>
-          <input id="mt-pct" type="number" step="1" min="1" max="100" placeholder="e.g. 10" value="10" style="width:100%;background:#0f172a;border:1px solid #334155;color:#f0f4ff;padding:9px 12px;border-radius:8px;font-size:13px;font-family:inherit;outline:none;box-sizing:border-box" />
+          <label style="font-size:11px;font-weight:700;color:#8b96b0;letter-spacing:.5px;text-transform:uppercase;display:block;margin-bottom:5px">Amount to Invest ($)</label>
+          <input id="mt-invested" type="number" step="1" min="1" placeholder="e.g. 100" value="100" style="width:100%;background:#0f172a;border:1px solid #334155;color:#f0f4ff;padding:9px 12px;border-radius:8px;font-size:13px;font-family:inherit;outline:none;box-sizing:border-box" />
         </div>
       </div>
       <div id="mt-invested-preview" style="font-size:12px;color:#8b96b0;background:rgba(255,255,255,.03);border:1px solid #334155;border-radius:7px;padding:8px 12px;display:none"></div>
@@ -16860,42 +16861,39 @@ function mtOpenAdd() {
   // Default date to today
   const today = new Date().toISOString().split('T')[0];
   document.getElementById('mt-date').value = today;
-  document.getElementById('mt-ticker').value = '';
-  document.getElementById('mt-price').value  = '';
-  document.getElementById('mt-pct').value    = '10';
+  document.getElementById('mt-ticker').value   = '';
+  document.getElementById('mt-price').value    = '';
+  document.getElementById('mt-invested').value = '100';
   document.getElementById('mt-add-toast').style.display = 'none';
   document.getElementById('mt-invested-preview').style.display = 'none';
   const bg = document.getElementById('mt-add-bg');
   bg.style.display = 'flex';
   setTimeout(() => document.getElementById('mt-ticker').focus(), 100);
-  // Wire preview on input
-  ['mt-price','mt-pct'].forEach(id => {
+  ['mt-price','mt-invested'].forEach(id => {
     document.getElementById(id).oninput = mtUpdatePreview;
   });
 }
 function mtCloseAdd() { document.getElementById('mt-add-bg').style.display = 'none'; }
 
 function mtUpdatePreview() {
-  const price = parseFloat(document.getElementById('mt-price').value) || 0;
-  const pct   = parseFloat(document.getElementById('mt-pct').value)   || 0;
-  const prev  = document.getElementById('mt-invested-preview');
-  if (price > 0 && pct > 0) {
-    const totalCap  = (portfolioState && portfolioState.totalCapital) || 10000;
-    const invested  = (pct / 100) * totalCap;
-    const shares    = invested / price;
+  const price    = parseFloat(document.getElementById('mt-price').value)    || 0;
+  const invested = parseFloat(document.getElementById('mt-invested').value) || 0;
+  const prev     = document.getElementById('mt-invested-preview');
+  if (price > 0 && invested > 0) {
+    const shares = invested / price;
     prev.style.display = 'block';
-    prev.innerHTML = `💰 Investing <b>$${invested.toFixed(2)}</b> · ~<b>${shares.toFixed(2)} shares</b> of $${price.toFixed(2)} each`;
+    prev.innerHTML = `💰 Investing <b>$${invested.toFixed(2)}</b> → ~<b>${shares.toFixed(2)} shares</b> at $${price.toFixed(2)} each`;
   } else {
     prev.style.display = 'none';
   }
 }
 
 async function mtSubmitAdd() {
-  const ticker  = (document.getElementById('mt-ticker').value  || '').trim().toUpperCase();
+  const ticker   = (document.getElementById('mt-ticker').value   || '').trim().toUpperCase();
   const exchange = document.getElementById('mt-exchange').value;
-  const price   = parseFloat(document.getElementById('mt-price').value);
-  const pct     = parseFloat(document.getElementById('mt-pct').value) || 10;
-  const date    = document.getElementById('mt-date').value;
+  const price    = parseFloat(document.getElementById('mt-price').value);
+  const invested = parseFloat(document.getElementById('mt-invested').value) || 100;
+  const date     = document.getElementById('mt-date').value;
   const toast   = document.getElementById('mt-add-toast');
 
   function showToast(msg, err) {
@@ -16913,7 +16911,7 @@ async function mtSubmitAdd() {
     showToast('⏳ Adding position...', false);
     await fetch(GS_SCRIPT_URL, {
       method: 'POST', headers: { 'Content-Type': 'text/plain' },
-      body: JSON.stringify({ action: 'addManualTrade', ticker, exchange, buyPrice: price, positionPct: pct, buyDate: date }),
+      body: JSON.stringify({ action: 'addManualTrade', ticker, exchange, buyPrice: price, invested, buyDate: date }),
       mode: 'no-cors'
     });
     showToast('✅ ' + ticker + ' added! Page will refresh in 5s.', false);
@@ -16931,6 +16929,19 @@ function mtOpenClose(id, ticker) {
   setTimeout(() => document.getElementById('mt-sell-price').focus(), 100);
 }
 function mtCloseClose() { document.getElementById('mt-close-bg').style.display = 'none'; }
+
+async function mtDelete(id, ticker) {
+  if (!confirm('Delete ' + ticker + ' manual trade? This cannot be undone.')) return;
+  try {
+    await fetch(GS_SCRIPT_URL, {
+      method: 'POST', headers: { 'Content-Type': 'text/plain' },
+      body: JSON.stringify({ action: 'deleteManualTrade', id }),
+      mode: 'no-cors'
+    });
+    notify('🗑 ' + ticker + ' deleted. Refreshing...');
+    setTimeout(() => location.reload(), 3000);
+  } catch(e) { notify('⚠ Delete failed: ' + e.message); }
+}
 
 async function mtSubmitClose() {
   const sellPrice = parseFloat(document.getElementById('mt-sell-price').value);
