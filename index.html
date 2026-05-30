@@ -12034,15 +12034,54 @@ function _renderLive() {
                      (t.id || '').startsWith('manual_');
     if (isManual) {
       const manualBadge = `<span style="display:inline-block;font-size:9px;font-weight:700;padding:1px 6px;border-radius:3px;background:#1a2a3a;color:#8aaccc;border:1px solid #4a6a8a66;margin-left:4px">MANUAL</span>`;
+      const safeId  = (t.id || '').replace(/'/g, "\\'");
+      const status  = (t.status || '').toLowerCase();
+      const isPending   = status === 'manual_pending';
+      const isSellQueue = status === 'manual_sell_pending';
+      // Pending: show waiting state, only Delete button
+      if (isPending) {
+        return `<tr style="border-left:2px solid #92400e;opacity:.85">
+          <td>
+            <div class="ticker-cell">${_flagIcon(t.exchange||'US')} ${t.ticker}${manualBadge}</div>
+            <div class="ticker-name">${name}</div>
+            <div style="margin-top:4px;font-size:10px;font-weight:700;color:#f59e0b">⏳ Pending — activates at market open</div>
+            <div style="margin-top:4px">
+              <button onclick="mtDelete('${safeId}','${t.ticker}')" style="background:rgba(185,28,28,.12);border:1px solid rgba(185,28,28,.35);color:#f87171;padding:3px 8px;border-radius:5px;font-size:11px;font-weight:700;cursor:pointer;font-family:inherit">🗑 Delete</button>
+            </div>
+          </td>
+          <td>${_typeBadge('swing')}</td>
+          <td style="color:#8b96b0">—</td>
+          <td colspan="5" style="color:#f59e0b;font-size:12px">Queued — buy price + P&amp;L set at market open</td>
+          <td style="color:#8b96b0;font-size:11px">$${_fmtUSD(inv)} queued</td>
+        </tr>`;
+      }
+      // Sell queued: show sell pending state
+      if (isSellQueue) {
+        const pnlColor = totalUnreal >= 0 ? '#3fb950' : '#f85149';
+        return `<tr style="border-left:2px solid #7c3aed;opacity:.85">
+          <td>
+            <div class="ticker-cell">${_flagIcon(t.exchange||'US')} ${t.ticker}${manualBadge}</div>
+            <div class="ticker-name">${name}</div>
+            <div style="margin-top:4px;font-size:10px;font-weight:700;color:#a78bfa">⏳ Sell queued — executes at market open</div>
+          </td>
+          <td>${_typeBadge('swing')}</td>
+          <td style="color:#8b96b0">—</td>
+          <td style="min-width:80px">${_fmtDate(t.buyDate)}</td>
+          <td>${cur}${bp.toFixed(2)}</td>
+          <td>${cur}${cp > 0 ? cp.toFixed(2) : '…'}<br><small style="color:${pnlColor}">${chg>=0?'+':''}${chg.toFixed(2)}%</small></td>
+          <td style="color:${pnlColor};font-weight:700">${totalUnreal>=0?'+':'-'}${cur}${_fmtUSD(Math.abs(totalUnreal))}</td>
+          <td colspan="3" style="color:#a78bfa;font-size:11px">Sell executes at open price</td>
+        </tr>`;
+      }
+      // Live manual trade
       const pnlColor = totalUnreal >= 0 ? '#3fb950' : '#f85149';
-      const safeId = (t.id || '').replace(/'/g, "\\'");
       return `<tr style="border-left:2px solid #334155">
         <td>
           <div class="ticker-cell">${_flagIcon(t.exchange||'US')} ${t.ticker}${manualBadge}</div>
           <div class="ticker-name">${name}</div>
           <div style="margin-top:4px;display:flex;gap:5px">
-            <button onclick="mtOpenClose('${safeId}','${t.ticker}')" style="background:rgba(34,197,94,.12);border:1px solid rgba(34,197,94,.35);color:#4ade80;padding:3px 9px;border-radius:5px;font-size:11px;font-weight:700;cursor:pointer;font-family:inherit" title="Close position — moves to Sold">📤 Sell</button>
-            <button onclick="mtDelete('${safeId}','${t.ticker}')" style="background:rgba(185,28,28,.12);border:1px solid rgba(185,28,28,.35);color:#f87171;padding:3px 8px;border-radius:5px;font-size:11px;font-weight:700;cursor:pointer;font-family:inherit" title="Delete record entirely — no closed entry">🗑 Delete</button>
+            <button onclick="mtOpenClose('${safeId}','${t.ticker}')" style="background:rgba(34,197,94,.12);border:1px solid rgba(34,197,94,.35);color:#4ade80;padding:3px 9px;border-radius:5px;font-size:11px;font-weight:700;cursor:pointer;font-family:inherit" title="Sell — closes at current market price">📤 Sell</button>
+            <button onclick="mtDelete('${safeId}','${t.ticker}')" style="background:rgba(185,28,28,.12);border:1px solid rgba(185,28,28,.35);color:#f87171;padding:3px 8px;border-radius:5px;font-size:11px;font-weight:700;cursor:pointer;font-family:inherit" title="Delete record — no closed entry">🗑 Delete</button>
           </div>
         </td>
         <td>${_typeBadge('swing')}</td>
@@ -16858,6 +16897,8 @@ document.addEventListener('DOMContentLoaded', () => { setTimeout(alLoad, 4000); 
       <span style="font-size:15px;font-weight:800;color:#f0f4ff">Add Manual Trade</span>
       <button onclick="mtCloseAdd()" style="margin-left:auto;background:none;border:none;color:#8b96b0;cursor:pointer;font-size:16px">✕</button>
     </div>
+    <!-- Market status banner -->
+    <div id="mt-mkt-status" style="margin-bottom:12px;padding:8px 12px;border-radius:7px;font-size:12px;font-weight:600;text-align:center"></div>
     <div id="mt-add-toast" style="display:none;margin-bottom:12px;padding:9px 13px;border-radius:7px;font-size:12px;font-weight:600;text-align:center"></div>
     <div style="display:flex;flex-direction:column;gap:13px">
       <div>
@@ -16872,48 +16913,29 @@ document.addEventListener('DOMContentLoaded', () => { setTimeout(alLoad, 4000); 
         <label style="font-size:11px;font-weight:700;color:#8b96b0;letter-spacing:.5px;text-transform:uppercase;display:block;margin-bottom:5px">Ticker</label>
         <input id="mt-ticker" type="text" placeholder="e.g. AAPL" style="width:100%;background:#0f172a;border:1px solid #334155;color:#f0f4ff;padding:9px 12px;border-radius:8px;font-size:13px;font-family:inherit;outline:none;box-sizing:border-box" />
       </div>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
-        <div>
-          <label style="font-size:11px;font-weight:700;color:#8b96b0;letter-spacing:.5px;text-transform:uppercase;display:block;margin-bottom:5px">Buy Low ($)</label>
-          <input id="mt-buy-low" type="number" step="0.01" min="0" placeholder="e.g. 185.00" style="width:100%;background:#0f172a;border:1px solid #334155;color:#f0f4ff;padding:9px 12px;border-radius:8px;font-size:13px;font-family:inherit;outline:none;box-sizing:border-box" />
-        </div>
-        <div>
-          <label style="font-size:11px;font-weight:700;color:#8b96b0;letter-spacing:.5px;text-transform:uppercase;display:block;margin-bottom:5px">Buy High ($)</label>
-          <input id="mt-buy-high" type="number" step="0.01" min="0" placeholder="e.g. 190.00" style="width:100%;background:#0f172a;border:1px solid #334155;color:#f0f4ff;padding:9px 12px;border-radius:8px;font-size:13px;font-family:inherit;outline:none;box-sizing:border-box" />
-        </div>
-      </div>
       <div>
         <label style="font-size:11px;font-weight:700;color:#8b96b0;letter-spacing:.5px;text-transform:uppercase;display:block;margin-bottom:5px">Amount to Invest ($)</label>
         <input id="mt-invested" type="number" step="1" min="1" placeholder="e.g. 100" value="100" style="width:100%;background:#0f172a;border:1px solid #334155;color:#f0f4ff;padding:9px 12px;border-radius:8px;font-size:13px;font-family:inherit;outline:none;box-sizing:border-box" />
       </div>
       <div id="mt-invested-preview" style="font-size:12px;color:#8b96b0;background:rgba(255,255,255,.03);border:1px solid #334155;border-radius:7px;padding:8px 12px;display:none"></div>
-      <div>
-        <label style="font-size:11px;font-weight:700;color:#8b96b0;letter-spacing:.5px;text-transform:uppercase;display:block;margin-bottom:5px">Buy Date</label>
-        <input id="mt-date" type="date" style="width:100%;background:#0f172a;border:1px solid #334155;color:#f0f4ff;padding:9px 12px;border-radius:8px;font-size:13px;font-family:inherit;outline:none;box-sizing:border-box" />
-      </div>
-      <button onclick="mtSubmitAdd()" style="width:100%;background:#238636;border:none;color:#fff;padding:11px;border-radius:8px;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit;margin-top:4px">Add to Live Positions</button>
+      <button id="mt-submit-btn" onclick="mtSubmitAdd()" style="width:100%;background:#238636;border:none;color:#fff;padding:11px;border-radius:8px;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit;margin-top:4px">Add Trade</button>
     </div>
   </div>
 </div>
 
 <div id="mt-close-bg" onclick="if(event.target===this)mtCloseClose()" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.65);z-index:9500;align-items:center;justify-content:center">
   <div style="background:#1e293b;border:1px solid #334155;border-radius:14px;width:min(360px,92vw);padding:26px;box-shadow:0 20px 60px rgba(0,0,0,.6)">
-    <div style="display:flex;align-items:center;gap:8px;margin-bottom:20px">
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:16px">
       <span style="font-size:18px">📤</span>
-      <span id="mt-close-title" style="font-size:15px;font-weight:800;color:#f0f4ff">Close Trade</span>
+      <span id="mt-close-title" style="font-size:15px;font-weight:800;color:#f0f4ff">Sell Trade</span>
       <button onclick="mtCloseClose()" style="margin-left:auto;background:none;border:none;color:#8b96b0;cursor:pointer;font-size:16px">✕</button>
     </div>
+    <div id="mt-close-mkt" style="margin-bottom:12px;padding:8px 12px;border-radius:7px;font-size:12px;font-weight:600;text-align:center"></div>
     <div id="mt-close-toast" style="display:none;margin-bottom:12px;padding:9px 13px;border-radius:7px;font-size:12px;font-weight:600;text-align:center"></div>
-    <div style="display:flex;flex-direction:column;gap:13px">
-      <div>
-        <label style="font-size:11px;font-weight:700;color:#8b96b0;letter-spacing:.5px;text-transform:uppercase;display:block;margin-bottom:5px">Sell Price ($)</label>
-        <input id="mt-sell-price" type="number" step="0.01" min="0" placeholder="e.g. 210.00" style="width:100%;background:#0f172a;border:1px solid #334155;color:#f0f4ff;padding:9px 12px;border-radius:8px;font-size:13px;font-family:inherit;outline:none;box-sizing:border-box" />
-      </div>
-      <div>
-        <label style="font-size:11px;font-weight:700;color:#8b96b0;letter-spacing:.5px;text-transform:uppercase;display:block;margin-bottom:5px">Sell Date</label>
-        <input id="mt-sell-date" type="date" style="width:100%;background:#0f172a;border:1px solid #334155;color:#f0f4ff;padding:9px 12px;border-radius:8px;font-size:13px;font-family:inherit;outline:none;box-sizing:border-box" />
-      </div>
-      <button onclick="mtSubmitClose()" style="width:100%;background:#b91c1c;border:none;color:#fff;padding:11px;border-radius:8px;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit;margin-top:4px">Close Position</button>
+    <p style="font-size:12px;color:#8b96b0;margin-bottom:16px;line-height:1.5">Price is fetched automatically from Yahoo Finance at execution time. No manual input needed.</p>
+    <div style="display:flex;flex-direction:column;gap:10px">
+      <button id="mt-close-btn" onclick="mtSubmitClose()" style="width:100%;background:#b91c1c;border:none;color:#fff;padding:11px;border-radius:8px;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit">📤 Sell Now</button>
+      <button onclick="mtCloseClose()" style="width:100%;background:transparent;border:1px solid #334155;color:#8b96b0;padding:9px;border-radius:8px;font-size:12px;font-weight:600;cursor:pointer;font-family:inherit">Cancel</button>
     </div>
   </div>
 </div>
@@ -16922,48 +16944,51 @@ document.addEventListener('DOMContentLoaded', () => { setTimeout(alLoad, 4000); 
 // ── MANUAL TRADE UI ───────────────────────────────────────────────────────────
 let _mtCloseId = null;
 
+function _mtIsMarketOpen() {
+  const now  = new Date();
+  const etMs = now.toLocaleString('en-US', { timeZone: 'America/New_York' });
+  const et   = new Date(etMs);
+  const dow  = et.getDay(); // 0=Sun,6=Sat
+  const mins = et.getHours() * 60 + et.getMinutes();
+  return dow >= 1 && dow <= 5 && mins >= 570 && mins < 960; // 9:30–4:00 PM ET
+}
+
 function mtOpenAdd() {
-  // Default date to today
-  const today = new Date().toISOString().split('T')[0];
-  document.getElementById('mt-date').value = today;
   document.getElementById('mt-ticker').value   = '';
-  document.getElementById('mt-buy-low').value  = '';
-  document.getElementById('mt-buy-high').value = '';
   document.getElementById('mt-invested').value = '100';
   document.getElementById('mt-add-toast').style.display = 'none';
   document.getElementById('mt-invested-preview').style.display = 'none';
-  const bg = document.getElementById('mt-add-bg');
-  bg.style.display = 'flex';
+
+  // Show market status
+  const mktOpen = _mtIsMarketOpen();
+  const statusEl = document.getElementById('mt-mkt-status');
+  const btn      = document.getElementById('mt-submit-btn');
+  if (mktOpen) {
+    statusEl.textContent = '🟢 Market Open — trade will go LIVE immediately at current price';
+    statusEl.style.background = 'rgba(34,197,94,.12)';
+    statusEl.style.border     = '1px solid rgba(34,197,94,.3)';
+    statusEl.style.color      = '#22c55e';
+    btn.textContent = '📥 Add to Live Positions';
+    btn.style.background = '#238636';
+  } else {
+    statusEl.textContent = '🔴 Market Closed — trade will queue as Pending until market opens';
+    statusEl.style.background = 'rgba(239,68,68,.10)';
+    statusEl.style.border     = '1px solid rgba(239,68,68,.3)';
+    statusEl.style.color      = '#f87171';
+    btn.textContent = '⏳ Queue as Pending';
+    btn.style.background = '#92400e';
+  }
+
+  document.getElementById('mt-add-bg').style.display = 'flex';
   setTimeout(() => document.getElementById('mt-ticker').focus(), 100);
-  ['mt-buy-low','mt-buy-high','mt-invested'].forEach(id => {
-    document.getElementById(id).oninput = mtUpdatePreview;
-  });
 }
 function mtCloseAdd() { document.getElementById('mt-add-bg').style.display = 'none'; }
 
-function mtUpdatePreview() {
-  const low      = parseFloat(document.getElementById('mt-buy-low').value)  || 0;
-  const high     = parseFloat(document.getElementById('mt-buy-high').value) || 0;
-  const invested = parseFloat(document.getElementById('mt-invested').value) || 0;
-  const prev     = document.getElementById('mt-invested-preview');
-  if (low > 0 && invested > 0) {
-    const shares = invested / low;
-    const rangeStr = high > low ? `$${low.toFixed(2)} to $${high.toFixed(2)}` : `$${low.toFixed(2)}`;
-    prev.style.display = 'block';
-    prev.innerHTML = `💰 $${invested.toFixed(2)} · Range: ${rangeStr} · ~<b>${shares.toFixed(2)} shares</b>`;
-  } else {
-    prev.style.display = 'none';
-  }
-}
-
 async function mtSubmitAdd() {
-  const ticker   = (document.getElementById('mt-ticker').value   || '').trim().toUpperCase();
+  const ticker   = (document.getElementById('mt-ticker').value || '').trim().toUpperCase();
   const exchange = document.getElementById('mt-exchange').value;
-  const buyLow   = parseFloat(document.getElementById('mt-buy-low').value);
-  const buyHigh  = parseFloat(document.getElementById('mt-buy-high').value) || buyLow;
   const invested = parseFloat(document.getElementById('mt-invested').value) || 100;
-  const date     = document.getElementById('mt-date').value;
-  const toast   = document.getElementById('mt-add-toast');
+  const toast    = document.getElementById('mt-add-toast');
 
   function showToast(msg, err) {
     toast.textContent = msg;
@@ -16974,33 +16999,57 @@ async function mtSubmitAdd() {
   }
 
   if (!ticker) { showToast('⚠ Enter a ticker', true); return; }
-  if (!buyLow || buyLow <= 0) { showToast('⚠ Enter a valid Buy Low price', true); return; }
+
+  const mktOpen = _mtIsMarketOpen();
+  showToast(mktOpen ? '⏳ Adding position...' : '⏳ Queuing as Pending...', false);
 
   try {
-    showToast('⏳ Adding position... fetching company name (~5s)', false);
     await fetch(GS_SCRIPT_URL, {
       method: 'POST', headers: { 'Content-Type': 'text/plain' },
-      body: JSON.stringify({ action: 'addManualTrade', ticker, exchange, buyLow, buyHigh, invested, buyDate: date }),
+      body: JSON.stringify({ action: 'addManualTrade', ticker, exchange, invested }),
       mode: 'no-cors'
     });
-    showToast('✅ ' + ticker + ' added! Page will refresh in 5s.', false);
-    setTimeout(() => { mtCloseAdd(); location.reload(); }, 5000);
+    const msg = mktOpen
+      ? `✅ ${ticker} added to Live Positions! Refreshing...`
+      : `⏳ ${ticker} queued as Pending — activates at next market open.`;
+    showToast(msg, false);
+    setTimeout(() => { mtCloseAdd(); location.reload(); }, 4000);
   } catch(e) { showToast('⚠ Failed: ' + e.message, true); }
 }
 
 function mtOpenClose(id, ticker) {
   _mtCloseId = id;
-  document.getElementById('mt-close-title').textContent = 'Close ' + ticker;
-  document.getElementById('mt-sell-price').value = '';
-  document.getElementById('mt-sell-date').value  = new Date().toISOString().split('T')[0];
+  const mktOpen = _mtIsMarketOpen();
+  const title   = document.getElementById('mt-close-title');
+  const sellRow = document.getElementById('mt-sell-price-row');
+  const btn     = document.getElementById('mt-close-btn');
+  title.textContent = '📤 Sell ' + ticker;
+
+  // Show market status in close modal
+  const mktEl = document.getElementById('mt-close-mkt');
+  if (mktOpen) {
+    mktEl.textContent = '🟢 Market Open — sells at current market price now';
+    mktEl.style.background = 'rgba(34,197,94,.12)';
+    mktEl.style.border     = '1px solid rgba(34,197,94,.3)';
+    mktEl.style.color      = '#22c55e';
+    btn.textContent = '📤 Sell Now';
+    btn.style.background = '#b91c1c';
+  } else {
+    mktEl.textContent = '🔴 Market Closed — sell will execute at next market open price';
+    mktEl.style.background = 'rgba(239,68,68,.10)';
+    mktEl.style.border     = '1px solid rgba(239,68,68,.3)';
+    mktEl.style.color      = '#f87171';
+    btn.textContent = '⏳ Queue Sell';
+    btn.style.background = '#92400e';
+  }
+
   document.getElementById('mt-close-toast').style.display = 'none';
   document.getElementById('mt-close-bg').style.display = 'flex';
-  setTimeout(() => document.getElementById('mt-sell-price').focus(), 100);
 }
 function mtCloseClose() { document.getElementById('mt-close-bg').style.display = 'none'; }
 
 async function mtDelete(id, ticker) {
-  if (!confirm('Delete ' + ticker + ' manual trade? This cannot be undone.')) return;
+  if (!confirm('Delete ' + ticker + ' — removes record entirely (no closed entry). Continue?')) return;
   try {
     await fetch(GS_SCRIPT_URL, {
       method: 'POST', headers: { 'Content-Type': 'text/plain' },
@@ -17013,10 +17062,7 @@ async function mtDelete(id, ticker) {
 }
 
 async function mtSubmitClose() {
-  const sellPrice = parseFloat(document.getElementById('mt-sell-price').value);
-  const sellDate  = document.getElementById('mt-sell-date').value;
-  const toast     = document.getElementById('mt-close-toast');
-
+  const toast = document.getElementById('mt-close-toast');
   function showToast(msg, err) {
     toast.textContent = msg;
     toast.style.display = 'block';
@@ -17024,18 +17070,19 @@ async function mtSubmitClose() {
     toast.style.border      = err ? '1px solid #ef4444'  : '1px solid #22c55e';
     toast.style.color       = err ? '#ef4444'            : '#22c55e';
   }
-
-  if (!sellPrice || sellPrice <= 0) { showToast('⚠ Enter a valid sell price', true); return; }
-
+  const mktOpen = _mtIsMarketOpen();
+  showToast(mktOpen ? '⏳ Selling at current market price...' : '⏳ Queuing sell for market open...', false);
   try {
-    showToast('⏳ Closing position...', false);
     await fetch(GS_SCRIPT_URL, {
       method: 'POST', headers: { 'Content-Type': 'text/plain' },
-      body: JSON.stringify({ action: 'closeManualTrade', id: _mtCloseId, sellPrice, sellDate }),
+      body: JSON.stringify({ action: 'closeManualTrade', id: _mtCloseId }),
       mode: 'no-cors'
     });
-    showToast('✅ Position closed! Page will refresh in 5s.', false);
-    setTimeout(() => { mtCloseClose(); location.reload(); }, 5000);
+    const msg = mktOpen
+      ? '✅ Position closed at market price! Refreshing...'
+      : '⏳ Sell queued — will execute at market open. Refreshing...';
+    showToast(msg, false);
+    setTimeout(() => { mtCloseClose(); location.reload(); }, 4000);
   } catch(e) { showToast('⚠ Failed: ' + e.message, true); }
 }
 </script>
