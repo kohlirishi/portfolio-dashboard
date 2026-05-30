@@ -3148,8 +3148,10 @@ function renderCell(d, id) {
     case 'name': {
       const _bt = d.ticker_v || d.ticker;
       const _bx = d.country === 'Canada' ? 'TSX' : 'US';
+      // Parse CMP from sheet (col D) — strip currency symbols, use as price override
+      const _cmp = parseFloat((d.cmp || '').toString().replace(/[^0-9.]/g, '')) || 0;
       const _bb = d.isWatch
-        ? ` <button class="al-bell" id="al-bell-${_bt}" title="Set price alert" onclick="alOpenModal(event,'${_bt}','${_bx}','main')" style="vertical-align:middle">🔕</button>`
+        ? ` <button class="al-bell" id="al-bell-${_bt}" title="Set price alert" onclick="alOpenModal(event,'${_bt}','${_bx}','main',${_cmp})" style="vertical-align:middle">🔕</button>`
         : '';
       return `<td style="min-width:180px;max-width:220px"><div class="td-fund" style="white-space:normal;word-break:break-word">${d.shortName}${_bb}</div><div class="td-fund-sub">${d.ticker_v||d.ticker} · ${d.sector}</div></td>`;
     }
@@ -16614,7 +16616,7 @@ function alRenderBadges() {
   });
 }
 
-async function alOpenModal(e, ticker, exchange, source) {
+async function alOpenModal(e, ticker, exchange, source, sheetCmp) {
   e.stopPropagation();
   _alTicker = ticker; _alExch = exchange; _alSource = source;
   document.getElementById('al-modal-ticker').textContent = ticker;
@@ -16654,9 +16656,11 @@ async function alOpenModal(e, ticker, exchange, source) {
       daily = avD;
     }
 
-    const wC  = wkly.map(d => d.close);
-    const dC  = daily.map(d => d.close);
-    const cur = dC[dC.length - 1];
+    const wC    = wkly.map(d => d.close);
+    const dC    = daily.map(d => d.close);
+    const apiCur = dC[dC.length - 1];
+    // Sheet CMP (Google Finance via gviz) is more accurate than AV/TD for TSX stocks
+    const cur   = (sheetCmp && sheetCmp > 0) ? sheetCmp : apiCur;
     const sma50w  = _alSMA(wC, 50);
     const sma200w = _alSMA(wC, 200);
     const ema50w  = _alEMA(wC, 50);
