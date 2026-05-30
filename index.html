@@ -10524,11 +10524,18 @@ async function fetchPortfolioState() {
 
   try {
     const url = `${PORTFOLIO_WEBAPP_URL}?path=tracker&t=${Date.now()}`;
-    const res = await fetch(url, {
-      method: 'GET',
-      cache: 'no-store',
-      signal: AbortSignal.timeout(20000),
-    });
+    // 35s timeout — GAS cold starts can take 20-25s
+    let res;
+    for (let attempt = 1; attempt <= 2; attempt++) {
+      try {
+        res = await fetch(url, { method: 'GET', cache: 'no-store', signal: AbortSignal.timeout(35000) });
+        break;
+      } catch(retryErr) {
+        if (attempt === 2) throw retryErr;
+        if (syncEl) syncEl.textContent = '⏳ Retrying…';
+        await new Promise(r => setTimeout(r, 3000));
+      }
+    }
 
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const json = await res.json();
