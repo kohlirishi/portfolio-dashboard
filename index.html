@@ -16744,6 +16744,12 @@ function alCloseModal() {
 async function alSave(alertType, snapshotPrice, maValue) {
   if (!_alTicker) return;
   const saveTicker = _alTicker.includes(':') ? _alTicker.split(':').pop() : _alTicker;
+  // Look up company name from parsed funds array
+  const _alCompany = (typeof ALL !== 'undefined' ? ALL : []).find(d => {
+    const t = d.ticker_v || d.ticker || '';
+    const clean = t.includes(':') ? t.split(':').pop() : t;
+    return clean.toUpperCase() === saveTicker.toUpperCase();
+  })?.shortName || '';
   const dup = _alCache.find(a => a.ticker === saveTicker && a.alertType === alertType && a.status === 'active');
   if (dup) { alToast('⚠ Already active — ' + (AL_TYPE_LABELS[alertType] || alertType), true); return; }
 
@@ -16763,7 +16769,7 @@ async function alSave(alertType, snapshotPrice, maValue) {
     method: 'POST',
     headers: { 'Content-Type': 'text/plain' },
     body: JSON.stringify({ action: 'setAlert', ticker: saveTicker, exchange: _alExch,
-      source: _alSource, alertType,
+      source: _alSource, alertType, companyName: _alCompany,
       snapshotPrice: snapshotPrice != null ? snapshotPrice : null,
       maValue:       maValue       != null ? maValue       : null }),
     mode: 'no-cors'
