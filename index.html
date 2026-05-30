@@ -3150,9 +3150,7 @@ function renderCell(d, id) {
       const _bx = d.country === 'Canada' ? 'TSX' : 'US';
       // Parse CMP from sheet (col D) — strip currency symbols, use as price override
       const _cmp = parseFloat((d.cmp || '').toString().replace(/[^0-9.]/g, '')) || 0;
-      const _bb = d.isWatch
-        ? ` <button class="al-bell" id="al-bell-${_bt}" title="Set price alert" onclick="alOpenModal(event,'${_bt}','${_bx}','main',${_cmp})" style="vertical-align:middle">🔕</button>`
-        : '';
+      const _bb = ` <button class="al-bell" id="al-bell-${_bt}" title="Set price alert" onclick="alOpenModal(event,'${_bt}','${_bx}','main',${_cmp})" style="vertical-align:middle">🔕</button>`;
       return `<td style="min-width:180px;max-width:220px"><div class="td-fund" style="white-space:normal;word-break:break-word">${d.shortName}${_bb}</div><div class="td-fund-sub">${d.ticker_v||d.ticker} · ${d.sector}</div></td>`;
     }
     case 's1d':  return `<td style="white-space:nowrap">${pctTd(d.s1d)}</td>`;
