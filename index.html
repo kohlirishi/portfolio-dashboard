@@ -16568,7 +16568,12 @@ const AL_TYPE_LABELS = {
   DROP_10PCT:    'Drop 10% from snapshot',
   DROP_15PCT:    'Drop 15% from snapshot',
   DROP_20PCT:    'Drop 20% from snapshot',
-  DROP_50PCT:    'Drop 50% from snapshot'
+  DROP_50PCT:    'Drop 50% from snapshot',
+  RISE_5PCT:     'Rise 5% from snapshot',
+  RISE_10PCT:    'Rise 10% from snapshot',
+  RISE_15PCT:    'Rise 15% from snapshot',
+  RISE_20PCT:    'Rise 20% from snapshot',
+  RISE_50PCT:    'Rise 50% from snapshot'
 };
 
 function _alSMA(arr, period) {
@@ -16685,6 +16690,13 @@ async function alOpenModal(e, ticker, exchange, source, sheetCmp) {
         <div class="al-type-sub">fires if ≤ $${target.toFixed(2)}</div>
       </button>`;
     }
+    function riseBtn(type, pct) {
+      const target = cur * (1 + pct / 100);
+      return `<button class="al-type-btn" onclick="alSave('${type}',${cur.toFixed(4)},null)">
+        📈 Rise ${pct}% → <b>$${target.toFixed(2)}</b>
+        <div class="al-type-sub">fires if ≥ $${target.toFixed(2)}</div>
+      </button>`;
+    }
 
     document.getElementById('al-type-list').innerHTML = `
       <div class="al-existing-title al-sec-hdr">Alert when price crosses below MA:</div>
@@ -16694,12 +16706,18 @@ async function alOpenModal(e, ticker, exchange, source, sheetCmp) {
       ${maBtn('BELOW_EMA200W', 'EMA 200W',  ema200w)}
       ${maBtn('BELOW_EMA50D',  'EMA 50D',   ema50d)}
       ${maBtn('BELOW_EMA200D', 'EMA 200D',  ema200d)}
-      <div class="al-existing-title al-sec-hdr" style="margin-top:6px">Alert when price drops from today ($${cur.toFixed(2)}):</div>
+      <div class="al-existing-title al-sec-hdr" style="margin-top:6px">📉 Alert when price drops from today ($${cur.toFixed(2)}):</div>
       ${dropBtn('DROP_5PCT',  5)}
       ${dropBtn('DROP_10PCT', 10)}
       ${dropBtn('DROP_15PCT', 15)}
       ${dropBtn('DROP_20PCT', 20)}
       ${dropBtn('DROP_50PCT', 50)}
+      <div class="al-existing-title al-sec-hdr" style="margin-top:6px">📈 Alert when price rises from today ($${cur.toFixed(2)}):</div>
+      ${riseBtn('RISE_5PCT',  5)}
+      ${riseBtn('RISE_10PCT', 10)}
+      ${riseBtn('RISE_15PCT', 15)}
+      ${riseBtn('RISE_20PCT', 20)}
+      ${riseBtn('RISE_50PCT', 50)}
     `;
   } catch(err) {
     document.getElementById('al-type-list').innerHTML =
@@ -16722,9 +16740,10 @@ function alRefreshExisting() {
       priceHint = ` — fires below <b>$${parseFloat(a.maValue).toFixed(2)}</b>`;
     } else if (a.snapshotPrice && parseFloat(a.snapshotPrice) > 0) {
       const snap = parseFloat(a.snapshotPrice);
-      const pctMap = {DROP_5PCT:.05,DROP_10PCT:.10,DROP_15PCT:.15,DROP_20PCT:.20,DROP_50PCT:.50};
-      const pct = pctMap[a.alertType];
-      if (pct) priceHint = ` — fires below <b>$${(snap*(1-pct)).toFixed(2)}</b>`;
+      const dropMap = {DROP_5PCT:.05,DROP_10PCT:.10,DROP_15PCT:.15,DROP_20PCT:.20,DROP_50PCT:.50};
+      const riseMap = {RISE_5PCT:.05,RISE_10PCT:.10,RISE_15PCT:.15,RISE_20PCT:.20,RISE_50PCT:.50};
+      if (dropMap[a.alertType]) priceHint = ` — fires below <b>$${(snap*(1-dropMap[a.alertType])).toFixed(2)}</b>`;
+      else if (riseMap[a.alertType]) priceHint = ` — fires above <b>$${(snap*(1+riseMap[a.alertType])).toFixed(2)}</b>`;
     }
     const snoozeBtn = a.status !== 'active'
       ? `<button class="al-ei-btn" title="Re-activate" onclick="alSnooze('${a.id}')">🔄</button>` : '';
