@@ -16562,6 +16562,12 @@ const AL_TYPE_LABELS = {
   BELOW_EMA200W: 'Below EMA 200W',
   BELOW_EMA50D:  'Below EMA 50D',
   BELOW_EMA200D: 'Below EMA 200D',
+  ABOVE_50WMA:   'Above SMA 50W',
+  ABOVE_200WMA:  'Above SMA 200W',
+  ABOVE_EMA50W:  'Above EMA 50W',
+  ABOVE_EMA200W: 'Above EMA 200W',
+  ABOVE_EMA50D:  'Above EMA 50D',
+  ABOVE_EMA200D: 'Above EMA 200D',
   DROP_5PCT:     'Drop 5% from snapshot',
   DROP_10PCT:    'Drop 10% from snapshot',
   DROP_15PCT:    'Drop 15% from snapshot',
@@ -16587,14 +16593,24 @@ function _alEMA(arr, period) {
   return e;
 }
 function _alFmt(n) { return n != null ? '$' + n.toFixed(2) : 'N/A'; }
-function _alPct(cur, ma) {
+function _alPct(cur, ma, isAbove) {
   if (!cur || !ma) return '';
   const p = (cur - ma) / ma * 100;
   const below = p < 0;
-  const col = below ? '#ef4444' : '#22c55e';
-  const label = below
-    ? `⬇ ${Math.abs(p).toFixed(1)}% BELOW — already triggered`
-    : `${p.toFixed(1)}% above — ${_alFmt(ma)}`;
+  let col, label;
+  if (isAbove) {
+    // Above MA alert: green if already above (triggered), red if below
+    col   = below ? '#ef4444' : '#22c55e';
+    label = below
+      ? `⬇ ${Math.abs(p).toFixed(1)}% below MA — not yet triggered`
+      : `⬆ ${p.toFixed(1)}% ABOVE — already triggered`;
+  } else {
+    // Below MA alert: red if already below (triggered), green if above
+    col   = below ? '#ef4444' : '#22c55e';
+    label = below
+      ? `⬇ ${Math.abs(p).toFixed(1)}% BELOW — already triggered`
+      : `${p.toFixed(1)}% above — ${_alFmt(ma)}`;
+  }
   return `<span style="color:${col};font-size:11px">${label}</span>`;
 }
 
@@ -16673,11 +16689,12 @@ async function alOpenModal(e, ticker, exchange, source, sheetCmp) {
 
     document.getElementById('al-modal-ticker').textContent = ticker + ' — ' + _alFmt(cur);
 
-    function maBtn(type, label, ma) {
-      const pctHtml = _alPct(cur, ma);
+    function maBtn(type, label, ma, isAbove) {
+      const pctHtml = _alPct(cur, ma, isAbove);
       const maArg   = ma != null ? ma.toFixed(4) : 'null';
+      const icon    = isAbove ? '📈' : '📉';
       return `<button class="al-type-btn" onclick="alSave('${type}',null,${maArg})">
-        📉 ${label}${ma != null ? ' <b>$' + ma.toFixed(2) + '</b>' : ''}
+        ${icon} ${label}${ma != null ? ' <b>$' + ma.toFixed(2) + '</b>' : ''}
         <div class="al-type-sub">${pctHtml}</div>
       </button>`;
     }
@@ -16697,13 +16714,20 @@ async function alOpenModal(e, ticker, exchange, source, sheetCmp) {
     }
 
     document.getElementById('al-type-list').innerHTML = `
-      <div class="al-existing-title al-sec-hdr">Alert when price crosses below MA:</div>
+      <div class="al-existing-title al-sec-hdr">📉 Alert when price crosses BELOW MA:</div>
       ${maBtn('BELOW_50WMA',   'SMA 50W',   sma50w)}
       ${maBtn('BELOW_200WMA',  'SMA 200W',  sma200w)}
       ${maBtn('BELOW_EMA50W',  'EMA 50W',   ema50w)}
       ${maBtn('BELOW_EMA200W', 'EMA 200W',  ema200w)}
       ${maBtn('BELOW_EMA50D',  'EMA 50D',   ema50d)}
       ${maBtn('BELOW_EMA200D', 'EMA 200D',  ema200d)}
+      <div class="al-existing-title al-sec-hdr" style="margin-top:6px">📈 Alert when price crosses ABOVE MA:</div>
+      ${maBtn('ABOVE_50WMA',   'SMA 50W',   sma50w,  true)}
+      ${maBtn('ABOVE_200WMA',  'SMA 200W',  sma200w, true)}
+      ${maBtn('ABOVE_EMA50W',  'EMA 50W',   ema50w,  true)}
+      ${maBtn('ABOVE_EMA200W', 'EMA 200W',  ema200w, true)}
+      ${maBtn('ABOVE_EMA50D',  'EMA 50D',   ema50d,  true)}
+      ${maBtn('ABOVE_EMA200D', 'EMA 200D',  ema200d, true)}
       <div class="al-existing-title al-sec-hdr" style="margin-top:6px">📉 Alert when price drops from today ($${cur.toFixed(2)}):</div>
       ${dropBtn('DROP_5PCT',  5)}
       ${dropBtn('DROP_10PCT', 10)}
@@ -16735,7 +16759,10 @@ function alRefreshExisting() {
     // Show trigger price: MA value for MA alerts, computed target for drop alerts
     let priceHint = '';
     if (a.maValue && parseFloat(a.maValue) > 0) {
-      priceHint = ` — fires below <b>$${parseFloat(a.maValue).toFixed(2)}</b>`;
+      const isAboveType = (a.alertType || '').startsWith('ABOVE_');
+      priceHint = isAboveType
+        ? ` — fires above <b>$${parseFloat(a.maValue).toFixed(2)}</b>`
+        : ` — fires below <b>$${parseFloat(a.maValue).toFixed(2)}</b>`;
     } else if (a.snapshotPrice && parseFloat(a.snapshotPrice) > 0) {
       const snap = parseFloat(a.snapshotPrice);
       const dropMap = {DROP_5PCT:.05,DROP_10PCT:.10,DROP_15PCT:.15,DROP_20PCT:.20,DROP_50PCT:.50};
