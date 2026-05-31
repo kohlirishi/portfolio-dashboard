@@ -11874,7 +11874,8 @@ function _renderLive() {
   if (!portfolioState) return;
   // Deduplicate live/partial trades (keep most recent by buy date+time)
   const allLive = (portfolioState.trades || [])
-    .filter(t => t.status === 'live' || t.status === 'partial')
+    .filter(t => t.status === 'live' || t.status === 'partial'
+               || t.status === 'manual_pending' || t.status === 'manual_sell_pending')
     .reduce((unique, trade) => {
       const existingIndex = unique.findIndex(t => t.ticker === trade.ticker);
       if (existingIndex === -1) {
