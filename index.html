@@ -5172,6 +5172,8 @@ async function loadAllRatings(){
       <span>Live Positions <span class="badge" id="liveBadge">0</span></span>
       <div class="right" style="flex-wrap:wrap;gap:10px">
         <button onclick="mtOpenAdd()" style="background:rgba(35,134,54,.15);border:1px solid rgba(35,134,54,.4);color:#3fb950;padding:5px 12px;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit">＋ Add Trade</button>
+        <button onclick="stResendEOD('USTSX')" title="Resend today's US &amp; Canada EOD summary to Telegram" style="background:rgba(59,130,246,.12);border:1px solid rgba(59,130,246,.35);color:#60a5fa;padding:5px 12px;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit">📤 Resend US/CA EOD</button>
+        <button onclick="stResendEOD('NSE')"   title="Resend today's India NSE EOD summary to Telegram" style="background:rgba(251,146,60,.1);border:1px solid rgba(251,146,60,.35);color:#fb923c;padding:5px 12px;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit">📤 Resend NSE EOD</button>
         <small style="color:#8aaccc;font-weight:400;font-size:12px">Prices refresh every minute during market hours</small>
         <div class="autosort-wrap">
           <label class="toggle-switch">
@@ -13095,6 +13097,25 @@ function toggleRunDropdown(e) {
   if (!isOpen) {
     const close = () => { menu.style.display = 'none'; document.removeEventListener('click', close); };
     setTimeout(() => document.addEventListener('click', close), 0);
+  }
+}
+
+async function stResendEOD(market) {
+  const isNSE   = market === 'NSE';
+  const label   = isNSE ? 'NSE EOD' : 'US/Canada EOD';
+  const action  = isNSE ? 'resendNSEEOD' : 'resendUSEOD';
+  if (!confirm('Resend today\'s ' + label + ' summary to Telegram?')) return;
+  try {
+    notify('⏳ Sending ' + label + ' summary…');
+    await fetch(GS_SCRIPT_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain' },
+      body: JSON.stringify({ action }),
+      mode: 'no-cors'
+    });
+    notify('✅ ' + label + ' resent! Check Telegram in ~10 seconds.');
+  } catch(e) {
+    notify('⚠ Failed to trigger resend: ' + e.message);
   }
 }
 
